@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   activeRoots,
+  canSlice,
+  isNested,
   buildLibrary,
   cannotNest,
   collectionStatus,
@@ -11,8 +13,9 @@ import {
   progress,
   stats,
 } from './library';
-import { parseReadingList, resolveAgainstLibrary } from './parser';
+import { parseReadingList, parseStructuredList, resolveAgainstLibrary, titleCase } from './parser';
 import type { Collection, Entry, Issue, Kind, Series } from './types';
+import armageddon from '../../scripts/armageddon.txt?raw';
 
 const series = (id: string, title: string, volume_year: number | null = null): Series => ({
   id,
@@ -50,12 +53,13 @@ const coll = (id: string, kind: Kind, on_hold = false): Collection => ({
   notes: null,
 });
 let n = 0;
-const link = (parent_id: string, child: { issue?: string; coll?: string }): Entry => ({
+const link = (parent_id: string, child: { issue?: string; coll?: string; via?: string }): Entry => ({
   id: `e${++n}`,
   parent_id,
   position: n,
   child_issue_id: child.issue ?? null,
   child_collection_id: child.coll ?? null,
+  via_collection_id: child.via ?? null,
   note: null,
 });
 
@@ -217,6 +221,94 @@ describe('paste parser', () => {
     const [old] = resolveAgainstLibrary(parseReadingList('Green Lantern (1990) #43').items, lib);
     expect(old.series?.id).toBe('gl90');
     expect(old.existing).toEqual([null]);
+  });
+});
+
+describe('structured lists (crisis reading orders)', () => {
+  const text = armageddon;
+
+  it('reads the Armageddon list into labelled parts in order', () => {
+    const list = parseStructuredList(text);
+    expect(list.errors).toEqual([]);
+    expect(list.crisisTitle).toBe('Armageddon');
+    expect(list.blocks.map((b) => [b.kind, b.title, b.continued, b.items.reduce((n, i) => n + i.numbers.length, 0)])).toEqual([
+      ['event', 'Blood Hunt', false, 5],
+      ['run', 'Captain America by Chip Zdarsky', false, 5],
+      ['event', 'One World Under Doom', false, 9],
+      ['issue', null, false, 1],
+      ['run', 'Captain America by Chip Zdarsky', true, 6],
+      ['event', 'Wolverine: Weapons of Armageddon', false, 4],
+      ['event', 'Armageddon', false, 3],
+      ['run', 'Captain America by Chip Zdarsky', true, 4],
+      ['event', 'Armageddon', true, 3],
+      ['run', 'Captain America by Chip Zdarsky', true, 1],
+    ]);
+  });
+
+  it('keeps volumes, notes and checkboxes', () => {
+    const list = parseStructuredList(text);
+    expect(list.blocks[1].items[0]).toMatchObject({ seriesTitle: 'Captain America', volumeYear: 2025, numbers: ['1'], checked: false });
+    expect(list.blocks[6].items[0]).toMatchObject({ seriesTitle: 'Armageddon / X-Men', numbers: ['1'], note: 'Comics Giveaway Day Special' });
+    const ticked = parseStructuredList('event: Blood Hunt\n- [x] Blood Hunt #1\n- [ ] Blood Hunt #2');
+    expect(ticked.blocks[0].items.map((i) => i.checked)).toEqual([true, false]);
+  });
+
+  it('treats a list without headers as one plain block', () => {
+    const list = parseStructuredList('Green Lantern #63-67\nGreen Lantern Corps #58-60');
+    expect(list.hasHeaders).toBe(false);
+    expect(list.blocks).toHaveLength(1);
+    expect(list.blocks[0].kind).toBeNull();
+  });
+
+  it('title-cases lowercase names but keeps small words', () => {
+    expect(titleCase('captain america by chip zdarsky')).toBe('Captain America by Chip Zdarsky');
+    expect(titleCase('wolverine: weapons of Armageddon')).toBe('Wolverine: Weapons of Armageddon');
+  });
+});
+
+describe('slices', () => {
+  // A crisis showing Captain America #1 and #2 as two separate slices around an event issue.
+  function sliced() {
+    return buildLibrary({
+      series: [series('cap', 'Captain America', 2025), series('owud', 'One World Under Doom')],
+      issues: [issue('c1', 'cap', '1', 'read'), issue('c2', 'cap', '2'), issue('o1', 'owud', '1')],
+      collections: [coll('arm', 'crisis'), coll('caprun', 'run'), coll('doom', 'event')],
+      entries: [
+        link('caprun', { issue: 'c1' }),
+        link('caprun', { issue: 'c2' }),
+        link('doom', { issue: 'o1' }),
+        link('arm', { issue: 'c1', via: 'caprun' }),
+        link('arm', { issue: 'o1', via: 'doom' }),
+        link('arm', { issue: 'c2', via: 'caprun' }),
+      ],
+    });
+  }
+
+  it('follows the crisis order across slices and knows which run each issue belongs to', () => {
+    const lib = sliced();
+    const step = nextUp(lib, 'arm')!;
+    expect(step.issueId).toBe('o1');
+    expect(step.via).toBe('doom');
+    expect(progress(lib, 'arm')).toEqual({ read: 1, total: 3, left: 2 });
+  });
+
+  it('keeps the run whole: reading in the crisis moves the run too', () => {
+    const lib = sliced();
+    lib.issues.get('c2')!.status = 'read';
+    expect(progress(lib, 'caprun')).toEqual({ read: 2, total: 2, left: 0 });
+  });
+
+  it('shows only the crisis on Continue Reading, not the runs sliced into it', () => {
+    expect(activeRoots(sliced())).toEqual(['arm']);
+    expect(isNested(sliced(), 'caprun')).toBe(true);
+  });
+
+  it('allows slices of runs and events in a crisis, and of events in a run', () => {
+    const lib = sliced();
+    expect(canSlice(lib, 'arm', 'caprun')).toBe(true);
+    expect(canSlice(lib, 'caprun', 'doom')).toBe(true);
+    expect(canSlice(lib, 'doom', 'caprun')).toBe(false);
+    expect(canSlice(lib, 'caprun', 'arm')).toBe(false);
   });
 });
 

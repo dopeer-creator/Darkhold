@@ -9,6 +9,8 @@ export interface Library {
   children: Map<string, Entry[]>;
   /** Collections each collection or issue sits inside. */
   parents: Map<string, string[]>;
+  /** For a run or event: the collections that hold slices of it (a crisis reading order). */
+  slicedInto: Map<string, string[]>;
 }
 
 export function buildLibrary(rows: {
@@ -19,12 +21,18 @@ export function buildLibrary(rows: {
 }): Library {
   const children = new Map<string, Entry[]>();
   const parents = new Map<string, string[]>();
-  for (const e of rows.entries) {
+  const slicedInto = new Map<string, string[]>();
+  const add = (map: Map<string, string[]>, key: string, value: string) => {
+    const list = map.get(key) ?? [];
+    if (!list.includes(value)) map.set(key, [...list, value]);
+  };
+  for (const raw of rows.entries) {
+    const e = { ...raw, via_collection_id: raw.via_collection_id ?? null };
     const list = children.get(e.parent_id) ?? [];
     list.push(e);
     children.set(e.parent_id, list);
-    const child = e.child_issue_id ?? e.child_collection_id!;
-    parents.set(child, [...(parents.get(child) ?? []), e.parent_id]);
+    add(parents, e.child_issue_id ?? e.child_collection_id!, e.parent_id);
+    if (e.via_collection_id) add(slicedInto, e.via_collection_id, e.parent_id);
   }
   for (const list of children.values()) list.sort((a, b) => a.position - b.position);
   return {
@@ -33,13 +41,21 @@ export function buildLibrary(rows: {
     collections: new Map(rows.collections.map((c) => [c.id, c])),
     children,
     parents,
+    slicedInto,
   };
+}
+
+/** True when a collection sits inside another one, whole or as slices. */
+export function isNested(lib: Library, id: string): boolean {
+  return (lib.parents.get(id) ?? []).length > 0 || (lib.slicedInto.get(id) ?? []).length > 0;
 }
 
 /** One issue in reading order, with the collections that lead to it (outermost first). */
 export interface Step {
   issueId: string;
   path: string[];
+  /** The run or event this issue is a slice of, when it sits in a crisis reading order. */
+  via: string | null;
 }
 
 /** Every issue under a collection in reading order. An issue linked twice appears twice. */
@@ -52,7 +68,7 @@ export function walk(lib: Library, rootId: string): Step[] {
     const here = [...path, id];
     for (const e of lib.children.get(id) ?? []) {
       if (e.child_issue_id) {
-        if (lib.issues.has(e.child_issue_id)) out.push({ issueId: e.child_issue_id, path: here });
+        if (lib.issues.has(e.child_issue_id)) out.push({ issueId: e.child_issue_id, path: here, via: e.via_collection_id });
       } else if (e.child_collection_id && lib.collections.has(e.child_collection_id)) {
         visit(e.child_collection_id, here);
       }
@@ -146,11 +162,23 @@ export function cannotNest(lib: Library, parentId: string, childId: string): str
   return null;
 }
 
-/** Collections being read that aren't already inside another collection being read. */
+/** Whether a collection may hold slices of another: a crisis takes runs and events, a run takes events. */
+export function canSlice(lib: Library, parentId: string, viaId: string): boolean {
+  const parent = lib.collections.get(parentId);
+  const via = lib.collections.get(viaId);
+  return !!parent && !!via && parentId !== viaId && ALLOWED[parent.kind].includes(via.kind);
+}
+
+/** Collections being read that aren't already inside (or sliced into) another collection being read. */
 export function activeRoots(lib: Library): string[] {
   const reading = new Set([...lib.collections.keys()].filter((id) => collectionStatus(lib, id) === 'reading'));
   const covered = new Set<string>();
-  for (const id of reading) for (const s of walk(lib, id)) s.path.slice(1).forEach((p) => covered.add(p));
+  for (const id of reading) {
+    for (const s of walk(lib, id)) {
+      s.path.slice(1).forEach((p) => covered.add(p));
+      if (s.via) covered.add(s.via);
+    }
+  }
   return [...reading].filter((id) => !covered.has(id));
 }
 

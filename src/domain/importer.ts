@@ -98,7 +98,8 @@ export function planImport(lib: Library, file: ExportFile, newId: () => string):
     linked.add(key);
     const position = (lastPos.get(parent_id) ?? 0) + 1024;
     lastPos.set(parent_id, position);
-    plan.entries.push({ ...e, id: newId(), parent_id, position, child_issue_id: child_issue_id ?? null, child_collection_id: child_collection_id ?? null });
+    const via_collection_id = e.via_collection_id ? (collMap.get(e.via_collection_id) ?? null) : null;
+    plan.entries.push({ ...e, id: newId(), parent_id, position, child_issue_id: child_issue_id ?? null, child_collection_id: child_collection_id ?? null, via_collection_id });
   }
 
   // History rows only for issues this import adds or newly marks read, so a re-import adds none.

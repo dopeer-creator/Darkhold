@@ -3,8 +3,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { ExportFile } from '@/domain/importer';
 import { planImport } from '@/domain/importer';
-import { buildLibrary, cannotNest, positionBetween, type Library } from '@/domain/library';
-import type { ResolvedLine } from '@/domain/parser';
+import { buildLibrary, canSlice, cannotNest, positionBetween, type Library } from '@/domain/library';
+import type { BlockKind, ResolvedLine } from '@/domain/parser';
 import type { Collection, Entry, Issue, IssueStatus, ReadLog, Series } from '@/domain/types';
 import { COLUMNS, putRow, TABLES, type Table } from './db';
 
@@ -64,11 +64,15 @@ export async function updateIssue(db: SQLiteDatabase, lib: Library, issueId: str
   if (issue) await putRow(db, 'issues', { ...issue, ...patch });
 }
 
-export async function createCollection(db: SQLiteDatabase, fields: Pick<Collection, 'kind' | 'title'> & Partial<Collection>, parentId?: string, lib?: Library) {
-  const c: Collection = {
+function collectionRow(fields: Pick<Collection, 'kind' | 'title'> & Partial<Collection>): Collection {
+  return {
     publisher: null, writer: null, artist: null, characters: null, start_year: null, end_year: null,
     description: null, cover_path: null, on_hold: false, rating: null, notes: null, ...fields, id: newId(),
   };
+}
+
+export async function createCollection(db: SQLiteDatabase, fields: Pick<Collection, 'kind' | 'title'> & Partial<Collection>, parentId?: string, lib?: Library) {
+  const c = collectionRow(fields);
   await putRow(db, 'collections', c);
   if (parentId && lib) await appendEntry(db, lib, parentId, { child_collection_id: c.id });
   return c.id;
@@ -79,10 +83,18 @@ export async function updateCollection(db: SQLiteDatabase, lib: Library, id: str
   if (c) await putRow(db, 'collections', { ...c, ...patch });
 }
 
-async function appendEntry(db: SQLiteDatabase, lib: Library, parentId: string, child: { child_issue_id?: string; child_collection_id?: string }) {
+async function appendEntry(
+  db: SQLiteDatabase,
+  lib: Library,
+  parentId: string,
+  child: { child_issue_id?: string; child_collection_id?: string; via_collection_id?: string | null },
+) {
   const list = lib.children.get(parentId) ?? [];
   const position = positionBetween(list.length ? list[list.length - 1].position : null, null);
-  const entry: Entry = { id: newId(), parent_id: parentId, position, child_issue_id: child.child_issue_id ?? null, child_collection_id: child.child_collection_id ?? null, note: null };
+  const entry: Entry = {
+    id: newId(), parent_id: parentId, position, child_issue_id: child.child_issue_id ?? null,
+    child_collection_id: child.child_collection_id ?? null, via_collection_id: child.via_collection_id ?? null, note: null,
+  };
   await putRow(db, 'entries', entry);
   list.push(entry);
   lib.children.set(parentId, list);
@@ -102,37 +114,72 @@ export async function linkIssues(db: SQLiteDatabase, lib: Library, parentId: str
   });
 }
 
+export interface ResolvedBlock {
+  kind: BlockKind | null;
+  title: string | null;
+  lines: ResolvedLine[];
+}
+
 /**
- * Adds parsed issues to a collection. `reuse[i][n]` false means "make a new copy" instead of reusing.
- * New series are created when a line matched none.
+ * Adds issues to a collection, block by block. A block named after a run or event ("run: Captain America
+ * by Chip Zdarsky") also puts its issues into that run or event, creating it if needed, and links them here
+ * as a slice of it, so the crisis keeps your reading order while the run stays whole. Ticked lines ("[x]")
+ * are marked read; nothing is ever marked unread.
  */
-export async function addParsedIssues(
-  db: SQLiteDatabase,
-  lib: Library,
-  parentId: string,
-  lines: ResolvedLine[],
-  publisher: string | null,
-) {
+export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId: string, blocks: ResolvedBlock[], publisher: string | null) {
+  const parent = lib.collections.get(parentId);
   await db.withTransactionAsync(async () => {
-    for (const line of lines) {
-      let seriesId = line.series?.id;
-      if (!seriesId) {
-        seriesId = newId();
-        await putRow(db, 'series', { id: seriesId, title: line.seriesTitle, volume_year: line.volumeYear, publisher });
-      }
-      for (let k = 0; k < line.numbers.length; k++) {
-        let issueId = line.existing[k];
-        if (!issueId) {
-          issueId = newId();
-          await putRow(db, 'issues', {
-            id: issueId, series_id: seriesId, number: line.numbers[k], label: null, status: 'unread', completed_at: null,
-            date_precision: 'unknown', rating: null, notes: null, cover_path: null, pub_year: null,
-          });
+    const madeSeries = new Map<string, string>();
+    const madeIssues = new Map<string, string>();
+    for (const block of blocks) {
+      let via: string | null = null;
+      if ((block.kind === 'run' || block.kind === 'event') && block.title) {
+        const name = block.title.toLowerCase();
+        via = [...lib.collections.values()].find((c) => c.kind === block.kind && c.title.toLowerCase() === name)?.id ?? null;
+        if (!via) {
+          const c = collectionRow({ kind: block.kind, title: block.title, publisher: publisher ?? parent?.publisher ?? null });
+          await putRow(db, 'collections', c);
+          lib.collections.set(c.id, c);
+          via = c.id;
         }
-        await appendEntry(db, lib, parentId, { child_issue_id: issueId });
+        // e.g. pasting "event:" blocks into an event: the issues just go in directly.
+        if (!canSlice(lib, parentId, via)) via = null;
+      }
+      for (const line of block.lines) {
+        const seriesKey = `${line.seriesTitle.toLowerCase()}|${line.volumeYear ?? ''}`;
+        let seriesId = line.series?.id ?? madeSeries.get(seriesKey);
+        if (!seriesId) {
+          seriesId = newId();
+          await putRow(db, 'series', { id: seriesId, title: line.seriesTitle, volume_year: line.volumeYear, publisher: publisher ?? parent?.publisher ?? null });
+          madeSeries.set(seriesKey, seriesId);
+        }
+        for (let k = 0; k < line.numbers.length; k++) {
+          const issueKey = `${seriesId}#${line.numbers[k]}`;
+          let issueId = line.existing[k] ?? madeIssues.get(issueKey) ?? null;
+          if (!issueId) {
+            issueId = newId();
+            await putRow(db, 'issues', {
+              id: issueId, series_id: seriesId, number: line.numbers[k], label: null, status: line.checked ? 'read' : 'unread',
+              completed_at: null, date_precision: 'unknown', rating: null, notes: line.note, cover_path: null, pub_year: null,
+            });
+            madeIssues.set(issueKey, issueId);
+          } else if (line.checked) {
+            const existing = lib.issues.get(issueId);
+            if (existing && existing.status !== 'read') await putRow(db, 'issues', { ...existing, status: 'read' });
+          }
+          if (via && !(lib.children.get(via) ?? []).some((e) => e.child_issue_id === issueId)) {
+            await appendEntry(db, lib, via, { child_issue_id: issueId });
+          }
+          await appendEntry(db, lib, parentId, { child_issue_id: issueId, via_collection_id: via });
+        }
       }
     }
   });
+}
+
+/** Adds a plain list of parsed issues to a collection. */
+export function addParsedIssues(db: SQLiteDatabase, lib: Library, parentId: string, lines: ResolvedLine[], publisher: string | null) {
+  return addIssueBlocks(db, lib, parentId, [{ kind: null, title: null, lines }], publisher);
 }
 
 export async function moveEntry(db: SQLiteDatabase, lib: Library, entryId: string, parentId: string, toIndex: number) {
@@ -149,21 +196,27 @@ export async function removeEntry(db: SQLiteDatabase, entryId: string) {
 
 /** Deletes a collection and its links. Issues and inner collections stay unless they are used nowhere else and `withContents` is set. */
 export async function deleteCollection(db: SQLiteDatabase, lib: Library, id: string, withContents: boolean) {
-  await db.withTransactionAsync(async () => {
-    const children = lib.children.get(id) ?? [];
-    for (const e of children) await softDelete(db, 'entries', e.id);
-    for (const parent of lib.parents.get(id) ?? []) {
-      for (const e of lib.children.get(parent) ?? []) if (e.child_collection_id === id) await softDelete(db, 'entries', e.id);
-    }
-    await softDelete(db, 'collections', id);
-    if (!withContents) return;
-    for (const e of children) {
-      const child = e.child_issue_id ?? e.child_collection_id!;
-      if ((lib.parents.get(child) ?? []).length > 1) continue;
-      if (e.child_issue_id) await softDelete(db, 'issues', e.child_issue_id);
-      else await deleteCollection(db, lib, child, true);
-    }
-  });
+  await db.withTransactionAsync(() => removeCollection(db, lib, id, withContents));
+}
+
+async function removeCollection(db: SQLiteDatabase, lib: Library, id: string, withContents: boolean) {
+  const children = lib.children.get(id) ?? [];
+  for (const e of children) await softDelete(db, 'entries', e.id);
+  for (const parent of lib.parents.get(id) ?? []) {
+    for (const e of lib.children.get(parent) ?? []) if (e.child_collection_id === id) await softDelete(db, 'entries', e.id);
+  }
+  // Slices of it in a crisis stay as plain issue lines.
+  for (const holder of lib.slicedInto.get(id) ?? []) {
+    for (const e of lib.children.get(holder) ?? []) if (e.via_collection_id === id) await putRow(db, 'entries', { ...e, via_collection_id: null });
+  }
+  await softDelete(db, 'collections', id);
+  if (!withContents) return;
+  for (const e of children) {
+    const child = e.child_issue_id ?? e.child_collection_id!;
+    if ((lib.parents.get(child) ?? []).length > 1) continue;
+    if (e.child_issue_id) await softDelete(db, 'issues', e.child_issue_id);
+    else await removeCollection(db, lib, child, true);
+  }
 }
 
 export async function importFile(db: SQLiteDatabase, lib: Library, file: ExportFile) {

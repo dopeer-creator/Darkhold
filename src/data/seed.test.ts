@@ -4,8 +4,8 @@ import { planImport, type ExportFile } from '../domain/importer';
 import { buildLibrary, collectionStatus, issueTitle, nextUp, progress, stats } from '../domain/library';
 import seed from './seed.json';
 
-const lib = buildLibrary(seed as Parameters<typeof buildLibrary>[0]);
-const byTitle = (title: string) => [...lib.collections.values()].find((c) => c.title === title)!.id;
+const lib = buildLibrary(seed as unknown as Parameters<typeof buildLibrary>[0]);
+const byTitle = (title: string, kind?: string) => [...lib.collections.values()].find((c) => c.title === title && (!kind || c.kind === kind))!.id;
 
 describe('starting data', () => {
   it('has every Green Lantern issue once: 183 read of 237', () => {
@@ -30,7 +30,7 @@ describe('starting data', () => {
 
   it('marks finished events completed and the Marvel crisis as reading', () => {
     expect(collectionStatus(lib, byTitle('Blood Hunt'))).toBe('completed');
-    expect(collectionStatus(lib, byTitle('Road to Armageddon'))).toBe('reading');
+    expect(collectionStatus(lib, byTitle('Armageddon', 'crisis'))).toBe('reading');
     expect(collectionStatus(lib, byTitle('Batman: New 52'))).toBe('not_started');
   });
 
@@ -38,15 +38,25 @@ describe('starting data', () => {
     let k = 0;
     const newId = () => `u${++k}`;
     const empty = buildLibrary({ series: [], issues: [], collections: [], entries: [] });
-    const first = planImport(empty, seed as ExportFile, newId);
-    expect([first.issues.length, first.collections.length, first.entries.length, first.read_log.length]).toEqual([242, 21, 261, 5]);
+    const first = planImport(empty, seed as unknown as ExportFile, newId);
+    expect([first.issues.length, first.collections.length, first.entries.length, first.read_log.length]).toEqual([278, 21, 332, 5]);
     const after = buildLibrary(first);
     expect(progress(after, [...after.collections.values()].find((c) => c.title === "Geoff Johns' Green Lantern")!.id).read).toBe(183);
-    const second = planImport(after, seed as ExportFile, newId);
+    const second = planImport(after, seed as unknown as ExportFile, newId);
     expect([second.series, second.issues, second.collections, second.entries, second.read_log, second.markRead].map((x) => x.length)).toEqual([0, 0, 0, 0, 0, 0]);
   });
 
+  it('lays out Armageddon as slices in your reading order, with each run kept whole', () => {
+    const crisis = byTitle('Armageddon', 'crisis');
+    expect(progress(lib, crisis)).toEqual({ read: 5, total: 41, left: 36 });
+    const step = nextUp(lib, crisis)!;
+    expect(issueTitle(lib, step.issueId)).toBe('Captain America #1');
+    expect(lib.collections.get(step.via!)!.title).toBe('Captain America by Chip Zdarsky');
+    expect(progress(lib, byTitle('Captain America by Chip Zdarsky'))).toEqual({ read: 0, total: 16, left: 16 });
+    expect(progress(lib, byTitle('Armageddon', 'event')).total).toBe(6);
+  });
+
   it('gives the home totals', () => {
-    expect(stats(lib)).toEqual({ issuesRead: 188, issuesLeft: 54, reading: 2, completed: 8 });
+    expect(stats(lib)).toEqual({ issuesRead: 188, issuesLeft: 90, reading: 2, completed: 8 });
   });
 });

@@ -10,7 +10,7 @@ import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight, MoreIcon, PlusIcon } from '@/ui/icons';
 import { Bar, Checkbox, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
-import { C, F, KIND_LABEL, publisherColor, STATUS_LABEL } from '@/ui/theme';
+import { C, F, KIND_COLOR, KIND_LABEL, publisherColor, STATUS_LABEL } from '@/ui/theme';
 
 const ROW_LIMIT = 8;
 
@@ -193,18 +193,34 @@ type ListProps = {
 type Row =
   | { kind: 'issue'; entry: Entry }
   | { kind: 'group'; key: string; label: string; count: number }
-  | { kind: 'collection'; entry: Entry };
+  | { kind: 'collection'; entry: Entry }
+  | { kind: 'slice'; key: string; via: string | null; entries: Entry[]; continued: boolean };
 
-/** Issues and inner collections in order. Three or more read issues of one series in a row fold into one line. */
+/**
+ * Issues and inner collections in order. Three or more read issues of one series in a row fold into one line.
+ * In a crisis, issues that are slices of a run or event sit in labelled blocks ("RUN · Captain America … (continued)").
+ */
 function EntryList(props: ListProps) {
   const { lib, parentId, nextIssueId, open, setOpen } = props;
   const [unfolded, setUnfolded] = useState<Record<string, boolean>>({});
   const [showAll, setShowAll] = useState(false);
   const entries = lib.children.get(parentId) ?? [];
+  const viaOf = (e: Entry) => (e.via_collection_id && lib.collections.has(e.via_collection_id) ? e.via_collection_id : null);
+  const hasSlices = entries.some((e) => viaOf(e));
 
   const rows: Row[] = [];
+  const seenVia = new Set<string>();
   for (let i = 0; i < entries.length; ) {
     const e = entries[i];
+    const via = viaOf(e);
+    if (hasSlices && e.child_issue_id) {
+      let j = i;
+      while (j < entries.length && entries[j].child_issue_id && viaOf(entries[j]) === via) j++;
+      rows.push({ kind: 'slice', key: `slice:${e.id}`, via, entries: entries.slice(i, j), continued: !!via && seenVia.has(via) });
+      if (via) seenVia.add(via);
+      i = j;
+      continue;
+    }
     const issue = e.child_issue_id ? lib.issues.get(e.child_issue_id) : undefined;
     if (issue?.status === 'read') {
       let j = i;
@@ -226,16 +242,56 @@ function EntryList(props: ListProps) {
     i++;
   }
 
-  // Long issue lists are cut short (events and runs always show), keeping the next issue in view.
-  const issueRows = rows.filter((r) => r.kind !== 'collection');
+  // Long issue lists are cut short (blocks, events and runs always show), keeping the next issue in view.
+  const issueRows = rows.filter((r) => r.kind === 'issue' || r.kind === 'group');
   const nextIndex = issueRows.findIndex((r) => r.kind === 'issue' && r.entry.child_issue_id === nextIssueId);
   const limit = Math.max(ROW_LIMIT, nextIndex + 4);
   let shown = 0;
-  const visible = showAll ? rows : rows.filter((r) => r.kind === 'collection' || ++shown <= limit);
+  const visible = showAll ? rows : rows.filter((r) => (r.kind !== 'issue' && r.kind !== 'group') || ++shown <= limit);
   const hidden = rows.length - visible.length;
 
+  const renderIssue = (entry: Entry) => {
+    const issue = lib.issues.get(entry.child_issue_id!);
+    if (!issue) return null;
+    const read = issue.status === 'read';
+    const isNext = issue.id === nextIssueId;
+    return (
+      <Pressable
+        key={entry.id}
+        ref={isNext ? props.nextRowRef : undefined}
+        onLayout={isNext ? props.onNextRowLayout : undefined}
+        onLongPress={() => props.onIssueMenu(entry)}
+        style={s.issueRow}>
+        <View style={{ flex: 1, paddingVertical: 8 }}>
+          <Text style={[T.body, { fontSize: 14, color: read ? C.muted : C.text }]}>{issueTitle(lib, issue.id)}</Text>
+          {isNext ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>{issue.status === 'reading' ? 'READING NOW' : 'NEXT UP'}</Text> : null}
+          {read && issue.completed_at ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>Read {relativeDay(issue.completed_at)}</Text> : null}
+          {issue.notes && !read ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>{issue.notes}</Text> : null}
+        </View>
+        <Checkbox checked={read} label={`${read ? 'Mark unread' : 'Mark read'}: ${issueTitle(lib, issue.id)}`} onPress={() => props.onToggle(issue.id, read)} />
+      </Pressable>
+    );
+  };
+
+  const header = (o: { label: string; color: string; title: string; suffix?: string; read: number; total: number; isOpen: boolean; bar: string; onPress: () => void; onLongPress?: () => void }) => (
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: o.isOpen }} onPress={o.onPress} onLongPress={o.onLongPress} style={{ padding: 14, gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        {o.isOpen ? <ChevronDown /> : <ChevronRight />}
+        <View style={{ flex: 1 }}>
+          <Text style={[T.label, { fontSize: 10, color: o.color }]}>{o.label}</Text>
+          <Text style={[T.bodyMedium, { lineHeight: 19 }]}>
+            {o.title}
+            {o.suffix ? <Text style={T.small}> {o.suffix}</Text> : null}
+          </Text>
+        </View>
+        <Text style={[T.small, T.num]}>{o.total ? `${o.read} / ${o.total}` : 'Empty'}</Text>
+      </View>
+      <Bar read={o.read} total={o.total} color={o.bar} height={3} />
+    </Pressable>
+  );
+
   return (
-    <View style={{ gap: rows.some((r) => r.kind === 'collection') ? 10 : 0 }}>
+    <View style={{ gap: rows.some((r) => r.kind === 'collection' || r.kind === 'slice') ? 10 : 0 }}>
       {visible.map((r) => {
         if (r.kind === 'group') {
           return (
@@ -245,24 +301,39 @@ function EntryList(props: ListProps) {
             </Pressable>
           );
         }
-        if (r.kind === 'issue') {
-          const issue = lib.issues.get(r.entry.child_issue_id!)!;
-          const read = issue.status === 'read';
-          const isNext = issue.id === nextIssueId;
+        if (r.kind === 'issue') return renderIssue(r.entry);
+        if (r.kind === 'slice') {
+          const via = r.via ? lib.collections.get(r.via)! : null;
+          const ids = r.entries.map((e) => e.child_issue_id!);
+          const read = ids.filter((id) => lib.issues.get(id)?.status === 'read').length;
+          const hasNext = !!nextIssueId && ids.includes(nextIssueId);
+          const isOpen = open[r.key] ?? hasNext;
+          const kind = via?.kind ?? 'issue';
           return (
-            <Pressable
-              key={r.entry.id}
-              ref={isNext ? props.nextRowRef : undefined}
-              onLayout={isNext ? props.onNextRowLayout : undefined}
-              onLongPress={() => props.onIssueMenu(r.entry)}
-              style={s.issueRow}>
-              <View style={{ flex: 1, paddingVertical: 8 }}>
-                <Text style={[T.body, { fontSize: 14, color: read ? C.muted : C.text }]}>{issueTitle(lib, issue.id)}</Text>
-                {isNext ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>{issue.status === 'reading' ? 'READING NOW' : 'NEXT UP'}</Text> : null}
-                {read && issue.completed_at ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>Read {relativeDay(issue.completed_at)}</Text> : null}
-              </View>
-              <Checkbox checked={read} label={`${read ? 'Mark unread' : 'Mark read'}: ${issueTitle(lib, issue.id)}`} onPress={() => props.onToggle(issue.id, read)} />
-            </Pressable>
+            <View key={r.key} style={s.card}>
+              {header({
+                label: `${KIND_LABEL[kind]}${read === ids.length ? ' · DONE' : hasNext ? ' · UP NEXT' : ''}`,
+                color: KIND_COLOR[kind],
+                title: via ? via.title : ids.length === 1 ? issueTitle(lib, ids[0]) : `${ids.length} single issues`,
+                suffix: r.continued ? '(continued)' : undefined,
+                read,
+                total: ids.length,
+                isOpen,
+                bar: KIND_COLOR[kind],
+                onPress: () => setOpen((o) => ({ ...o, [r.key]: !isOpen })),
+                onLongPress: via ? () => router.push(`/collection/${via.id}`) : undefined,
+              })}
+              {isOpen ? (
+                <View style={{ borderTopWidth: 1, borderTopColor: C.border, paddingLeft: 14 }}>
+                  {r.entries.map(renderIssue)}
+                  {via ? (
+                    <Pressable onPress={() => router.push(`/collection/${via.id}`)} style={{ paddingVertical: 12, alignItems: 'center' }}>
+                      <Text style={T.small}>Open all of {via.title}</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
           );
         }
         const child = lib.collections.get(r.entry.child_collection_id!)!;
@@ -271,22 +342,17 @@ function EntryList(props: ListProps) {
         const done = collectionStatus(lib, child.id) === 'completed';
         return (
           <View key={r.entry.id} style={s.card}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ expanded: isOpen }}
-              onPress={() => setOpen((o) => ({ ...o, [child.id]: !isOpen }))}
-              onLongPress={() => router.push(`/collection/${child.id}`)}
-              style={{ padding: 14, gap: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                {isOpen ? <ChevronDown /> : <ChevronRight />}
-                <View style={{ flex: 1 }}>
-                  <Text style={[T.label, { fontSize: 10 }]}>{KIND_LABEL[child.kind]}{done ? ' · DONE' : ''}</Text>
-                  <Text style={[T.bodyMedium, { lineHeight: 19 }]}>{child.title}</Text>
-                </View>
-                <Text style={[T.small, T.num]}>{cp.total ? `${cp.read} / ${cp.total}` : 'Empty'}</Text>
-              </View>
-              <Bar read={cp.read} total={cp.total} color={publisherColor(child.publisher)} height={3} />
-            </Pressable>
+            {header({
+              label: `${KIND_LABEL[child.kind]}${done ? ' · DONE' : ''}`,
+              color: KIND_COLOR[child.kind],
+              title: child.title,
+              read: cp.read,
+              total: cp.total,
+              isOpen,
+              bar: publisherColor(child.publisher),
+              onPress: () => setOpen((o) => ({ ...o, [child.id]: !isOpen })),
+              onLongPress: () => router.push(`/collection/${child.id}`),
+            })}
             {isOpen ? (
               <View style={{ borderTopWidth: 1, borderTopColor: C.border, paddingLeft: child.kind === 'event' ? 14 : 10, paddingRight: child.kind === 'event' ? 0 : 10, paddingVertical: child.kind === 'event' ? 0 : 10 }}>
                 {(lib.children.get(child.id) ?? []).length ? <EntryList {...props} parentId={child.id} /> : <Text style={[T.small, { padding: 12 }]}>No issues yet.</Text>}

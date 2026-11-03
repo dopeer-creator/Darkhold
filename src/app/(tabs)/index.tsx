@@ -70,7 +70,7 @@ export default function Home() {
                 const c = lib.collections.get(id)!;
                 const p = progress(lib, id);
                 const next = nextUp(lib, id);
-                const nextIn = next ? lib.collections.get(next.path[next.path.length - 1]) : undefined;
+                const nextIn = next ? lib.collections.get(next.via ?? next.path[next.path.length - 1]) : undefined;
                 const color = publisherColor(c.publisher);
                 return (
                   <Pressable key={id} onPress={() => router.push(`/collection/${id}`)} style={s.card}>

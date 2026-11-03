@@ -2,6 +2,8 @@
 // Usage: node scripts/build-seed.mjs <path to comic_reading_history_import.json>
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
+import { parseStructuredList } from '../src/domain/parser.ts';
+
 const src = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const out = { format: 'darkhold-export', version: 1, series: [], issues: [], collections: [], entries: [], read_log: [] };
 
@@ -58,11 +60,11 @@ function collection(fields) {
   });
   return id;
 }
-function link(parent, child, note = null) {
+function link(parent, child, note = null, via = null) {
   const isIssue = child.startsWith('i');
   out.entries.push({
     id: `e${out.entries.length + 1}`, parent_id: parent, position: (++pos) * 1024,
-    child_issue_id: isIssue ? child : null, child_collection_id: isIssue ? null : child, note,
+    child_issue_id: isIssue ? child : null, child_collection_id: isIssue ? null : child, via_collection_id: via, note,
   });
   unplaced.delete(child);
 }
@@ -126,19 +128,33 @@ if (unplaced.size) throw new Error(`Read issues not placed in any event: ${[...u
 collection({ kind: 'run', title: 'Batman: New 52', characters: 'Batman' });
 collection({ kind: 'run', title: "Grant Morrison's Batman", writer: 'Grant Morrison', characters: 'Batman' });
 
-// Marvel: Blood Hunt finished on 2 Nov 2026, as the start of the road to Avengers: Armageddon.
-const crisis = collection({ kind: 'crisis', title: 'Road to Armageddon', publisher: 'Marvel', description: 'Blood Hunt through One World Under Doom and into Avengers: Armageddon.' });
-const bh = collection({ kind: 'event', title: 'Blood Hunt', publisher: 'Marvel', start_year: 2024 });
-for (let k = 1; k <= 5; k++) {
-  const i = addIssue({ series: 'Blood Hunt', number: String(k), status: 'read', completed_at: '2026-11-02', publisher: 'Marvel' });
-  link(bh, i);
-  out.read_log.push({ id: `l${out.read_log.length + 1}`, issue_id: i, read_on: '2026-11-02', date_precision: 'day', rating: null, note: null });
+// Marvel: the Armageddon crisis, built from the pasted reading order in scripts/armageddon.txt.
+// Each block becomes a slice of its run or event; Blood Hunt was finished on 2 Nov 2026.
+const list = parseStructuredList(readFileSync(new URL('./armageddon.txt', import.meta.url), 'utf8'));
+if (list.errors.length) throw new Error(`armageddon.txt: ${JSON.stringify(list.errors)}`);
+const crisis = collection({ kind: 'crisis', title: list.crisisTitle, publisher: 'Marvel', description: 'Blood Hunt through One World Under Doom and into Avengers: Armageddon.' });
+const EXTRA = {
+  'Blood Hunt': { start_year: 2024 },
+  'Captain America by Chip Zdarsky': { writer: 'Chip Zdarsky', characters: 'Captain America', start_year: 2025 },
+};
+const marvel = new Map();
+for (const block of list.blocks) {
+  let via = null;
+  if (block.title) {
+    if (!marvel.has(block.title)) marvel.set(block.title, collection({ kind: block.kind, title: block.title, publisher: 'Marvel', ...EXTRA[block.title] }));
+    via = marvel.get(block.title);
+  }
+  for (const line of block.items) {
+    const series = line.volumeYear ? `${line.seriesTitle} (${line.volumeYear})` : line.seriesTitle;
+    for (const number of line.numbers) {
+      const read = series === 'Blood Hunt';
+      const i = addIssue({ series, number, status: read ? 'read' : 'unread', notes: line.note, completed_at: read ? '2026-11-02' : null, publisher: 'Marvel' });
+      if (read) out.read_log.push({ id: `l${out.read_log.length + 1}`, issue_id: i, read_on: '2026-11-02', date_precision: 'day', rating: null, note: null });
+      if (via) link(via, i);
+      link(crisis, i, null, via);
+    }
+  }
 }
-link(crisis, bh);
-link(crisis, collection({ kind: 'run', title: 'Captain America', publisher: 'Marvel', characters: 'Captain America' }));
-link(crisis, collection({ kind: 'event', title: 'One World Under Doom', publisher: 'Marvel' }));
-link(crisis, collection({ kind: 'run', title: 'Wolverine', publisher: 'Marvel', characters: 'Wolverine' }));
-link(crisis, collection({ kind: 'event', title: 'Avengers: Armageddon', publisher: 'Marvel' }));
 
 mkdirSync('src/data', { recursive: true });
 writeFileSync('src/data/seed.json', JSON.stringify(out, null, 1) + '\n');

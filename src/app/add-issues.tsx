@@ -4,12 +4,12 @@ import { FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleS
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { issueTitle, type Library } from '@/domain/library';
-import { parseReadingList, resolveAgainstLibrary, type ResolvedLine } from '@/domain/parser';
-import { addParsedIssues, linkIssues } from '@/store/repo';
+import { parseReadingList, parseStructuredList, resolveAgainstLibrary, type BlockKind, type ResolvedLine } from '@/domain/parser';
+import { addIssueBlocks, linkIssues } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { ChevronDown, CloseIcon } from '@/ui/icons';
 import { Checkbox, Chip, Cover, PrimaryButton, T } from '@/ui/parts';
-import { C, F, KIND_LABEL } from '@/ui/theme';
+import { C, F, KIND_COLOR, KIND_LABEL } from '@/ui/theme';
 
 type Mode = 'library' | 'range' | 'paste';
 
@@ -27,8 +27,17 @@ export default function AddIssues() {
   const parent = parentId ? lib.collections.get(parentId) : undefined;
 
   const source = mode === 'range' ? (range.series && range.from ? `${range.series} #${range.from}${range.to ? `-${range.to}` : ''}` : '') : text;
-  const parsed = useMemo(() => parseReadingList(source), [source]);
-  const lines = useMemo(() => applyOverrides(resolveAgainstLibrary(parsed.items, lib), overrides, lib), [parsed, lib, overrides]);
+  // Paste mode understands "event:" / "run:" / "issue:" headers; each named part becomes a slice of that run or event.
+  const structured = useMemo(() => (mode === 'paste' ? parseStructuredList(source) : null), [mode, source]);
+  const plain = useMemo(() => (mode === 'range' ? parseReadingList(source) : null), [mode, source]);
+  const errors = structured?.errors ?? plain?.errors ?? [];
+  const blocks = useMemo(() => {
+    const raw = structured ? structured.blocks : plain ? [{ kind: null, title: null, continued: false, items: plain.items }] : [];
+    // Line numbers run across all parts, so a volume choice sticks to the right line.
+    const starts = raw.map((_, i) => raw.slice(0, i).reduce((n, b) => n + b.items.length, 0));
+    return raw.map((b, i) => ({ ...b, start: starts[i], lines: applyOverrides(resolveAgainstLibrary(b.items, lib), overrides, lib, starts[i]) }));
+  }, [structured, plain, lib, overrides]);
+  const lines = blocks.flatMap((b) => b.lines);
   const total = lines.reduce((n, l) => n + l.numbers.length, 0);
   const reused = lines.reduce((n, l) => n + l.existing.filter(Boolean).length, 0);
 
@@ -36,7 +45,7 @@ export default function AddIssues() {
 
   const add = async () => {
     if (mode === 'library') await act((db, l) => linkIssues(db, l, parent.id, picked));
-    else await act((db, l) => addParsedIssues(db, l, parent.id, lines, parent.publisher));
+    else await act((db, l) => addIssueBlocks(db, l, parent.id, blocks.map((b) => ({ kind: b.kind, title: b.title, lines: b.lines })), parent.publisher));
     router.back();
   };
 
@@ -70,7 +79,9 @@ export default function AddIssues() {
                 value={text}
                 onChangeText={(t) => { setText(t); setOverrides({}); }}
                 multiline
-                placeholder={'Green Lantern #63–67\nGreen Lantern Corps #58–60\nGreen Lantern: Emerald Warriors #8–10'}
+                placeholder={parent.kind === 'event'
+                  ? 'Green Lantern #63–67\nGreen Lantern Corps #58–60\nGreen Lantern: Emerald Warriors #8–10'
+                  : 'event: Blood Hunt\n• [ ] Blood Hunt #1–5\nrun: Captain America by Chip Zdarsky\n• [ ] Captain America (2025) #1–5\nissue:\n• [ ] The Will of Doom #1'}
                 placeholderTextColor={C.faint}
                 accessibilityLabel="Pasted reading list"
                 style={s.paste}
@@ -85,35 +96,59 @@ export default function AddIssues() {
               </View>
             )}
 
-            {parsed.errors.map((e) => (
+            {errors.map((e) => (
               <Text key={e.line} style={[T.small, { color: C.indie }]}>Line {e.line}: {e.message}</Text>
             ))}
-            {lines.length ? <Text style={[s.preview]}>Preview · {total} issues</Text> : null}
-            {lines.map((l, idx) => (
-              <View key={idx} style={s.lineCard}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-                  <Text style={[T.bodyMedium, { flex: 1 }]}>
-                    {l.series ? l.series.title : l.seriesTitle}
-                    {l.series?.volume_year ? ` (${l.series.volume_year})` : l.volumeYear ? ` (${l.volumeYear})` : ''} {rangeLabel(l.numbers)}
-                  </Text>
-                  <Text style={T.tiny}>{countLabel(l)}</Text>
-                </View>
-                {l.assumedOneShot ? <Text style={[T.tiny, { color: C.indie }]}>No number given — added as #1</Text> : null}
-                {l.choices.length > 0 ? (
-                  <View style={{ gap: 6 }}>
-                    {l.choices.length > 1 || !l.series ? <Text style={[T.tiny, { color: C.indie }]}>Which {l.seriesTitle}?</Text> : null}
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                      {l.choices.map((ch) => (
-                        <Chip key={ch.id} label={ch.volume_year ? String(ch.volume_year) : 'No year'} active={l.series?.id === ch.id} onPress={() => setOverrides((o) => ({ ...o, [idx]: ch.id }))} />
-                      ))}
-                      <Chip label="New series" active={!l.series} onPress={() => setOverrides((o) => ({ ...o, [idx]: 'new' }))} />
-                    </View>
+            {lines.length ? <Text style={[s.preview]}>Preview · {total} issues{structured?.hasHeaders ? ` in ${blocks.length} parts` : ''}</Text> : null}
+            {blocks.map((b) => (
+              <View key={b.start} style={{ gap: 8 }}>
+                {b.kind ? (
+                  <View style={s.blockHead}>
+                    <Text style={[T.label, { color: KIND_COLOR[b.kind] }]}>{KIND_LABEL[b.kind]}</Text>
+                    <Text style={[T.bodyMedium, { flex: 1 }]} numberOfLines={1}>
+                      {b.title ?? (b.lines.length === 1 ? 'Single issue' : 'Single issues')}
+                      {b.continued ? <Text style={T.small}> (continued)</Text> : null}
+                    </Text>
+                    {b.title ? <Text style={T.tiny}>{findCollection(lib, b.kind, b.title) ? 'in library' : 'new'}</Text> : null}
                   </View>
-                ) : (
-                  <Text style={T.tiny}>New series</Text>
-                )}
+                ) : null}
+                {b.lines.map((l, i) => {
+                  const idx = b.start + i;
+                  return (
+                    <View key={idx} style={s.lineCard}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                        <Text style={[T.bodyMedium, { flex: 1 }]}>
+                          {l.series ? l.series.title : l.seriesTitle}
+                          {l.series?.volume_year ? ` (${l.series.volume_year})` : l.volumeYear ? ` (${l.volumeYear})` : ''} {rangeLabel(l.numbers)}
+                          {l.checked ? <Text style={T.tiny}>  · read</Text> : null}
+                        </Text>
+                        <Text style={T.tiny}>{countLabel(l)}</Text>
+                      </View>
+                      {l.note ? <Text style={T.tiny}>{l.note}</Text> : null}
+                      {l.assumedOneShot ? <Text style={[T.tiny, { color: C.indie }]}>No number given — added as #1</Text> : null}
+                      {l.choices.length > 1 || (l.choices.length > 0 && !l.series) ? (
+                        <View style={{ gap: 6 }}>
+                          <Text style={[T.tiny, { color: C.indie }]}>Which {l.seriesTitle}?</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {l.choices.map((ch) => (
+                              <Chip key={ch.id} label={ch.volume_year ? String(ch.volume_year) : 'No year'} active={l.series?.id === ch.id} onPress={() => setOverrides((o) => ({ ...o, [idx]: ch.id }))} />
+                            ))}
+                            <Chip label="New series" active={!l.series} onPress={() => setOverrides((o) => ({ ...o, [idx]: 'new' }))} />
+                          </View>
+                        </View>
+                      ) : !l.series ? (
+                        <Text style={T.tiny}>New series</Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
             ))}
+            {mode === 'paste' && !text && parent.kind !== 'event' ? (
+              <Text style={[T.tiny, { lineHeight: 18 }]}>
+                Tip: label parts with “event:”, “run:” or “issue:” and add “(continued)” when a run comes back. Each part is added to that run or event and shown here in your order. “[x]” marks an issue read.
+              </Text>
+            ) : null}
           </ScrollView>
         )}
 
@@ -130,11 +165,15 @@ export default function AddIssues() {
   );
 }
 
-function applyOverrides(lines: ResolvedLine[], overrides: Record<number, string>, lib: Library): ResolvedLine[] {
+function findCollection(lib: Library, kind: BlockKind, title: string) {
+  return [...lib.collections.values()].find((c) => c.kind === kind && c.title.toLowerCase() === title.toLowerCase());
+}
+
+function applyOverrides(lines: ResolvedLine[], overrides: Record<number, string>, lib: Library, offset: number): ResolvedLine[] {
   const index = new Map<string, string>();
   for (const i of lib.issues.values()) if (i.number != null) index.set(`${i.series_id}#${i.number}`, i.id);
   return lines.map((l, idx) => {
-    const o = overrides[idx];
+    const o = overrides[offset + idx];
     if (!o) return l;
     const series = o === 'new' ? null : (lib.series.get(o) ?? null);
     return { ...l, series, existing: l.numbers.map((n) => (series ? (index.get(`${series.id}#${n}`) ?? null) : null)) };
@@ -221,6 +260,7 @@ const s = StyleSheet.create({
   paste: { minHeight: 110, backgroundColor: C.sunken, borderWidth: 1, borderColor: C.border, borderRadius: 12, color: '#D8D6D0', fontFamily: Platform.select({ android: 'monospace', default: 'Menlo' }), fontSize: 13, lineHeight: 21, padding: 12, textAlignVertical: 'top' },
   input: { minHeight: 48, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, color: C.text, fontFamily: F.sans, fontSize: 15, paddingHorizontal: 14 },
   preview: { fontFamily: F.cond, fontSize: 15, letterSpacing: 1.8, textTransform: 'uppercase', color: C.muted, marginTop: 6 },
+  blockHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   lineCard: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 12, gap: 8 },
   footer: { padding: 16, paddingTop: 12, backgroundColor: C.bar, borderTopWidth: 1, borderTopColor: C.border },
   pickRow: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderBottomWidth: 1, borderBottomColor: C.divider },

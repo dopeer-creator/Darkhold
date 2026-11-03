@@ -3,13 +3,13 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { collectionStatus, issueTitle, progress } from '@/domain/library';
+import { collectionStatus, isNested, issueTitle, progress } from '@/domain/library';
 import type { Kind } from '@/domain/types';
 import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { PlusIcon, SearchIcon } from '@/ui/icons';
 import { Bar, Checkbox, Chip, Cover, T } from '@/ui/parts';
-import { C, F, KIND_LABEL, publisherColor } from '@/ui/theme';
+import { C, F, KIND_COLOR, KIND_LABEL, publisherColor } from '@/ui/theme';
 
 const TABS: { key: 'all' | Kind | 'issues'; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -44,7 +44,7 @@ export default function LibraryScreen() {
     const pubTest = PUBLISHERS.find((p) => p.key === pub)?.test;
     return [...lib.collections.values()]
       // "All" shows what sits at the top; events inside a run are under that run (and on the Events tab).
-      .filter((c) => (tab === 'all' ? !(lib.parents.get(c.id) ?? []).length || !!query.trim() : tab === c.kind))
+      .filter((c) => (tab === 'all' ? !isNested(lib, c.id) || !!query.trim() : tab === c.kind))
       .filter((c) => !pubTest || pubTest(c.publisher))
       .filter((c) => !status || collectionStatus(lib, c.id) === status)
       .filter((c) => !q || [c.title, c.writer, c.artist, c.characters, c.publisher].some((v) => v?.toLowerCase().includes(q)))
@@ -91,6 +91,7 @@ export default function LibraryScreen() {
 
       {tab === 'issues' ? (
         <FlatList
+          key="issues"
           data={issues}
           keyExtractor={(x) => x.i.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
@@ -111,6 +112,7 @@ export default function LibraryScreen() {
         />
       ) : (
         <FlatList
+          key="grid"
           data={[...collections, null]}
           numColumns={3}
           keyExtractor={(x) => x?.c.id ?? 'new'}
@@ -120,7 +122,7 @@ export default function LibraryScreen() {
             item ? (
               <Pressable onPress={() => router.push(`/collection/${item.c.id}`)} style={{ width: tile, gap: 6 }}>
                 <Cover title={item.c.title} publisher={item.c.publisher} width={tile} done={item.st === 'completed'} />
-                <Text style={[T.label, { fontSize: 10, color: publisherColor(item.c.publisher) }]}>{KIND_LABEL[item.c.kind]}</Text>
+                <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[item.c.kind] }]}>{KIND_LABEL[item.c.kind]}</Text>
                 <Text numberOfLines={2} style={[T.bodyMedium, { fontSize: 13, lineHeight: 16 }]}>{item.c.title}</Text>
                 <Bar read={item.p.read} total={item.p.total} color={publisherColor(item.c.publisher)} height={3} />
                 <Text style={[T.tiny, T.num, { fontSize: 11 }]}>

@@ -49,6 +49,8 @@ export interface Entry {
   position: number;
   child_issue_id: string | null;
   child_collection_id: string | null;
+  /** For an issue line: the run or event this issue is a slice of (crisis reading orders). */
+  via_collection_id: string | null;
   note: string | null;
 }
 

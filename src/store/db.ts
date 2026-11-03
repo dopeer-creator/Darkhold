@@ -9,15 +9,23 @@ export const COLUMNS: Record<Table, string[]> = {
   series: ['id', 'title', 'volume_year', 'publisher'],
   issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year'],
   collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'rating', 'notes'],
-  entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'note'],
+  entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'note'],
   read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note'],
 };
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
-  if ((row?.user_version ?? 0) >= SCHEMA_VERSION) return;
+  const version = row?.user_version ?? 0;
+  if (version >= SCHEMA_VERSION) return;
+  if (version < 1) await createTables(db);
+  // 2: slices — an issue entry can name the run or event it is a piece of.
+  if (version < 2) await db.execAsync('ALTER TABLE entries ADD COLUMN via_collection_id TEXT;');
+  await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+}
+
+async function createTables(db: SQLiteDatabase) {
   const sync = 'updated_at TEXT, deleted_at TEXT, dirty INTEGER NOT NULL DEFAULT 0';
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
@@ -34,7 +42,6 @@ export async function migrate(db: SQLiteDatabase) {
       date_precision TEXT NOT NULL DEFAULT 'day', rating INTEGER, note TEXT, ${sync});
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY NOT NULL, value TEXT);
     CREATE INDEX IF NOT EXISTS entries_parent ON entries (parent_id, position);
-    PRAGMA user_version = ${SCHEMA_VERSION};
   `);
 }
 
