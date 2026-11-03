@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { planImport, type ExportFile } from '../domain/importer';
-import { buildLibrary, collectionStatus, issueTitle, nextUp, progress, stats } from '../domain/library';
-import seed from './seed.json';
+import { planImport, type ExportFile } from '../../src/domain/importer';
+import { buildLibrary, collectionStatus, issueTitle, nextUp, progress, stats } from '../../src/domain/library';
+import seed from './my-library.json';
 
 const lib = buildLibrary(seed as unknown as Parameters<typeof buildLibrary>[0]);
 const byTitle = (title: string, kind?: string) => [...lib.collections.values()].find((c) => c.title === title && (!kind || c.kind === kind))!.id;

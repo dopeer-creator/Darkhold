@@ -1,21 +1,16 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import seed from '@/data/seed.json';
-import type { ExportFile } from '@/domain/importer';
 import { activeRoots, issueTitle, nextUp, progress, stats } from '@/domain/library';
-import { importFile } from '@/store/repo';
 import { useStore } from '@/store/store';
-import { ClockIcon } from '@/ui/icons';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { C, F, KIND_LABEL, publisherColor } from '@/ui/theme';
 
 export default function Home() {
-  const { lib, readLog, act, sync, ready } = useStore();
-  const [loading, setLoading] = useState(false);
+  const { lib, readLog, sync, ready, session } = useStore();
   const roots = useMemo(() => activeRoots(lib), [lib]);
   const totals = useMemo(() => stats(lib), [lib]);
   const empty = ready && lib.collections.size === 0 && lib.issues.size === 0;
@@ -27,23 +22,19 @@ export default function Home() {
     return { id: l.id, issueId: l.issue_id, title: issueTitle(lib, l.issue_id), number: issue?.number ?? '', where: coll ? `${KIND_LABEL[coll.kind][0]}${KIND_LABEL[coll.kind].slice(1).toLowerCase()} · ${coll.title}` : '', parentId: parent, publisher: coll?.publisher ?? null, seriesTitle: issue ? (lib.series.get(issue.series_id)?.title ?? '') : '', day: l.read_on };
   });
 
-  const loadHistory = async () => {
-    setLoading(true);
-    try {
-      await act((db, l) => importFile(db, l, seed as ExportFile));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
         <View style={s.header}>
           <Text style={s.brand}>Darkhold</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Reading history" onPress={() => router.push('/history')} style={s.iconBtn}>
-            {sync.state === 'syncing' ? <ActivityIndicator size="small" color={C.dim} /> : <ClockIcon color={C.muted} />}
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {sync.state === 'syncing' ? <ActivityIndicator size="small" color={C.dim} style={{ marginRight: 4 }} /> : null}
+            <Pressable accessibilityRole="button" accessibilityLabel="Profile and settings" onPress={() => router.push('/settings')} style={s.iconBtn}>
+              <View style={s.avatar}>
+                <Text style={s.avatarText}>{(session?.user.email ?? 'D')[0].toUpperCase()}</Text>
+              </View>
+            </Pressable>
+          </View>
         </View>
         {sync.state === 'error' ? (
           <Text style={[T.tiny, { color: C.indie, paddingHorizontal: 16 }]}>Not synced yet — your changes are safe on this phone. {sync.message}</Text>
@@ -53,10 +44,10 @@ export default function Home() {
           <View style={s.emptyCard}>
             <Text style={[T.h1, { fontSize: 24 }]}>Start your library</Text>
             <Text style={[T.small, { lineHeight: 20 }]}>
-              Load your Green Lantern reading history (183 issues read, Brightest Day up next), the empty Batman runs and the Road to Armageddon crisis.
+              Make a run, an event or a crisis, then add its issues: type them, enter a range, or paste a whole reading order.
             </Text>
-            <PrimaryButton label={loading ? 'Loading…' : 'Load my reading history'} onPress={loadHistory} disabled={loading} />
-            <GhostButton label="Start empty" onPress={() => router.push('/add')} />
+            <PrimaryButton label="Create a run" onPress={() => router.push('/new?kind=run')} />
+            <GhostButton label="Event, crisis or something else" onPress={() => router.push('/add')} />
           </View>
         ) : null}
 
@@ -137,6 +128,8 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 6, paddingTop: 12, paddingBottom: 4 },
   brand: { fontFamily: F.condBold, fontSize: 28, letterSpacing: 1.2, textTransform: 'uppercase', color: C.text },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontFamily: F.condBold, fontSize: 16, color: C.text },
   emptyCard: { margin: 16, padding: 16, gap: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14 },
   card: { width: 300, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, gap: 12 },
   cardTitle: { fontFamily: F.cond, fontSize: 21, lineHeight: 22, color: C.text },

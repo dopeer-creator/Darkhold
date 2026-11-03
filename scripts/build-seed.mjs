@@ -1,4 +1,5 @@
-// Builds src/data/seed.json (the app's starting data) from the reading-history export.
+// Builds scripts/personal/my-library.json — the owner's own library (Green Lantern history, Armageddon),
+// kept as a backup/import file. It is not shipped in the app: every account builds its own lists.
 // Usage: node scripts/build-seed.mjs <path to comic_reading_history_import.json>
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
@@ -156,7 +157,7 @@ for (const block of list.blocks) {
   }
 }
 
-mkdirSync('src/data', { recursive: true });
-writeFileSync('src/data/seed.json', JSON.stringify(out, null, 1) + '\n');
+mkdirSync('scripts/personal', { recursive: true });
+writeFileSync('scripts/personal/my-library.json', JSON.stringify(out, null, 1) + '\n');
 const read = out.issues.filter((i) => i.status === 'read').length;
 console.log(`series ${out.series.length}, issues ${out.issues.length} (read ${read}, unread ${out.issues.length - read}), collections ${out.collections.length}, entries ${out.entries.length}`);
