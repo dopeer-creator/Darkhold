@@ -31,7 +31,7 @@
         {
           "backgroundColor": "#111113",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 160
         }
       ],
       "expo-sqlite",
@@ -41,6 +41,24 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "owner": "dopeedits"
+    "owner": "dopeedits",
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "33d0acf6-4a6a-4daf-a2f3-9b32442d488e"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/33d0acf6-4a6a-4daf-a2f3-9b32442d488e",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }

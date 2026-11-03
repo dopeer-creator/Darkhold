@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
+import * as Updates from 'expo-updates';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -22,6 +23,21 @@ export default function Settings() {
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const [coverStatus, setCoverStatus] = useState('');
   const [fetching, setFetching] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState('');
+  const [updateReady, setUpdateReady] = useState(false);
+  const checkUpdates = async () => {
+    setUpdateStatus('Checking…');
+    try {
+      const found = await Updates.checkForUpdateAsync();
+      if (!found.isAvailable) return setUpdateStatus('You have the latest version.');
+      setUpdateStatus('Downloading the new version…');
+      await Updates.fetchUpdateAsync();
+      setUpdateReady(true);
+      setUpdateStatus('New version ready.');
+    } catch (e) {
+      setUpdateStatus(e instanceof Error ? e.message : String(e));
+    }
+  };
   const missing = [...lib.issues.values()].filter((i) => !i.cover_path && i.number != null).length;
 
   useEffect(() => {
@@ -157,7 +173,27 @@ export default function Settings() {
           ) : null}
         </View>
 
-        <Text style={[T.tiny, { textAlign: 'center' }]}>Darkhold {Constants.expoConfig?.version ?? ''}</Text>
+        <View style={{ gap: 8 }}>
+          <SectionTitle>App</SectionTitle>
+          <View style={s.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={T.body}>Darkhold {Constants.expoConfig?.version ?? ''}</Text>
+              <Text style={T.tiny}>
+                {Updates.isEnabled
+                  ? Updates.createdAt && !Updates.isEmbeddedLaunch
+                    ? `Updated ${relativeDay(Updates.createdAt.toISOString().slice(0, 10))}`
+                    : 'As installed'
+                  : 'Updates arrive in the installed app, not in Expo Go'}
+              </Text>
+            </View>
+            {Updates.isEnabled ? (
+              <Pressable accessibilityRole="button" onPress={updateReady ? () => Updates.reloadAsync() : checkUpdates} style={s.smallBtn}>
+                <Text style={[T.small, { color: C.text }]}>{updateReady ? 'Restart now' : 'Check'}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <Text style={T.tiny}>{updateStatus || 'New versions download by themselves when you open the app and apply the next time you open it.'}</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

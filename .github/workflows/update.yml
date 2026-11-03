@@ -1,0 +1,44 @@
+# Every push to main: run the tests, then publish an over-the-air update to installed apps.
+# Needs the EXPO_TOKEN repository secret (expo.dev → Settings → Access tokens), and the
+# EXPO_PUBLIC_SUPABASE_* values as EAS environment variables (production) on expo.dev.
+# Changes that need new native code get a new APK instead (eas build); the fingerprint
+# runtime version keeps such an update from reaching an app it would not run on.
+name: Publish app update
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: eas-update
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - run: npm ci
+
+      - name: Tests
+        run: npx vitest run
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Publish update
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: eas update --channel production --environment production --platform android --message "$(echo "$MESSAGE" | head -n 1)" --non-interactive
