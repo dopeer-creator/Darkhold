@@ -71,3 +71,6 @@ export const DragIcon = ({ size = 18, color = C.faint }: P) => (
     {[6, 12, 18].map((y) => [9, 15].map((x) => <Circle key={`${x}-${y}`} cx={x} cy={y} r="1.5" fill={color} />))}
   </Svg>
 );
+export const ChevronUp = ({ size = 16, color = C.muted, width = 2 }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="m6 15 6-6 6 6" {...stroke(color, width)} /></Svg>
+);

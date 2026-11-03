@@ -1,14 +1,30 @@
+import { Image } from 'expo-image';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
 import { CheckIcon, PlayIcon } from './icons';
 import { C, F, publisherColor, tintFor } from './theme';
 
-/** A drawn cover for books without art: title, a big mark and a publisher stripe. */
-export function Cover({ title, publisher, mark, width, done }: { title: string; publisher: string | null; mark?: string; width: number; done?: boolean }) {
+/**
+ * A cover: the real image when there is a link (downloaded once, then cached on the phone),
+ * otherwise a drawn one with the title, a big mark and a publisher stripe.
+ */
+export function Cover({ title, publisher, mark, width, done, uri }: { title: string; publisher: string | null; mark?: string; width: number; done?: boolean; uri?: string | null }) {
   const tint = tintFor(title);
   const height = Math.round(width * 1.5);
   const big = mark ?? initials(title);
+  if (uri) {
+    return (
+      <View style={{ width, height, borderRadius: width > 60 ? 8 : 4, overflow: 'hidden', backgroundColor: tint.bg }}>
+        <Image source={{ uri }} style={{ width, height }} contentFit="cover" cachePolicy="disk" transition={150} recyclingKey={uri} accessibilityLabel={`${title} cover`} />
+        {done ? (
+          <View accessibilityLabel="Completed" style={{ position: 'absolute', right: 6, bottom: 6, width: 20, height: 20, borderRadius: 10, backgroundColor: C.text, alignItems: 'center', justifyContent: 'center' }}>
+            <CheckIcon size={12} />
+          </View>
+        ) : null}
+      </View>
+    );
+  }
   return (
     <View style={{ width, height, borderRadius: width > 60 ? 8 : 4, backgroundColor: tint.bg, overflow: 'hidden', padding: width * 0.09, paddingTop: width * 0.12, justifyContent: 'space-between' }}>
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: width > 60 ? 3 : 2, backgroundColor: publisherColor(publisher) }} />

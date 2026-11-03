@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { cannotNest, progress } from '@/domain/library';
+import { cannotNest, coverFor, progress } from '@/domain/library';
 import { linkCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { CloseIcon } from '@/ui/icons';
@@ -52,7 +52,7 @@ export default function LinkExisting() {
                 router.back();
               }}
               style={s.row}>
-              <Cover title={item.title} publisher={item.publisher} width={36} />
+              <Cover title={item.title} publisher={item.publisher} width={36} uri={coverFor(lib, item.id)} />
               <View style={{ flex: 1 }}>
                 <Text style={T.bodyMedium}>{item.title}</Text>
                 <Text style={T.tiny}>{KIND_LABEL[item.kind]} · {p.total ? `${p.read} / ${p.total}` : 'No issues yet'}</Text>

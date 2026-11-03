@@ -37,6 +37,8 @@ export default function RootLayout() {
             <Stack.Screen name="link" options={{ presentation: 'modal' }} />
             <Stack.Screen name="login" />
             <Stack.Screen name="settings" />
+            <Stack.Screen name="issue/[id]" />
+            <Stack.Screen name="mark/[id]" options={{ presentation: 'modal' }} />
           </Stack>
         </StoreProvider>
       </SQLiteProvider>

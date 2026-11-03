@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   activeRoots,
   canSlice,
+  coverFor,
+  entryUnits,
+  moveUnit,
   isNested,
   buildLibrary,
   cannotNest,
@@ -316,6 +319,39 @@ describe('slices', () => {
     expect(canSlice(lib, 'caprun', 'doom')).toBe(true);
     expect(canSlice(lib, 'doom', 'caprun')).toBe(false);
     expect(canSlice(lib, 'caprun', 'arm')).toBe(false);
+  });
+});
+
+describe('edit order and covers', () => {
+  it('moves a whole slice block as one piece', () => {
+    const lib = buildLibrary({
+      series: [series('cap', 'Captain America', 2025), series('fc', 'Final Crisis')],
+      issues: [issue('c1', 'cap', '1'), issue('c2', 'cap', '2'), issue('f1', 'fc', '1'), issue('one', 'fc', '7')],
+      collections: [coll('arm', 'crisis'), coll('caprun', 'run'), coll('fcev', 'event')],
+      entries: [
+        { ...link('arm', { issue: 'c1', via: 'caprun' }), id: 'a' },
+        { ...link('arm', { issue: 'c2', via: 'caprun' }), id: 'b' },
+        { ...link('arm', { issue: 'f1', via: 'fcev' }), id: 'c' },
+        { ...link('arm', { issue: 'one' }), id: 'd' },
+      ],
+    });
+    const units = entryUnits(lib, 'arm');
+    expect(units.map((u) => [u.kind, u.entryIds])).toEqual([
+      ['slice', ['a', 'b']],
+      ['slice', ['c']],
+      ['issue', ['d']],
+    ]);
+    expect(moveUnit(units, 0, 2)).toEqual(['c', 'd', 'a', 'b']);
+    expect(moveUnit(units, 2, 0)).toEqual(['d', 'a', 'b', 'c']);
+  });
+
+  it('uses a collection cover, else the first issue cover in reading order', () => {
+    const lib = fixture();
+    expect(coverFor(lib, 'run')).toBeNull();
+    lib.issues.get('bn1')!.cover_path = 'https://example.com/bn1.jpg';
+    expect(coverFor(lib, 'run')).toBe('https://example.com/bn1.jpg');
+    lib.collections.get('run')!.cover_path = 'https://example.com/run.jpg';
+    expect(coverFor(lib, 'run')).toBe('https://example.com/run.jpg');
   });
 });
 

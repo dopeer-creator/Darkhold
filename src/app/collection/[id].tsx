@@ -3,11 +3,11 @@ import { useRef, useState, type ComponentRef, type MutableRefObject } from 'reac
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { collectionStatus, issueTitle, lastRead, nextUp, progress, type Library } from '@/domain/library';
+import { collectionStatus, coverFor, entryUnits, issueTitle, lastRead, moveUnit, nextUp, progress, type Library } from '@/domain/library';
 import type { Collection, Entry } from '@/domain/types';
-import { deleteCollection, removeEntry, setIssueStatus, updateCollection } from '@/store/repo';
+import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
-import { BackIcon, ChevronDown, ChevronRight, MoreIcon, PlusIcon } from '@/ui/icons';
+import { BackIcon, ChevronDown, ChevronRight, ChevronUp, CloseIcon, MoreIcon, PlusIcon } from '@/ui/icons';
 import { Bar, Checkbox, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { C, F, KIND_COLOR, KIND_LABEL, publisherColor, STATUS_LABEL } from '@/ui/theme';
@@ -27,6 +27,8 @@ export default function CollectionScreen() {
   // Arriving from a Continue button opens the sections down to the next issue and scrolls to it.
   const [open, setOpen] = useState<Record<string, boolean>>(() => (focus === 'next' ? pathOpen(next) : {}));
   const [menu, setMenu] = useState(false);
+  const [options, setOptions] = useState(false);
+  const [editing, setEditing] = useState(false);
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const contentRef = useRef<ComponentRef<typeof View>>(null);
   const nextRowRef = useRef<ComponentRef<typeof View> | null>(null);
@@ -57,16 +59,13 @@ export default function CollectionScreen() {
   const creators = [c.writer, c.artist].filter(Boolean).join(' & ');
   const years = c.start_year ? `${c.start_year}${c.end_year && c.end_year !== c.start_year ? `–${c.end_year}` : ''}` : '';
 
-  const showOptions = () => {
-    Alert.alert(c.title, undefined, [
-      {
-        text: c.on_hold ? 'Resume reading' : 'Put on hold',
-        onPress: () => act((db, l) => updateCollection(db, l, c.id, { on_hold: !c.on_hold })),
-      },
-      { text: 'Edit details', onPress: () => router.push(`/new?edit=${c.id}`) },
-      { text: 'Delete…', style: 'destructive', onPress: () => confirmDelete(c) },
-    ]);
-  };
+  const optionItems: { label: string; go: () => void; danger?: boolean }[] = [
+    { label: 'Mark as read…', go: () => router.push({ pathname: '/mark/[id]', params: { id: c.id } }) },
+    { label: 'Edit order', go: () => setEditing(true) },
+    { label: c.on_hold ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => updateCollection(db, l, c.id, { on_hold: !c.on_hold })) },
+    { label: 'Edit details and cover', go: () => router.push(`/new?edit=${c.id}`) },
+    { label: 'Delete…', go: () => confirmDelete(c), danger: true },
+  ];
 
   const confirmDelete = (col: Collection) => {
     Alert.alert(`Delete ${col.title}?`, 'Issues you read stay in your history unless you also delete the contents.', [
@@ -89,14 +88,23 @@ export default function CollectionScreen() {
         <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={s.iconBtn}>
           <BackIcon />
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Options" onPress={showOptions} style={s.iconBtn}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Options" accessibilityState={{ expanded: options }} onPress={() => setOptions((o) => !o)} style={s.iconBtn}>
           <MoreIcon />
         </Pressable>
       </View>
+      {options ? (
+        <View style={[s.menu, s.optionsMenu]}>
+          {optionItems.map((m) => (
+            <Pressable key={m.label} onPress={() => { setOptions(false); m.go(); }} style={({ pressed }) => [s.menuItem, pressed ? { backgroundColor: C.border } : null]}>
+              <Text style={[T.body, m.danger ? { color: C.danger } : null]}>{m.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       <ScrollView ref={scrollRef} contentContainerStyle={{ paddingBottom: 48 }}>
         <View ref={contentRef} collapsable={false}>
           <View style={s.hero}>
-            <Cover title={c.title} publisher={c.publisher} width={108} />
+            <Cover title={c.title} publisher={c.publisher} width={108} uri={coverFor(lib, c.id)} />
             <View style={{ flex: 1, gap: 6, paddingTop: 4 }}>
               <Text style={[T.label, { color }]}>{KIND_LABEL[c.kind]}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
               <Text style={s.title}>{c.title}</Text>
@@ -126,9 +134,22 @@ export default function CollectionScreen() {
           <View style={{ paddingHorizontal: 16, paddingTop: 22 }}>
             <SectionTitle
               right={
-                <Pressable accessibilityRole="button" accessibilityLabel="Add to this collection" accessibilityState={{ expanded: menu }} onPress={() => setMenu((m) => !m)} style={s.addBtn}>
-                  <PlusIcon size={20} width={2} />
-                </Pressable>
+                editing ? (
+                  <Pressable accessibilityRole="button" onPress={() => setEditing(false)} style={s.doneBtn}>
+                    <Text style={[T.small, { color: C.onLight, fontFamily: F.semibold }]}>Done</Text>
+                  </Pressable>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {(lib.children.get(c.id) ?? []).length > 1 ? (
+                      <Pressable accessibilityRole="button" onPress={() => setEditing(true)} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 6 }}>
+                        <Text style={T.small}>Edit order</Text>
+                      </Pressable>
+                    ) : null}
+                    <Pressable accessibilityRole="button" accessibilityLabel="Add to this collection" accessibilityState={{ expanded: menu }} onPress={() => setMenu((m) => !m)} style={s.addBtn}>
+                      <PlusIcon size={20} width={2} />
+                    </Pressable>
+                  </View>
+                )
               }>
               {c.kind === 'crisis' ? 'Reading path' : 'Reading order'}
             </SectionTitle>
@@ -142,7 +163,19 @@ export default function CollectionScreen() {
               </View>
             ) : null}
             <View style={{ gap: 10, marginTop: 10 }}>
-              {(lib.children.get(c.id) ?? []).length === 0 ? (
+              {editing ? (
+                <ReorderList
+                  lib={lib}
+                  parentId={c.id}
+                  onMove={(ids) => act((db, l) => reorderEntries(db, l, c.id, ids))}
+                  onRemove={(ids, label) =>
+                    Alert.alert(`Remove ${label}?`, 'Only from this list. The issues stay in your library and anywhere else they appear.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Remove', style: 'destructive', onPress: () => act((db) => removeEntries(db, ids)) },
+                    ])
+                  }
+                />
+              ) : (lib.children.get(c.id) ?? []).length === 0 ? (
                 <Text style={[T.small, { paddingVertical: 16 }]}>Nothing here yet. Tap ＋ to add {c.kind === 'event' ? 'issues' : 'events or issues'}.</Text>
               ) : (
                 <EntryList
@@ -154,7 +187,7 @@ export default function CollectionScreen() {
                   nextRowRef={nextRowRef}
                   onNextRowLayout={onNextRowLayout}
                   onToggle={(issueId, read) => act((db, l) => setIssueStatus(db, l, issueId, read ? 'unread' : 'read'))}
-                  onIssueMenu={(entry) => issueMenu(entry)}
+                  onIssueMenu={(entry) => router.push({ pathname: '/issue/[id]', params: { id: entry.child_issue_id!, entry: entry.id, parent: entry.parent_id } })}
                 />
               )}
             </View>
@@ -163,19 +196,6 @@ export default function CollectionScreen() {
       </ScrollView>
     </SafeAreaView>
   );
-
-  function issueMenu(entry: Entry) {
-    const issue = lib.issues.get(entry.child_issue_id!);
-    if (!issue) return;
-    Alert.alert(issueTitle(lib, issue.id), issue.completed_at ? `Read ${relativeDay(issue.completed_at)}` : undefined, [
-      {
-        text: issue.status === 'reading' ? 'Not currently reading' : 'Mark currently reading',
-        onPress: () => act((db, l) => setIssueStatus(db, l, issue.id, issue.status === 'reading' ? 'unread' : 'reading')),
-      },
-      { text: 'Remove from this list', style: 'destructive', onPress: () => act((db) => removeEntry(db, entry.id)) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }
 }
 
 type ListProps = {
@@ -260,6 +280,7 @@ function EntryList(props: ListProps) {
         key={entry.id}
         ref={isNext ? props.nextRowRef : undefined}
         onLayout={isNext ? props.onNextRowLayout : undefined}
+        onPress={() => props.onIssueMenu(entry)}
         onLongPress={() => props.onIssueMenu(entry)}
         style={s.issueRow}>
         <View style={{ flex: 1, paddingVertical: 8 }}>
@@ -373,6 +394,80 @@ function EntryList(props: ListProps) {
   );
 }
 
+/**
+ * "Edit order": every piece of this list (an inner run or event, a slice block, or an issue) can be nudged
+ * up or down, or picked and placed anywhere in one move. A slice block moves as one piece.
+ */
+function ReorderList({ lib, parentId, onMove, onRemove }: { lib: Library; parentId: string; onMove: (ids: string[]) => void; onRemove: (ids: string[], label: string) => void }) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const units = entryUnits(lib, parentId);
+
+  const labelOf = (i: number) => {
+    const u = units[i];
+    const first = lib.children.get(parentId)?.find((e) => e.id === u.entryIds[0]);
+    if (u.kind === 'collection') {
+      const col = lib.collections.get(u.collectionId!)!;
+      return { tag: KIND_LABEL[col.kind], color: KIND_COLOR[col.kind], title: col.title, sub: '' };
+    }
+    const issues = u.entryIds.map((eid) => lib.children.get(parentId)?.find((e) => e.id === eid)?.child_issue_id).filter(Boolean) as string[];
+    const span = issues.length > 1 ? `${issueTitle(lib, issues[0])} – #${lib.issues.get(issues[issues.length - 1])?.number ?? ''}` : issueTitle(lib, first?.child_issue_id ?? '');
+    if (u.kind === 'slice') {
+      const col = lib.collections.get(u.collectionId!)!;
+      return { tag: KIND_LABEL[col.kind], color: KIND_COLOR[col.kind], title: col.title, sub: `${span} · ${issues.length} issue${issues.length === 1 ? '' : 's'}` };
+    }
+    return { tag: 'ISSUE', color: KIND_COLOR.issue, title: span, sub: '' };
+  };
+
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= units.length || from === to) return;
+    onMove(moveUnit(units, from, to));
+  };
+  /** Place the picked piece just before position `slot` (units.length = at the end). */
+  const place = (slot: number) => {
+    if (picked == null) return;
+    move(picked, slot > picked ? slot - 1 : slot);
+    setPicked(null);
+  };
+  const target = (slot: number) =>
+    picked != null && slot !== picked && slot !== picked + 1 ? (
+      <Pressable key={`slot-${slot}`} accessibilityRole="button" onPress={() => place(slot)} style={s.placeHere}>
+        <Text style={[T.small, { color: C.dc }]}>Place here</Text>
+      </Pressable>
+    ) : null;
+
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={T.tiny}>{picked == null ? 'Tap a piece to pick it up, then tap where it goes. Arrows nudge one step.' : 'Now tap “Place here” where it should go, or tap it again to cancel.'}</Text>
+      {units.map((u, i) => {
+        const l = labelOf(i);
+        const isPicked = picked === i;
+        return (
+          <View key={u.key} style={{ gap: 8 }}>
+            {target(i)}
+            <View style={[s.reorderRow, isPicked ? { borderColor: C.dc, backgroundColor: '#16223A' } : null]}>
+              <Pressable accessibilityRole="button" accessibilityState={{ selected: isPicked }} onPress={() => setPicked(isPicked ? null : i)} style={{ flex: 1, paddingVertical: 10 }}>
+                <Text style={[T.label, { fontSize: 10, color: l.color }]}>{l.tag}</Text>
+                <Text style={T.bodyMedium} numberOfLines={1}>{l.title}</Text>
+                {l.sub ? <Text style={T.tiny} numberOfLines={1}>{l.sub}</Text> : null}
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} up`} disabled={i === 0} onPress={() => move(i, i - 1)} style={[s.arrow, i === 0 ? { opacity: 0.25 } : null]}>
+                <ChevronUp size={18} color={C.muted} />
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} down`} disabled={i === units.length - 1} onPress={() => move(i, i + 1)} style={[s.arrow, i === units.length - 1 ? { opacity: 0.25 } : null]}>
+                <ChevronDown size={18} color={C.muted} />
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${l.title} from this list`} onPress={() => onRemove(u.entryIds, l.title)} style={s.arrow}>
+                <CloseIcon size={18} color={C.dim} />
+              </Pressable>
+            </View>
+          </View>
+        );
+      })}
+      {target(units.length)}
+    </View>
+  );
+}
+
 const s = StyleSheet.create({
   topbar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 6, paddingTop: 4 },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
@@ -381,6 +476,11 @@ const s = StyleSheet.create({
   pill: { alignSelf: 'flex-start', marginTop: 4, height: 26, paddingHorizontal: 10, borderRadius: 13, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center' },
   addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
   menu: { marginTop: 8, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.borderStrong, borderRadius: 12, padding: 6 },
+  optionsMenu: { position: 'absolute', top: 52, right: 12, zIndex: 10, minWidth: 220, marginTop: 0, elevation: 6 },
+  doneBtn: { height: 36, paddingHorizontal: 16, borderRadius: 18, backgroundColor: C.text, justifyContent: 'center' },
+  reorderRow: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 56, paddingLeft: 12, borderRadius: 12, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
+  arrow: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  placeHere: { height: 40, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.dc, alignItems: 'center', justifyContent: 'center' },
   menuItem: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8 },
   card: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 12, overflow: 'hidden' },
   group: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 14, borderBottomWidth: 1, borderBottomColor: C.divider },

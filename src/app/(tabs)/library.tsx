@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { collectionStatus, isNested, issueTitle, progress } from '@/domain/library';
+import { collectionStatus, coverFor, isNested, issueTitle, progress } from '@/domain/library';
 import type { Kind } from '@/domain/types';
 import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
@@ -98,10 +98,10 @@ export default function LibraryScreen() {
           ListEmptyComponent={<Text style={[T.small, { paddingTop: 24 }]}>No issues match.</Text>}
           renderItem={({ item }) => (
             <View style={s.issueRow}>
-              <View style={{ flex: 1 }}>
+              <Pressable onPress={() => router.push({ pathname: '/issue/[id]', params: { id: item.i.id } })} style={{ flex: 1, minHeight: 52, justifyContent: 'center' }}>
                 <Text style={[T.body, { fontSize: 14, color: item.i.status === 'read' ? C.muted : C.text }]}>{item.title}</Text>
                 {item.series?.volume_year ? <Text style={T.tiny}>{item.series.title} ({item.series.volume_year})</Text> : null}
-              </View>
+              </Pressable>
               <Checkbox
                 checked={item.i.status === 'read'}
                 label={`${item.i.status === 'read' ? 'Mark unread' : 'Mark read'}: ${item.title}`}
@@ -121,7 +121,7 @@ export default function LibraryScreen() {
           renderItem={({ item }) =>
             item ? (
               <Pressable onPress={() => router.push(`/collection/${item.c.id}`)} style={{ width: tile, gap: 6 }}>
-                <Cover title={item.c.title} publisher={item.c.publisher} width={tile} done={item.st === 'completed'} />
+                <Cover title={item.c.title} publisher={item.c.publisher} width={tile} done={item.st === 'completed'} uri={coverFor(lib, item.c.id)} />
                 <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[item.c.kind] }]}>{KIND_LABEL[item.c.kind]}</Text>
                 <Text numberOfLines={2} style={[T.bodyMedium, { fontSize: 13, lineHeight: 16 }]}>{item.c.title}</Text>
                 <Bar read={item.p.read} total={item.p.total} color={publisherColor(item.c.publisher)} height={3} />

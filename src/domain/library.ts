@@ -222,3 +222,51 @@ export function positionBetween(before: number | null, after: number | null): nu
   if (after == null) return before + 1024;
   return (before + after) / 2;
 }
+
+/** One movable piece of a collection's list: an inner run/event, one issue, or a slice block of a run/event. */
+export interface Unit {
+  key: string;
+  entryIds: string[];
+  kind: 'collection' | 'issue' | 'slice';
+  /** The inner collection, or the run/event a slice belongs to. */
+  collectionId: string | null;
+}
+
+/** Splits a collection's lines into the pieces "Edit order" moves around. Consecutive slices of one run stay together. */
+export function entryUnits(lib: Library, parentId: string): Unit[] {
+  const entries = lib.children.get(parentId) ?? [];
+  const units: Unit[] = [];
+  for (const e of entries) {
+    const via = e.via_collection_id && lib.collections.has(e.via_collection_id) ? e.via_collection_id : null;
+    const last = units[units.length - 1];
+    if (via && last?.kind === 'slice' && last.collectionId === via) {
+      last.entryIds.push(e.id);
+    } else if (via) {
+      units.push({ key: e.id, entryIds: [e.id], kind: 'slice', collectionId: via });
+    } else if (e.child_collection_id) {
+      units.push({ key: e.id, entryIds: [e.id], kind: 'collection', collectionId: e.child_collection_id });
+    } else {
+      units.push({ key: e.id, entryIds: [e.id], kind: 'issue', collectionId: null });
+    }
+  }
+  return units;
+}
+
+/** The entry ids in order after moving one unit to a new index. */
+export function moveUnit(units: Unit[], from: number, to: number): string[] {
+  const next = [...units];
+  const [moved] = next.splice(from, 1);
+  next.splice(Math.max(0, Math.min(to, next.length)), 0, moved);
+  return next.flatMap((u) => u.entryIds);
+}
+
+/** A collection's cover: its own, else the first issue in reading order that has one. */
+export function coverFor(lib: Library, collectionId: string): string | null {
+  const own = lib.collections.get(collectionId)?.cover_path;
+  if (own) return own;
+  for (const s of walk(lib, collectionId)) {
+    const cover = lib.issues.get(s.issueId)?.cover_path;
+    if (cover) return cover;
+  }
+  return null;
+}

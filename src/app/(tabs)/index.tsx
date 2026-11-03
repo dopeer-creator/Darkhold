@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { activeRoots, issueTitle, nextUp, progress, stats } from '@/domain/library';
+import { activeRoots, coverFor, issueTitle, nextUp, progress, stats } from '@/domain/library';
 import { useStore } from '@/store/store';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
@@ -19,7 +19,7 @@ export default function Home() {
     const issue = lib.issues.get(l.issue_id);
     const parent = lib.parents.get(l.issue_id)?.[0];
     const coll = parent ? lib.collections.get(parent) : undefined;
-    return { id: l.id, issueId: l.issue_id, title: issueTitle(lib, l.issue_id), number: issue?.number ?? '', where: coll ? `${KIND_LABEL[coll.kind][0]}${KIND_LABEL[coll.kind].slice(1).toLowerCase()} · ${coll.title}` : '', parentId: parent, publisher: coll?.publisher ?? null, seriesTitle: issue ? (lib.series.get(issue.series_id)?.title ?? '') : '', day: l.read_on };
+    return { id: l.id, issueId: l.issue_id, title: issueTitle(lib, l.issue_id), number: issue?.number ?? '', where: coll ? `${KIND_LABEL[coll.kind][0]}${KIND_LABEL[coll.kind].slice(1).toLowerCase()} · ${coll.title}` : '', parentId: parent, publisher: coll?.publisher ?? null, seriesTitle: issue ? (lib.series.get(issue.series_id)?.title ?? '') : '', day: l.read_on, cover: issue?.cover_path ?? null };
   });
 
   return (
@@ -66,7 +66,7 @@ export default function Home() {
                 return (
                   <Pressable key={id} onPress={() => router.push(`/collection/${id}`)} style={s.card}>
                     <View style={{ flexDirection: 'row', gap: 12 }}>
-                      <Cover title={c.title} publisher={c.publisher} width={72} />
+                      <Cover title={c.title} publisher={c.publisher} width={72} uri={coverFor(lib, id)} />
                       <View style={{ flex: 1, gap: 4 }}>
                         <Text style={[T.label, { color }]}>{KIND_LABEL[c.kind]}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
                         <Text numberOfLines={2} style={s.cardTitle}>{c.title}</Text>
@@ -109,7 +109,7 @@ export default function Home() {
             <SectionTitle right={<Pressable onPress={() => router.push('/history')} hitSlop={10}><Text style={T.small}>See all</Text></Pressable>}>Recently read</SectionTitle>
             {recent.map((r, i) => (
               <Pressable key={r.id} onPress={() => r.parentId && router.push(`/collection/${r.parentId}`)} style={[s.row, i < recent.length - 1 ? s.rowLine : null]}>
-                <Cover title={r.seriesTitle} publisher={r.publisher} width={36} mark={r.number} />
+                <Cover title={r.seriesTitle} publisher={r.publisher} width={36} mark={r.number} uri={r.cover} />
                 <View style={{ flex: 1 }}>
                   <Text numberOfLines={1} style={T.bodyMedium}>{r.title}</Text>
                   <Text numberOfLines={1} style={T.tiny}>{r.where}</Text>

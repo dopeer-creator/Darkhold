@@ -3,16 +3,19 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { ExportFile } from '@/domain/importer';
 import { planImport } from '@/domain/importer';
-import { buildLibrary, canSlice, cannotNest, positionBetween, type Library } from '@/domain/library';
+import { buildLibrary, canSlice, cannotNest, positionBetween, walk, type Library } from '@/domain/library';
 import type { BlockKind, ResolvedLine } from '@/domain/parser';
 import type { Collection, Entry, Issue, IssueStatus, ReadLog, Series } from '@/domain/types';
 import { COLUMNS, putRow, TABLES, type Table } from './db';
 
 export const newId = () => randomUUID();
-export const today = () => {
+/** A local day as "YYYY-MM-DD": today, or n days ago. */
+export const daysAgo = (n: number) => {
   const d = new Date();
+  d.setDate(d.getDate() - n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+export const today = () => daysAgo(0);
 
 const live = <T>(db: SQLiteDatabase, table: Table) =>
   db.getAllAsync<T>(`SELECT ${COLUMNS[table].join(',')} FROM ${table} WHERE deleted_at IS NULL`);
@@ -40,22 +43,74 @@ async function softDelete(db: SQLiteDatabase, table: Table, id: string) {
   await db.runAsync(`UPDATE ${table} SET deleted_at = ?, updated_at = ?, dirty = 1 WHERE id = ?`, new Date().toISOString(), new Date().toISOString(), id);
 }
 
-/** Ticks or unticks an issue. Reading logs today's date; unticking removes today's log for it. */
-export async function setIssueStatus(db: SQLiteDatabase, lib: Library, issueId: string, status: IssueStatus) {
+/**
+ * When an issue was read: a day ("2026-11-02"), null for "read, date unknown", or undefined for today.
+ * A dated read shows in History on that day; an undated one sits under "Date unknown".
+ */
+export type ReadDate = string | null | undefined;
+
+/** Sets one issue's status (and read date) without opening a transaction. */
+async function applyStatus(db: SQLiteDatabase, issue: Issue, status: IssueStatus, date: ReadDate) {
+  const logs = await db.getAllAsync<{ id: string }>('SELECT id FROM read_log WHERE issue_id = ? AND deleted_at IS NULL ORDER BY read_on DESC', issue.id);
+  if (status !== 'read') {
+    await putRow(db, 'issues', { ...issue, status, completed_at: null, date_precision: 'unknown' });
+    for (const l of logs) await softDelete(db, 'read_log', l.id);
+    return;
+  }
+  const day = date === undefined ? today() : date;
+  await putRow(db, 'issues', { ...issue, status, completed_at: day, date_precision: day ? 'day' : 'unknown' });
+  // One history line per issue: move it to the new day, or drop it when the date is unknown.
+  const [keep, ...extra] = logs;
+  for (const l of extra) await softDelete(db, 'read_log', l.id);
+  if (!day) {
+    if (keep) await softDelete(db, 'read_log', keep.id);
+  } else {
+    await putRow(db, 'read_log', { id: keep?.id ?? newId(), issue_id: issue.id, read_on: day, date_precision: 'day', rating: null, note: null });
+  }
+}
+
+/** Ticks or unticks an issue. Ticking logs today unless a date (or null for "date unknown") is given. */
+export async function setIssueStatus(db: SQLiteDatabase, lib: Library, issueId: string, status: IssueStatus, date?: ReadDate) {
   const issue = lib.issues.get(issueId);
-  if (!issue || issue.status === status) return;
-  const wasRead = issue.status === 'read';
+  if (!issue || (issue.status === status && date === undefined)) return;
+  await db.withTransactionAsync(() => applyStatus(db, issue, status, date));
+}
+
+/** Changes when a read issue was read (null = date unknown). Marks it read if it wasn't. */
+export async function setReadDate(db: SQLiteDatabase, lib: Library, issueId: string, date: string | null) {
+  const issue = lib.issues.get(issueId);
+  if (issue) await db.withTransactionAsync(() => applyStatus(db, issue, 'read', date));
+}
+
+/**
+ * Marks every issue in a collection read with one date choice (or unread). Issues already read keep
+ * their own dates. Returns how many issues changed.
+ */
+export async function markCollection(db: SQLiteDatabase, lib: Library, collectionId: string, status: 'read' | 'unread', date?: ReadDate) {
+  const ids = [...new Set(walk(lib, collectionId).map((s) => s.issueId))];
+  const targets = ids.map((id) => lib.issues.get(id)!).filter((i) => (status === 'read' ? i.status !== 'read' : i.status !== 'unread'));
   await db.withTransactionAsync(async () => {
-    if (status === 'read') {
-      await putRow(db, 'issues', { ...issue, status, completed_at: today(), date_precision: 'day' });
-      await putRow(db, 'read_log', { id: newId(), issue_id: issueId, read_on: today(), date_precision: 'day', rating: null, note: null });
-    } else {
-      await putRow(db, 'issues', { ...issue, status, completed_at: null, date_precision: 'unknown' });
-      if (wasRead) {
-        const logs = await db.getAllAsync<{ id: string }>('SELECT id FROM read_log WHERE issue_id = ? AND read_on = ? AND deleted_at IS NULL', issueId, today());
-        for (const l of logs) await softDelete(db, 'read_log', l.id);
-      }
+    for (const issue of targets) await applyStatus(db, issue, status, date);
+  });
+  return targets.length;
+}
+
+/** Puts a collection's lines in the given order (ids of its entries, first to last). */
+export async function reorderEntries(db: SQLiteDatabase, lib: Library, parentId: string, orderedIds: string[]) {
+  const byId = new Map((lib.children.get(parentId) ?? []).map((e) => [e.id, e]));
+  await db.withTransactionAsync(async () => {
+    for (let k = 0; k < orderedIds.length; k++) {
+      const e = byId.get(orderedIds[k]);
+      const position = (k + 1) * 1024;
+      if (e && e.position !== position) await putRow(db, 'entries', { ...e, position });
     }
+  });
+}
+
+/** Removes several lines at once (e.g. a whole slice block) from a collection. */
+export async function removeEntries(db: SQLiteDatabase, entryIds: string[]) {
+  await db.withTransactionAsync(async () => {
+    for (const id of entryIds) await softDelete(db, 'entries', id);
   });
 }
 

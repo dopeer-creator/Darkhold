@@ -114,7 +114,7 @@ export default function History() {
                 const parent = lib.parents.get(l.issue_id)?.[0];
                 return (
                   <Pressable key={l.id} onPress={() => parent && router.push(`/collection/${parent}`)} style={s.row}>
-                    <Cover title={series?.title ?? ''} publisher={series?.publisher ?? null} width={32} mark={issue.number ?? '?'} />
+                    <Cover title={series?.title ?? ''} publisher={series?.publisher ?? null} width={32} mark={issue.number ?? '?'} uri={issue.cover_path} />
                     <View style={{ flex: 1 }}>
                       <Text style={T.bodyMedium}>{issueTitle(lib, issue.id)}</Text>
                       <Text numberOfLines={1} style={T.tiny}>{[series?.publisher, parent ? lib.collections.get(parent)?.title : null].filter(Boolean).join(' · ')}</Text>
@@ -130,8 +130,8 @@ export default function History() {
               <SectionTitle>Date unknown</SectionTitle>
               <View style={s.row}>
                 <View style={{ flex: 1 }}>
-                  <Text style={T.bodyMedium}>{undated.length} issues read before tracking</Text>
-                  <Text style={T.tiny}>Imported from your earlier tracker</Text>
+                  <Text style={T.bodyMedium}>{undated.length} issue{undated.length === 1 ? "" : "s"} read, no date</Text>
+                  <Text style={T.tiny}>Give one a date on its issue page to see it here by day</Text>
                 </View>
               </View>
             </View>

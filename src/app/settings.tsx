@@ -1,9 +1,11 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { fetchMissingCovers, getComicVineKey, setComicVineKey, testComicVineKey } from '@/lib/comicvine';
 import { supabaseConfigured } from '@/lib/supabase';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
@@ -13,8 +15,49 @@ import { C, F } from '@/ui/theme';
 
 /** Profile and settings: who is signed in, sync, and signing out to switch accounts. */
 export default function Settings() {
-  const { session, sync, syncNow, signOut, lib, readLog } = useStore();
+  const { session, sync, syncNow, signOut, lib, readLog, act } = useStore();
+  const db = useSQLiteContext();
   const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState('');
+  const [savedKey, setSavedKey] = useState<string | null>(null);
+  const [coverStatus, setCoverStatus] = useState('');
+  const [fetching, setFetching] = useState(false);
+  const missing = [...lib.issues.values()].filter((i) => !i.cover_path && i.number != null).length;
+
+  useEffect(() => {
+    getComicVineKey(db).then((k) => setSavedKey(k));
+  }, [db]);
+
+  const saveKey = async () => {
+    const k = key.trim();
+    if (!k) return;
+    setCoverStatus('Checking the key…');
+    try {
+      await testComicVineKey(k);
+      await setComicVineKey(db, k);
+      setSavedKey(k);
+      setKey('');
+      setCoverStatus('Key saved on this phone.');
+    } catch (e) {
+      setCoverStatus(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const findCovers = async () => {
+    if (!savedKey) return;
+    setFetching(true);
+    try {
+      const r = await act((d, l) => fetchMissingCovers(d, l, savedKey, (done, total, title) => setCoverStatus(`Series ${done} of ${total}: ${title}`)));
+      setCoverStatus(
+        `Found ${r.found} cover${r.found === 1 ? '' : 's'}.` +
+          (r.missing ? ` ${r.missing} not found${r.seriesNotFound.length ? ` (no match for: ${r.seriesNotFound.slice(0, 4).join(', ')}${r.seriesNotFound.length > 4 ? '…' : ''})` : ''} — paste links for those on the issue page.` : ''),
+      );
+    } catch (e) {
+      setCoverStatus(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFetching(false);
+    }
+  };
   const email = session?.user.email ?? (supabaseConfigured ? 'Not signed in' : 'Offline preview');
   const lastSync = sync.at ? `${relativeDay(sync.at.slice(0, 10))}, ${new Date(sync.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not yet';
 
@@ -73,6 +116,39 @@ export default function Settings() {
         </View>
 
         <View style={{ gap: 8 }}>
+          <SectionTitle>Covers</SectionTitle>
+          <Text style={T.tiny}>
+            Covers come from Comic Vine with your own free key. Only the links are saved; each picture downloads the first time you see it and then stays cached on this phone.
+          </Text>
+          {savedKey ? (
+            <View style={s.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={T.body}>Comic Vine key saved</Text>
+                <Text style={T.tiny}>{missing} issue{missing === 1 ? '' : 's'} without a cover</Text>
+              </View>
+              {fetching ? (
+                <ActivityIndicator color={C.dim} />
+              ) : (
+                <Pressable accessibilityRole="button" onPress={findCovers} disabled={!missing} style={[s.smallBtn, !missing ? { opacity: 0.4 } : null]}>
+                  <Text style={[T.small, { color: C.text }]}>Find covers</Text>
+                </Pressable>
+              )}
+            </View>
+          ) : (
+            <Pressable onPress={() => Linking.openURL('https://comicvine.gamespot.com/api/')} style={{ minHeight: 32, justifyContent: 'center' }}>
+              <Text style={[T.small, { color: C.dc }]}>Get a free key at comicvine.gamespot.com/api →</Text>
+            </Pressable>
+          )}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TextInput value={key} onChangeText={setKey} placeholder={savedKey ? 'Replace key' : 'Paste your Comic Vine API key'} placeholderTextColor={C.faint} autoCapitalize="none" autoCorrect={false} style={s.input} accessibilityLabel="Comic Vine API key" />
+            <Pressable accessibilityRole="button" onPress={saveKey} disabled={!key.trim()} style={[s.smallBtn, { height: 48 }, !key.trim() ? { opacity: 0.4 } : null]}>
+              <Text style={[T.small, { color: C.text }]}>Save</Text>
+            </Pressable>
+          </View>
+          {coverStatus ? <Text style={T.tiny}>{coverStatus}</Text> : null}
+        </View>
+
+        <View style={{ gap: 8 }}>
           <SectionTitle>Account</SectionTitle>
           {session ? (
             <GhostButton label={busy ? 'Signing out…' : 'Sign out / switch account'} onPress={confirmSignOut} />
@@ -95,5 +171,6 @@ const s = StyleSheet.create({
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontFamily: F.condBold, fontSize: 22, color: C.text },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 14 },
+  input: { flex: 1, minHeight: 48, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, color: C.text, fontFamily: F.sans, fontSize: 15, paddingHorizontal: 14 },
   smallBtn: { height: 36, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center' },
 });

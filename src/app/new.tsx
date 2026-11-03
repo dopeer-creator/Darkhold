@@ -67,6 +67,7 @@ export default function NewCollection() {
             <View style={{ flex: 1 }}><Field label="End year" value={f.end_year?.toString()} onChange={year('end_year')} numeric /></View>
           </View>
           <Field label="Description" value={f.description} onChange={set('description')} multiline />
+          <Field label="Cover image link (optional)" value={f.cover_path} onChange={set('cover_path')} placeholder="Blank = first issue's cover" url />
           <Field label="Notes" value={f.notes} onChange={set('notes')} multiline />
           {error ? <Text style={[T.small, { color: C.indie }]}>{error}</Text> : null}
           <PrimaryButton label={editing ? 'Save' : `Create ${KIND_NAME[kind]}`} onPress={save} />
@@ -76,7 +77,7 @@ export default function NewCollection() {
   );
 }
 
-function Field({ label, value, onChange, placeholder, multiline, numeric, autoFocus }: { label: string; value?: string | null; onChange: (v: string) => void; placeholder?: string; multiline?: boolean; numeric?: boolean; autoFocus?: boolean }) {
+function Field({ label, value, onChange, placeholder, multiline, numeric, autoFocus, url }: { label: string; value?: string | null; onChange: (v: string) => void; placeholder?: string; multiline?: boolean; numeric?: boolean; autoFocus?: boolean; url?: boolean }) {
   return (
     <View style={{ gap: 6 }}>
       <Text style={T.label}>{label.toUpperCase()}</Text>
@@ -86,7 +87,8 @@ function Field({ label, value, onChange, placeholder, multiline, numeric, autoFo
         placeholder={placeholder}
         placeholderTextColor={C.faint}
         multiline={multiline}
-        keyboardType={numeric ? 'number-pad' : 'default'}
+        keyboardType={numeric ? 'number-pad' : url ? 'url' : 'default'}
+        autoCapitalize={url ? 'none' : undefined}
         maxLength={numeric ? 4 : undefined}
         autoFocus={autoFocus}
         accessibilityLabel={label}

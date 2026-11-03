@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { issueTitle, progress } from '@/domain/library';
+import { coverFor, issueTitle, progress } from '@/domain/library';
 import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { SearchIcon } from '@/ui/icons';
@@ -56,7 +56,7 @@ export default function Search() {
             const p = progress(lib, c.id);
             return (
               <Pressable onPress={() => router.push(`/collection/${c.id}`)} style={s.row}>
-                <Cover title={c.title} publisher={c.publisher} width={34} />
+                <Cover title={c.title} publisher={c.publisher} width={34} uri={coverFor(lib, c.id)} />
                 <View style={{ flex: 1 }}>
                   <Text style={T.bodyMedium}>{c.title}</Text>
                   <Text style={T.tiny}>{KIND_LABEL[c.kind]} · {p.total ? `${p.read} / ${p.total}` : 'No issues yet'}</Text>
@@ -68,7 +68,8 @@ export default function Search() {
           const parent = lib.parents.get(issue.id)?.[0];
           const read = issue.status === 'read';
           return (
-            <Pressable onPress={() => parent && router.push(`/collection/${parent}`)} style={s.row}>
+            <Pressable onPress={() => router.push({ pathname: '/issue/[id]', params: { id: issue.id } })} style={s.row}>
+              <Cover title={lib.series.get(issue.series_id)?.title ?? ''} publisher={lib.series.get(issue.series_id)?.publisher ?? null} width={34} mark={issue.number ?? '?'} uri={issue.cover_path} />
               <View style={{ flex: 1 }}>
                 <Text style={[T.body, { color: read ? C.muted : C.text }]}>{issueTitle(lib, issue.id)}</Text>
                 {parent ? <Text numberOfLines={1} style={T.tiny}>In {lib.collections.get(parent)?.title}</Text> : null}
