@@ -195,8 +195,10 @@ export function resolveAgainstLibrary(items: ParsedLine[], lib: Library): Resolv
     const choices = [...(byTitle.get(item.seriesTitle.toLowerCase()) ?? [])].sort(
       (a, b) => (b.volume_year ?? 0) - (a.volume_year ?? 0),
     );
+    // "Final Crisis (2008)" still finds a lone "Final Crisis" saved without a year, so it isn't duplicated.
+    const onlyUndated = choices.length === 1 && choices[0].volume_year == null ? choices[0] : null;
     const series =
-      item.volumeYear != null ? (choices.find((s) => s.volume_year === item.volumeYear) ?? null) : (choices[0] ?? null);
+      item.volumeYear != null ? (choices.find((s) => s.volume_year === item.volumeYear) ?? onlyUndated) : (choices[0] ?? null);
     return {
       ...item,
       choices,

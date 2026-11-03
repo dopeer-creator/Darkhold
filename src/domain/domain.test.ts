@@ -212,6 +212,13 @@ describe('paste parser', () => {
     expect(errors.map((e) => e.line)).toEqual([1, 2, 3]);
   });
 
+  it('reuses a series saved without a year when the paste adds one, instead of duplicating it', () => {
+    const lib = fixture();
+    const [line] = resolveAgainstLibrary(parseReadingList('Blackest Night (2009) #0-1').items, lib);
+    expect(line.series?.id).toBe('bn');
+    expect(line.existing).toEqual(['bn0', 'bn1']);
+  });
+
   it('offers to reuse issues already in the library, newest volume by default', () => {
     const lib = fixture();
     const [line] = resolveAgainstLibrary(parseReadingList('Green Lantern #43-45').items, lib);

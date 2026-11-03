@@ -34,6 +34,11 @@ begin
     end if;
   end if;
   select id into s from series where user_id = u and lower(title) = lower(s_title) and coalesce(volume_year, 0) = coalesce(s_vol, 0) and deleted_at is null limit 1;
+  -- A year in the list still finds a lone same-named series saved without one.
+  if s is null and s_vol is not null then
+    select id into s from series where user_id = u and lower(title) = lower(s_title) and deleted_at is null
+      and volume_year is null and (select count(*) from series x where x.user_id = u and lower(x.title) = lower(s_title) and x.deleted_at is null) = 1;
+  end if;
   if s is null then
     insert into series (id, user_id, title, volume_year, publisher) values (gen_random_uuid(), u, s_title, s_vol, pub) returning id into s;
   end if;
