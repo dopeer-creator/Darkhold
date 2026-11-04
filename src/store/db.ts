@@ -8,12 +8,12 @@ export type Table = (typeof TABLES)[number];
 export const COLUMNS: Record<Table, string[]> = {
   series: ['id', 'title', 'volume_year', 'publisher'],
   issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year'],
-  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'rating', 'notes'],
+  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes'],
   entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'note'],
   read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note'],
 };
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -22,6 +22,8 @@ export async function migrate(db: SQLiteDatabase) {
   if (version < 1) await createTables(db);
   // 2: slices — an issue entry can name the run or event it is a piece of.
   if (version < 2) await db.execAsync('ALTER TABLE entries ADD COLUMN via_collection_id TEXT;');
+  // 3: ongoing runs.
+  if (version < 3) await db.execAsync('ALTER TABLE collections ADD COLUMN ongoing INTEGER NOT NULL DEFAULT 0;');
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
 
@@ -53,6 +55,7 @@ export async function putRow(db: SQLiteDatabase, table: Table, data: object, opt
     if (c === 'dirty') return opts.dirty === false ? 0 : 1;
     if (c === 'updated_at') return (row.updated_at as string) ?? new Date().toISOString();
     const v = row[c];
+    if (v == null && (c === 'on_hold' || c === 'ongoing')) return 0;
     return typeof v === 'boolean' ? (v ? 1 : 0) : (v ?? null);
   });
   await db.runAsync(

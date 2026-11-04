@@ -3,11 +3,12 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { cannotChangeKind } from '@/domain/library';
 import type { Collection, Kind } from '@/domain/types';
-import { createCollection, updateCollection } from '@/store/repo';
+import { changeKind, createCollection, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { CloseIcon } from '@/ui/icons';
-import { Chip, PrimaryButton, T } from '@/ui/parts';
+import { Checkbox, Chip, PrimaryButton, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
 
 const PUBLISHERS = ['DC', 'Marvel', 'Image', 'Dark Horse', 'IDW', 'Boom!'];
@@ -15,10 +16,17 @@ const KIND_NAME: Record<Kind, string> = { crisis: 'crisis', run: 'run', event: '
 
 /** Create a crisis, run or event, or edit one (?edit=<id>). With ?parent=<id> it is linked into that collection. */
 export default function NewCollection() {
+  const { ready } = useStore();
+  // The form copies the collection into its own state once, so wait until the library is loaded.
+  return ready ? <CollectionForm /> : <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} />;
+}
+
+function CollectionForm() {
   const params = useLocalSearchParams<{ kind?: Kind; parent?: string; edit?: string }>();
   const { lib, act } = useStore();
   const editing = params.edit ? lib.collections.get(params.edit) : undefined;
-  const kind: Kind = editing?.kind ?? params.kind ?? 'run';
+  const [kind, setKind] = useState<Kind>(editing?.kind ?? params.kind ?? 'run');
+  const kindProblem = editing ? cannotChangeKind(lib, editing.id, kind) : null;
   const parent = params.parent ? lib.collections.get(params.parent) : undefined;
   const [f, setF] = useState<Partial<Collection>>(editing ?? { publisher: parent?.publisher ?? null });
   const [error, setError] = useState('');
@@ -30,7 +38,13 @@ export default function NewCollection() {
     if (!title) return setError('Give it a name first.');
     const fields = { ...f, title };
     if (editing) {
-      await act((db, l) => updateCollection(db, l, editing.id, fields));
+      if (kindProblem) return setError(kindProblem);
+      const problem = await act(async (db, l) => {
+        const reason = await changeKind(db, l, editing.id, kind);
+        if (!reason) await updateCollection(db, l, editing.id, { ...fields, kind });
+        return reason;
+      });
+      if (problem) return setError(problem);
       router.back();
     } else {
       const id = await act((db, l) => createCollection(db, { ...fields, kind, title }, parent?.id, l));
@@ -49,6 +63,24 @@ export default function NewCollection() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           {parent ? <Text style={T.small}>Goes inside {parent.title}</Text> : null}
+          {editing ? (
+            <View style={{ gap: 8 }}>
+              <Text style={T.label}>TYPE</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {(['crisis', 'run', 'event'] as Kind[]).map((k) => (
+                  <Chip key={k} label={k[0].toUpperCase() + k.slice(1)} active={kind === k} onPress={() => setKind(k)} />
+                ))}
+              </View>
+              {kind !== editing.kind ? (
+                <Text style={[T.tiny, kindProblem ? { color: C.indie } : null]}>
+                  {kindProblem ??
+                    (kind === 'event'
+                      ? 'An event holds issues only.'
+                      : 'Issues that already belong to a run or event get labelled as parts of it. Group the rest with Edit order → Part of.')}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           <Field label="Name" value={f.title} onChange={set('title')} placeholder={kind === 'crisis' ? 'Dark Nights: Metal' : kind === 'run' ? "Scott Snyder's Batman" : 'Blackest Night'} autoFocus={!editing} />
           <View style={{ gap: 8 }}>
             <Text style={T.label}>PUBLISHER</Text>
@@ -62,9 +94,20 @@ export default function NewCollection() {
           {kind !== 'crisis' ? <Field label="Writer" value={f.writer} onChange={set('writer')} /> : null}
           {kind !== 'crisis' ? <Field label="Artist (optional)" value={f.artist} onChange={set('artist')} /> : null}
           <Field label="Main character or team" value={f.characters} onChange={set('characters')} />
-          <View style={{ flexDirection: 'row', gap: 12 }}>
+          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-end' }}>
             <View style={{ flex: 1 }}><Field label="Start year" value={f.start_year?.toString()} onChange={year('start_year')} numeric /></View>
-            <View style={{ flex: 1 }}><Field label="End year" value={f.end_year?.toString()} onChange={year('end_year')} numeric /></View>
+            {f.ongoing ? (
+              <View style={{ flex: 1, minHeight: 48, justifyContent: 'center' }}>
+                <Text style={T.small}>Still coming out</Text>
+              </View>
+            ) : (
+              <View style={{ flex: 1 }}><Field label="End year" value={f.end_year?.toString()} onChange={year('end_year')} numeric /></View>
+            )}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Checkbox checked={!!f.ongoing} label="Ongoing" onPress={() => setF((x) => ({ ...x, ongoing: !x.ongoing, end_year: !x.ongoing ? null : x.end_year }))} />
+            <Text style={T.body}>Ongoing</Text>
+            <Text style={[T.tiny, { flex: 1 }]}> — shows as {f.start_year ?? 'its start year'}–present</Text>
           </View>
           <Field label="Description" value={f.description} onChange={set('description')} multiline />
           <Field label="Cover image link (optional)" value={f.cover_path} onChange={set('cover_path')} placeholder="Blank = first issue's cover" url />

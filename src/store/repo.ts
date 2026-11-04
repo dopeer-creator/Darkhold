@@ -3,9 +3,9 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { ExportFile } from '@/domain/importer';
 import { planImport } from '@/domain/importer';
-import { buildLibrary, canSlice, cannotNest, positionBetween, walk, type Library } from '@/domain/library';
+import { buildLibrary, canSlice, cannotChangeKind, cannotNest, positionBetween, suggestedSlices, walk, type Library } from '@/domain/library';
 import type { BlockKind, ResolvedLine } from '@/domain/parser';
-import type { Collection, Entry, Issue, IssueStatus, ReadLog, Series } from '@/domain/types';
+import type { Collection, Entry, Issue, IssueStatus, Kind, ReadLog, Series } from '@/domain/types';
 import { COLUMNS, putRow, TABLES, type Table } from './db';
 
 export const newId = () => randomUUID();
@@ -29,12 +29,12 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
   const [series, issues, collections, entries, readLog] = await Promise.all([
     live<Series>(db, 'series'),
     live<Issue>(db, 'issues'),
-    live<Collection & { on_hold: number | boolean }>(db, 'collections'),
+    live<Collection & { on_hold: number | boolean; ongoing: number | boolean }>(db, 'collections'),
     live<Entry>(db, 'entries'),
     live<ReadLog>(db, 'read_log'),
   ]);
   return {
-    lib: buildLibrary({ series, issues, collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold })), entries }),
+    lib: buildLibrary({ series, issues, collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold, ongoing: !!c.ongoing })), entries }),
     readLog: readLog.sort((a, b) => (b.read_on ?? '').localeCompare(a.read_on ?? '')),
   };
 }
@@ -122,7 +122,7 @@ export async function updateIssue(db: SQLiteDatabase, lib: Library, issueId: str
 function collectionRow(fields: Pick<Collection, 'kind' | 'title'> & Partial<Collection>): Collection {
   return {
     publisher: null, writer: null, artist: null, characters: null, start_year: null, end_year: null,
-    description: null, cover_path: null, on_hold: false, rating: null, notes: null, ...fields, id: newId(),
+    description: null, cover_path: null, on_hold: false, ongoing: false, rating: null, notes: null, ...fields, id: newId(),
   };
 }
 
@@ -298,4 +298,78 @@ export async function exportFile(db: SQLiteDatabase): Promise<ExportFile> {
 export async function isEmpty(db: SQLiteDatabase) {
   const counts = await Promise.all(TABLES.map((t) => db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t}`)));
   return counts.every((c) => (c?.n ?? 0) === 0);
+}
+
+/**
+ * Changes a collection's kind (event / run / crisis) after checking the layering rules. Turning it
+ * into a crisis or run also labels issues that already belong to a run or event elsewhere as parts
+ * of it. Returns why not, or null when done.
+ */
+export async function changeKind(db: SQLiteDatabase, lib: Library, id: string, kind: Kind) {
+  const reason = cannotChangeKind(lib, id, kind);
+  if (reason) return reason;
+  const c = lib.collections.get(id);
+  if (!c || c.kind === kind) return null;
+  await db.withTransactionAsync(async () => {
+    await putRow(db, 'collections', { ...c, kind });
+    c.kind = kind;
+    if (kind === 'event') return;
+    const byId = new Map((lib.children.get(id) ?? []).map((e) => [e.id, e]));
+    for (const { entryId, via } of suggestedSlices(lib, id)) await putRow(db, 'entries', { ...byId.get(entryId)!, via_collection_id: via });
+  });
+  return null;
+}
+
+/**
+ * Marks lines of a crisis or run as a part of one run or event ("Part of…"), adding the issues to
+ * that run or event if they aren't in it yet. viaId null makes them plain lines again.
+ */
+export async function setPartOf(db: SQLiteDatabase, lib: Library, parentId: string, entryIds: string[], viaId: string | null) {
+  if (viaId && !canSlice(lib, parentId, viaId)) return 'That kind of collection can’t be a part of this one';
+  const byId = new Map((lib.children.get(parentId) ?? []).map((e) => [e.id, e]));
+  await db.withTransactionAsync(async () => {
+    for (const id of entryIds) {
+      const e = byId.get(id);
+      if (!e?.child_issue_id) continue;
+      await putRow(db, 'entries', { ...e, via_collection_id: viaId });
+      if (viaId && !(lib.children.get(viaId) ?? []).some((x) => x.child_issue_id === e.child_issue_id)) {
+        await appendEntry(db, lib, viaId, { child_issue_id: e.child_issue_id });
+      }
+    }
+  });
+  return null;
+}
+
+/** Renames a series or fixes its year, for every issue in it. Forgets its Comic Vine match. */
+export async function updateSeries(db: SQLiteDatabase, lib: Library, seriesId: string, patch: Pick<Series, 'title' | 'volume_year'>) {
+  const s = lib.series.get(seriesId);
+  if (!s) return;
+  await putRow(db, 'series', { ...s, ...patch });
+  await db.runAsync('DELETE FROM meta WHERE key = ?', `cv:volume:${seriesId}`);
+}
+
+/**
+ * Moves one issue to another series (found by title and year, or made), optionally with a new
+ * number. Refuses when that series already has that number — the issue exists there already.
+ * A Comic Vine cover from the old series is dropped so the right one can be found.
+ */
+export async function moveIssue(db: SQLiteDatabase, lib: Library, issueId: string, to: { title: string; volume_year: number | null; number: string }) {
+  const issue = lib.issues.get(issueId);
+  if (!issue) return 'Issue not found';
+  const title = to.title.trim();
+  const number = to.number.trim();
+  if (!title || !number) return 'Give it a series name and a number';
+  const old = lib.series.get(issue.series_id);
+  let target = [...lib.series.values()].find((s) => s.title.toLowerCase() === title.toLowerCase() && (s.volume_year ?? null) === to.volume_year);
+  const clash = target && [...lib.issues.values()].find((i) => i.series_id === target!.id && i.number === number && i.id !== issueId);
+  if (clash) return `${title}${to.volume_year ? ` (${to.volume_year})` : ''} #${number} is already in your library`;
+  await db.withTransactionAsync(async () => {
+    if (!target) {
+      target = { id: newId(), title, volume_year: to.volume_year, publisher: old?.publisher ?? null };
+      await putRow(db, 'series', target);
+    }
+    const moved = target.id !== issue.series_id || number !== issue.number;
+    await putRow(db, 'issues', { ...issue, series_id: target.id, number, cover_path: moved && issue.cover_path?.includes('comicvine') ? null : issue.cover_path });
+  });
+  return null;
 }

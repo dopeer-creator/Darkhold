@@ -18,7 +18,7 @@ export const getComicVineKey = (db: SQLiteDatabase) => getMeta(db, KEY);
 export const setComicVineKey = (db: SQLiteDatabase, key: string) => setMeta(db, KEY, key.trim());
 
 type CvImage = { medium_url?: string; small_url?: string; super_url?: string; original_url?: string };
-type CvVolume = { id: number; name: string; start_year: string | null; count_of_issues: number; publisher?: { name?: string } | null };
+export type CvVolume = { id: number; name: string; start_year: string | null; count_of_issues: number; publisher?: { name?: string } | null };
 type CvIssue = { issue_number: string; image?: CvImage | null };
 
 async function call<T>(key: string, path: string, params: Record<string, string>): Promise<{ results: T; number_of_total_results: number }> {
@@ -39,20 +39,55 @@ export async function testComicVineKey(key: string) {
   await call(key, 'volumes', { limit: '1', field_list: 'id' });
 }
 
-/** The Comic Vine volume for a series: same name, then same start year, then same publisher, then the longest. */
+/**
+ * Picks the right volume among Comic Vine results. Same name is required. With a year (Batman (2016)),
+ * only a volume starting that year counts (a year either side as a last resort) — never another
+ * volume of the same name, so Batman (2016) can't end up with 1940 covers. Without a year, the same
+ * publisher wins, then the longest series.
+ */
+export function chooseVolume(series: Pick<Series, 'title' | 'volume_year' | 'publisher'>, volumes: CvVolume[]): number | null {
+  const same = volumes.filter((v) => norm(v.name) === norm(series.title));
+  const samePublisher = (v: CvVolume) => !!series.publisher && !!v.publisher?.name && norm(v.publisher.name).includes(norm(series.publisher));
+  const best = (list: CvVolume[]) => [...list].sort((a, b) => Number(samePublisher(b)) - Number(samePublisher(a)) || b.count_of_issues - a.count_of_issues)[0]?.id ?? null;
+  if (series.volume_year != null) {
+    const exact = same.filter((v) => Number(v.start_year) === series.volume_year);
+    if (exact.length) return best(exact);
+    return best(same.filter((v) => Math.abs(Number(v.start_year) - series.volume_year!) === 1));
+  }
+  return best(same);
+}
+
+/** The Comic Vine volume for a series. Looks through up to 5 pages when it needs a particular year. */
 export async function findVolume(key: string, series: Series): Promise<number | null> {
-  const { results } = await call<CvVolume[]>(key, 'volumes', {
-    filter: `name:${series.title}`,
-    field_list: 'id,name,start_year,count_of_issues,publisher',
-    sort: 'count_of_issues:desc',
-    limit: '100',
-  });
-  const same = results.filter((v) => norm(v.name) === norm(series.title));
-  if (!same.length) return null;
-  const score = (v: CvVolume) =>
-    (series.volume_year != null && Number(v.start_year) === series.volume_year ? 4 : 0) +
-    (series.publisher && v.publisher?.name && norm(v.publisher.name).includes(norm(series.publisher)) ? 2 : 0);
-  return [...same].sort((a, b) => score(b) - score(a) || b.count_of_issues - a.count_of_issues)[0].id;
+  const seen: CvVolume[] = [];
+  for (let page = 0; page < 5; page++) {
+    const { results, number_of_total_results } = await call<CvVolume[]>(key, 'volumes', {
+      filter: `name:${series.title}`,
+      field_list: 'id,name,start_year,count_of_issues,publisher',
+      sort: 'count_of_issues:desc',
+      limit: '100',
+      offset: String(page * 100),
+    });
+    seen.push(...results);
+    const found = chooseVolume(series, seen);
+    // Without a year the first page already holds the longest series; with one, stop once it is found.
+    if (found != null && (series.volume_year == null || seen.some((v) => v.id === found && Number(v.start_year) === series.volume_year))) return found;
+    if ((page + 1) * 100 >= number_of_total_results || !results.length) return found;
+    await pause();
+  }
+  return chooseVolume(series, seen);
+}
+
+/** Forgets a series' Comic Vine match and the covers it brought, then looks again (after fixing a name or year). */
+export async function rematchSeries(db: SQLiteDatabase, lib: Library, key: string, seriesId: string): Promise<CoverRun> {
+  await setMeta(db, `cv:volume:${seriesId}`, '');
+  for (const issue of lib.issues.values()) {
+    if (issue.series_id === seriesId && issue.cover_path?.includes('comicvine')) {
+      issue.cover_path = null;
+      await putRow(db, 'issues', issue);
+    }
+  }
+  return fetchMissingCovers(db, lib, key, undefined, new Set([seriesId]));
 }
 
 /** Every cover in one volume, by issue number. */
@@ -77,10 +112,16 @@ export interface CoverRun {
 }
 
 /** Fills in covers for issues that have none. Issues with a cover (found or pasted) are left alone. */
-export async function fetchMissingCovers(db: SQLiteDatabase, lib: Library, key: string, onProgress?: (done: number, total: number, title: string) => void): Promise<CoverRun> {
+export async function fetchMissingCovers(
+  db: SQLiteDatabase,
+  lib: Library,
+  key: string,
+  onProgress?: (done: number, total: number, title: string) => void,
+  onlySeries?: Set<string>,
+): Promise<CoverRun> {
   const bySeries = new Map<string, Issue[]>();
   for (const i of lib.issues.values()) {
-    if (i.cover_path || i.number == null) continue;
+    if (i.cover_path || i.number == null || (onlySeries && !onlySeries.has(i.series_id))) continue;
     bySeries.set(i.series_id, [...(bySeries.get(i.series_id) ?? []), i]);
   }
   const run: CoverRun = { found: 0, missing: 0, seriesNotFound: [] };
@@ -115,4 +156,70 @@ export async function fetchMissingCovers(db: SQLiteDatabase, lib: Library, key: 
     }
   }
   return run;
+}
+
+/** A Comic Vine volume as shown in the cover picker. */
+export interface VolumeChoice {
+  id: number;
+  name: string;
+  startYear: number | null;
+  publisher: string | null;
+  issues: number;
+  image: string | null;
+}
+
+type CvVolumeWithImage = CvVolume & { image?: CvImage | null };
+const toChoice = (v: CvVolumeWithImage): VolumeChoice => ({
+  id: v.id,
+  name: v.name,
+  startYear: v.start_year ? Number(v.start_year) : null,
+  publisher: v.publisher?.name ?? null,
+  issues: v.count_of_issues,
+  image: pickImage(v.image),
+});
+
+/**
+ * Free-text volume search with covers, for picking a run or event cover — trade paperbacks and
+ * omnibuses are volumes on Comic Vine too ("Batman by Grant Morrison Omnibus").
+ */
+export async function searchVolumes(key: string, query: string): Promise<VolumeChoice[]> {
+  const { results } = await call<CvVolumeWithImage[]>(key, 'search', {
+    query,
+    resources: 'volume',
+    field_list: 'id,name,start_year,count_of_issues,publisher,image',
+    limit: '40',
+  });
+  return results.map(toChoice);
+}
+
+/** Every Comic Vine volume with a series' exact name, newest first, so the right one can be picked by hand. */
+export async function volumesNamed(key: string, title: string): Promise<VolumeChoice[]> {
+  const { results } = await call<CvVolumeWithImage[]>(key, 'volumes', {
+    filter: `name:${title}`,
+    field_list: 'id,name,start_year,count_of_issues,publisher,image',
+    sort: 'count_of_issues:desc',
+    limit: '100',
+  });
+  return results
+    .filter((v) => norm(v.name) === norm(title))
+    .map(toChoice)
+    .sort((a, b) => (b.startYear ?? 0) - (a.startYear ?? 0));
+}
+
+/**
+ * Uses one Comic Vine volume for a series from now on and pulls its covers. Comic Vine covers from
+ * an earlier match are replaced; links you pasted yourself are kept.
+ */
+export async function applyVolumeToSeries(db: SQLiteDatabase, lib: Library, key: string, seriesId: string, volumeId: number) {
+  await setMeta(db, `cv:volume:${seriesId}`, String(volumeId));
+  const covers = await volumeCovers(key, volumeId);
+  let found = 0;
+  for (const issue of lib.issues.values()) {
+    if (issue.series_id !== seriesId || issue.number == null) continue;
+    if (issue.cover_path && !issue.cover_path.includes('comicvine')) continue;
+    const url = covers.get(issue.number) ?? null;
+    if (url) found++;
+    if (url !== issue.cover_path) await putRow(db, 'issues', { ...issue, cover_path: url });
+  }
+  return found;
 }

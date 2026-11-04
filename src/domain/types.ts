@@ -38,6 +38,8 @@ export interface Collection {
   description: string | null;
   cover_path: string | null;
   on_hold: boolean;
+  /** Still coming out: show "2024–present" rather than an end year. */
+  ongoing: boolean;
   rating: number | null;
   notes: string | null;
 }

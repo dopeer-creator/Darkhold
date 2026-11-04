@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { issueTitle } from '@/domain/library';
 import type { IssueStatus } from '@/domain/types';
 import { findVolume, getComicVineKey, volumeCovers } from '@/lib/comicvine';
-import { daysAgo, removeEntry, setIssueStatus, setReadDate, today, updateIssue } from '@/store/repo';
+import { daysAgo, moveIssue, removeEntry, setIssueStatus, setReadDate, today, updateIssue, updateSeries } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
 import { Chip, Cover, GhostButton, SectionTitle, T } from '@/ui/parts';
@@ -31,6 +31,10 @@ export default function IssueScreen() {
   const [link, setLink] = useState('');
   const [finding, setFinding] = useState('');
   const [hasKey, setHasKey] = useState(false);
+  const startSeries = issue ? lib.series.get(issue.series_id) : undefined;
+  const [editNumber, setEditNumber] = useState(issue?.number ?? '');
+  const [editTitle, setEditTitle] = useState(startSeries?.title ?? '');
+  const [editYear, setEditYear] = useState(startSeries?.volume_year ? String(startSeries.volume_year) : '');
 
   useEffect(() => {
     getComicVineKey(db).then((k) => setHasKey(!!k));
@@ -64,6 +68,23 @@ export default function IssueScreen() {
     if (!/^https?:\/\/\S+$/.test(url)) return Alert.alert('That does not look like an image link', 'Paste a link that starts with http:// or https://');
     await act((d, l) => updateIssue(d, l, issue.id, { cover_path: url }));
     setLink('');
+  };
+  const year = /^\d{4}$/.test(editYear.trim()) ? Number(editYear.trim()) : null;
+  const seriesChanged = !!series && (editTitle.trim() !== series.title || year !== (series.volume_year ?? null));
+  const numberChanged = editNumber.trim() !== (issue.number ?? '');
+  const inSeries = series ? [...lib.issues.values()].filter((i) => i.series_id === series.id).length : 0;
+  const saveThisIssue = async () => {
+    const problem = await act((d, l) => moveIssue(d, l, issue.id, { title: editTitle, volume_year: year, number: editNumber }));
+    if (problem) Alert.alert('Not saved', problem);
+  };
+  const saveWholeSeries = () => {
+    if (!series) return;
+    const clash = [...lib.series.values()].find((x) => x.id !== series.id && x.title.toLowerCase() === editTitle.trim().toLowerCase() && (x.volume_year ?? null) === year);
+    if (clash) return Alert.alert('That series already exists', `Use "Only this issue" to move issues into ${clash.title}${clash.volume_year ? ` (${clash.volume_year})` : ''} one by one.`);
+    Alert.alert(`Change all ${inSeries} issues?`, `${series.title}${series.volume_year ? ` (${series.volume_year})` : ''} becomes ${editTitle.trim()}${year ? ` (${year})` : ''} everywhere.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Change series', onPress: () => act((d, l) => updateSeries(d, l, series.id, { title: editTitle.trim(), volume_year: year })) },
+    ]);
   };
   const findCover = async () => {
     const key = await getComicVineKey(db);
@@ -175,6 +196,34 @@ export default function IssueScreen() {
               <Pressable onPress={() => act((d, l) => updateIssue(d, l, issue.id, { cover_path: null }))} style={{ paddingVertical: 8 }}>
                 <Text style={T.small}>Remove cover</Text>
               </Pressable>
+            ) : null}
+          </View>
+
+          {series && hasKey ? (
+            <Pressable onPress={() => router.push({ pathname: '/covers', params: { series: series.id } })} style={{ paddingVertical: 4 }}>
+              <Text style={[T.small, { color: C.dc }]}>Wrong covers for this series? Pick the right one on Comic Vine →</Text>
+            </Pressable>
+          ) : null}
+
+          <View style={{ gap: 8 }}>
+            <SectionTitle>Edit issue</SectionTitle>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput value={editTitle} onChangeText={setEditTitle} placeholder="Series" placeholderTextColor={C.faint} style={[s.input, { flex: 1 }]} accessibilityLabel="Series name" />
+              <TextInput value={editYear} onChangeText={setEditYear} placeholder="Year" keyboardType="number-pad" maxLength={4} placeholderTextColor={C.faint} style={[s.input, { width: 76 }]} accessibilityLabel="Series start year" />
+              <TextInput value={editNumber} onChangeText={setEditNumber} placeholder="#" placeholderTextColor={C.faint} style={[s.input, { width: 64 }]} accessibilityLabel="Issue number" />
+            </View>
+            <Text style={T.tiny}>The year is when the series started — Batman (2016) and Batman (1940) are different series.</Text>
+            {seriesChanged || numberChanged ? (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Pressable accessibilityRole="button" onPress={saveThisIssue} style={[s.smallBtn, { flex: 1, alignItems: 'center' }]}>
+                  <Text style={[T.small, { color: C.text }]}>Only this issue</Text>
+                </Pressable>
+                {seriesChanged && !numberChanged && inSeries > 1 ? (
+                  <Pressable accessibilityRole="button" onPress={saveWholeSeries} style={[s.smallBtn, { flex: 1, alignItems: 'center' }]}>
+                    <Text style={[T.small, { color: C.text }]}>All {inSeries} in this series</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             ) : null}
           </View>
 

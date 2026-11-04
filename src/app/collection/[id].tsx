@@ -57,13 +57,14 @@ export default function CollectionScreen() {
 
   const color = publisherColor(c.publisher);
   const creators = [c.writer, c.artist].filter(Boolean).join(' & ');
-  const years = c.start_year ? `${c.start_year}${c.end_year && c.end_year !== c.start_year ? `–${c.end_year}` : ''}` : '';
+  const years = c.start_year ? `${c.start_year}${c.ongoing ? '–present' : c.end_year && c.end_year !== c.start_year ? `–${c.end_year}` : ''}` : c.ongoing ? 'Ongoing' : '';
 
   const optionItems: { label: string; go: () => void; danger?: boolean }[] = [
     { label: 'Mark as read…', go: () => router.push({ pathname: '/mark/[id]', params: { id: c.id } }) },
     { label: 'Edit order', go: () => setEditing(true) },
     { label: c.on_hold ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => updateCollection(db, l, c.id, { on_hold: !c.on_hold })) },
-    { label: 'Edit details and cover', go: () => router.push(`/new?edit=${c.id}`) },
+    { label: 'Choose a cover…', go: () => router.push({ pathname: '/covers', params: { collection: c.id } }) },
+    { label: 'Edit details or type', go: () => router.push(`/new?edit=${c.id}`) },
     { label: 'Delete…', go: () => confirmDelete(c), danger: true },
   ];
 
@@ -399,6 +400,7 @@ function EntryList(props: ListProps) {
  * up or down, or picked and placed anywhere in one move. A slice block moves as one piece.
  */
 function ReorderList({ lib, parentId, onMove, onRemove }: { lib: Library; parentId: string; onMove: (ids: string[]) => void; onRemove: (ids: string[], label: string) => void }) {
+  const canGroup = lib.collections.get(parentId)?.kind !== 'event';
   const [picked, setPicked] = useState<number | null>(null);
   const units = entryUnits(lib, parentId);
 
@@ -437,7 +439,11 @@ function ReorderList({ lib, parentId, onMove, onRemove }: { lib: Library; parent
 
   return (
     <View style={{ gap: 8 }}>
-      <Text style={T.tiny}>{picked == null ? 'Tap a piece to pick it up, then tap where it goes. Arrows nudge one step.' : 'Now tap “Place here” where it should go, or tap it again to cancel.'}</Text>
+      <Text style={T.tiny}>
+        {picked == null
+          ? `Tap a piece to pick it up, then tap where it goes. Arrows nudge one step.${canGroup ? ' “Part of…” labels issues as a run’s or event’s part.' : ''}`
+          : 'Now tap “Place here” where it should go, or tap it again to cancel.'}
+      </Text>
       {units.map((u, i) => {
         const l = labelOf(i);
         const isPicked = picked === i;
@@ -450,6 +456,11 @@ function ReorderList({ lib, parentId, onMove, onRemove }: { lib: Library; parent
                 <Text style={T.bodyMedium} numberOfLines={1}>{l.title}</Text>
                 {l.sub ? <Text style={T.tiny} numberOfLines={1}>{l.sub}</Text> : null}
               </Pressable>
+              {canGroup && u.kind !== 'collection' ? (
+                <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${l.title} as part of a run or event`} onPress={() => router.push({ pathname: '/part-of', params: { parent: parentId, entries: u.entryIds.join(',') } })} style={s.partBtn}>
+                  <Text style={[T.tiny, { color: C.text }]}>Part of…</Text>
+                </Pressable>
+              ) : null}
               <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} up`} disabled={i === 0} onPress={() => move(i, i - 1)} style={[s.arrow, i === 0 ? { opacity: 0.25 } : null]}>
                 <ChevronUp size={18} color={C.muted} />
               </Pressable>
@@ -479,6 +490,7 @@ const s = StyleSheet.create({
   optionsMenu: { position: 'absolute', top: 52, right: 12, zIndex: 10, minWidth: 220, marginTop: 0, elevation: 6 },
   doneBtn: { height: 36, paddingHorizontal: 16, borderRadius: 18, backgroundColor: C.text, justifyContent: 'center' },
   reorderRow: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 56, paddingLeft: 12, borderRadius: 12, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
+  partBtn: { height: 32, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center', marginRight: 2 },
   arrow: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   placeHere: { height: 40, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.dc, alignItems: 'center', justifyContent: 'center' },
   menuItem: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8 },

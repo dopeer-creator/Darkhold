@@ -21,7 +21,7 @@ export async function syncNow(db: SQLiteDatabase): Promise<{ pushed: number; pul
     if (!dirty.length) continue;
     const rows = dirty.map((r) => {
       const out: Record<string, unknown> = {};
-      for (const c of COLUMNS[table]) out[c] = c === 'on_hold' ? !!r[c] : r[c];
+      for (const c of COLUMNS[table]) out[c] = c === 'on_hold' || c === 'ongoing' ? !!r[c] : r[c];
       out.deleted_at = r.deleted_at;
       return out;
     });

@@ -52,6 +52,7 @@ const coll = (id: string, kind: Kind, on_hold = false): Collection => ({
   description: null,
   cover_path: null,
   on_hold,
+  ongoing: false,
   rating: null,
   notes: null,
 });

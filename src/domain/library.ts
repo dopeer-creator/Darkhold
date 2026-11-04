@@ -270,3 +270,40 @@ export function coverFor(lib: Library, collectionId: string): string | null {
   }
   return null;
 }
+
+/** Why a collection can't become another kind, or null if it can. */
+export function cannotChangeKind(lib: Library, id: string, kind: Kind): string | null {
+  const c = lib.collections.get(id);
+  if (!c || c.kind === kind) return null;
+  const entries = lib.children.get(id) ?? [];
+  const holders = [...(lib.parents.get(id) ?? []), ...(lib.slicedInto.get(id) ?? [])].map((p) => lib.collections.get(p)).filter((p) => !!p);
+  if (kind === 'event' && entries.some((e) => e.child_collection_id || e.via_collection_id)) {
+    return 'An event holds issues only. Take the runs, events and labelled parts out first.';
+  }
+  if (kind === 'run' && entries.some((e) => (e.child_collection_id && lib.collections.get(e.child_collection_id)?.kind !== 'event') || (e.via_collection_id && lib.collections.get(e.via_collection_id)?.kind !== 'event'))) {
+    return 'A run can hold events and issues only. Take the runs inside it out first.';
+  }
+  if (kind === 'crisis' && holders.length) {
+    return `A crisis can't sit inside another collection. It is inside ${holders.map((h) => h!.title).join(', ')}.`;
+  }
+  if (kind === 'run' && holders.some((h) => h!.kind !== 'crisis')) {
+    return 'A run can only sit inside a crisis.';
+  }
+  return null;
+}
+
+/**
+ * For a crisis or run: issue lines that already belong to a run or event elsewhere, and which one.
+ * Used to turn plain lines into labelled parts, e.g. Batman #21 → part of the Batman (2016) run.
+ * Prefers an event over a run, as it is the more specific story.
+ */
+export function suggestedSlices(lib: Library, id: string): { entryId: string; via: string }[] {
+  const out: { entryId: string; via: string }[] = [];
+  for (const e of lib.children.get(id) ?? []) {
+    if (!e.child_issue_id || e.via_collection_id) continue;
+    const homes = (lib.parents.get(e.child_issue_id) ?? []).filter((p) => p !== id && canSlice(lib, id, p));
+    const pick = homes.find((p) => lib.collections.get(p)?.kind === 'event') ?? homes[0];
+    if (pick) out.push({ entryId: e.id, via: pick });
+  }
+  return out;
+}
