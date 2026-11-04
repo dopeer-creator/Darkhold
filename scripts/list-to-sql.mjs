@@ -2,12 +2,15 @@
 // pasting it into the app would: each "event:"/"run:" part goes into that event or run (made if missing)
 // and is linked into the target as a slice. Series and issues the account already has are reused.
 // Run the output in the Supabase SQL editor.
-// Usage: node scripts/list-to-sql.mjs <list.txt> <target collection id> <user id> <publisher>
+// Usage: node scripts/list-to-sql.mjs <list.txt> <target collection id | "new-crisis:<title>"> <user id> <publisher>
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { parseStructuredList } from '../src/domain/parser.ts';
 
-const [file, targetId, userId, publisher] = process.argv.slice(2);
+const [file, targetArg, userId, publisher] = process.argv.slice(2);
+const newCrisis = targetArg.startsWith('new-crisis:') ? targetArg.slice('new-crisis:'.length) : null;
+const targetId = newCrisis ? randomUUID() : targetArg;
 const list = parseStructuredList(readFileSync(file, 'utf8'));
 if (list.errors.length) throw new Error(JSON.stringify(list.errors));
 
@@ -56,14 +59,20 @@ begin
   end loop;
 end $$;`,
 ];
+if (newCrisis) {
+  out.push(`insert into collections (id, user_id, kind, title, publisher) values (${q(targetId)}, ${q(userId)}, 'crisis', ${q(newCrisis)}, ${q(publisher)});`);
+}
+// One block with the ids held in variables keeps the script short enough to paste.
+out.push('do $do$', `declare u uuid := ${q(userId)}; t uuid := ${q(targetId)};`, 'begin');
 let total = 0;
 for (const block of list.blocks) {
   for (const line of block.items) {
     total += line.numbers.length;
     out.push(
-      `select pg_temp.add_part(${q(userId)}, ${q(targetId)}, ${q(block.kind === 'issue' ? null : block.kind)}, ${q(block.title)}, ${q(line.seriesTitle)}, ${q(line.volumeYear)}, ${numbers(line.numbers)}, ${q(publisher)}, ${q(line.note)});`,
+      `perform pg_temp.add_part(u, t, ${q(block.kind === 'issue' ? null : block.kind)}, ${q(block.title)}, ${q(line.seriesTitle)}, ${q(line.volumeYear)}, ${numbers(line.numbers)}, ${q(publisher)}, ${q(line.note)});`,
     );
   }
 }
+out.push('end $do$;');
 console.log(out.join('\n'));
 console.error(`${list.blocks.length} parts, ${total} issues`);

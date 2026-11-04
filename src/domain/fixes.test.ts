@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { chooseVolume, type CvVolume } from '@/lib/comicvine';
-import { buildLibrary, cannotChangeKind, suggestedSlices } from './library';
+import { buildLibrary, cannotChangeKind, coverFor, suggestedSlices } from './library';
 import type { Collection, Entry, Issue, Kind } from './types';
 
 const vol = (id: number, name: string, start_year: string, count: number, publisher = 'DC Comics'): CvVolume => ({ id, name, start_year, count_of_issues: count, publisher: { name: publisher } });
@@ -57,6 +57,21 @@ function doomsday() {
     ],
   });
 }
+
+describe('crisis cover', () => {
+  it('wears its finale event cover, else the first issue cover', () => {
+    const lib = buildLibrary({
+      series: [],
+      issues: [{ ...issue('f1', 'ff', '570'), cover_path: 'ff.jpg' }, { ...issue('sw1', 'sw', '1'), cover_path: 'sw.jpg' }],
+      collections: [coll('road', 'crisis'), coll('ffrun', 'run'), coll('sw', 'event')],
+      entries: [line('ffrun', { issue: 'f1' }), line('sw', { issue: 'sw1' }), line('road', { issue: 'f1', via: 'ffrun' }), line('road', { issue: 'sw1', via: 'sw' })],
+    });
+    expect(coverFor(lib, 'road')).toBe('sw.jpg');
+    expect(coverFor(lib, 'ffrun')).toBe('ff.jpg');
+    lib.issues.get('sw1')!.cover_path = null;
+    expect(coverFor(lib, 'road')).toBe('ff.jpg');
+  });
+});
 
 describe('changing type', () => {
   it('lets an event of plain issues become a crisis', () => {

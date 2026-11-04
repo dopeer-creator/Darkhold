@@ -262,8 +262,19 @@ export function moveUnit(units: Unit[], from: number, to: number): string[] {
 
 /** A collection's cover: its own, else the first issue in reading order that has one. */
 export function coverFor(lib: Library, collectionId: string): string | null {
-  const own = lib.collections.get(collectionId)?.cover_path;
-  if (own) return own;
+  const c = lib.collections.get(collectionId);
+  if (c?.cover_path) return c.cover_path;
+  // A crisis builds to its finale, so it wears its last event's cover (Secret Wars, Armageddon…).
+  if (c?.kind === 'crisis') {
+    const entries = lib.children.get(collectionId) ?? [];
+    for (let k = entries.length - 1; k >= 0; k--) {
+      const target = lib.collections.get(entries[k].child_collection_id ?? entries[k].via_collection_id ?? '');
+      if (target?.kind !== 'event') continue;
+      const cover = coverFor(lib, target.id);
+      if (cover) return cover;
+      break;
+    }
+  }
   for (const s of walk(lib, collectionId)) {
     const cover = lib.issues.get(s.issueId)?.cover_path;
     if (cover) return cover;

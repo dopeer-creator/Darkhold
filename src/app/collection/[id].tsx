@@ -121,7 +121,10 @@ export default function CollectionScreen() {
       <ScrollView ref={scrollRef} contentContainerStyle={{ paddingBottom: 48 }}>
         <View ref={contentRef} collapsable={false}>
           <View style={s.hero}>
-            <Cover title={c.title} publisher={c.publisher} width={108} uri={coverFor(lib, c.id)} />
+            <Pressable accessibilityRole="button" accessibilityLabel="Choose a cover" onPress={() => router.push({ pathname: '/covers', params: { collection: c.id } })}>
+              <Cover title={c.title} publisher={c.publisher} width={108} uri={coverFor(lib, c.id)} />
+              <Text style={[T.tiny, { textAlign: 'center', marginTop: 4, fontSize: 11 }]}>Change cover</Text>
+            </Pressable>
             <View style={{ flex: 1, gap: 6, paddingTop: 4 }}>
               <Text style={[T.label, { color }]}>{KIND_LABEL[c.kind]}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
               <Text style={s.title}>{c.title}</Text>
