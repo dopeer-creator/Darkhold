@@ -23,6 +23,14 @@ export interface Issue {
   notes: string | null;
   cover_path: string | null;
   pub_year: number | null;
+  /** The story's name, e.g. "I Am Gotham, Part One". */
+  story_title?: string | null;
+  /** Comma-separated names, from Comic Vine or typed in. */
+  writers?: string | null;
+  artists?: string | null;
+  /** "YYYY-MM-DD" as printed on the cover. */
+  cover_date?: string | null;
+  cv_issue_id?: number | null;
 }
 
 export interface Collection {

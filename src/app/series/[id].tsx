@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { issueTitle } from '@/domain/library';
+import { creditsSummary } from '@/domain/credits';
 import { seriesLabel, seriesView } from '@/domain/series';
 import type { Collection, Issue } from '@/domain/types';
 import { setIssueStatus } from '@/store/repo';
@@ -11,6 +12,7 @@ import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight } from '@/ui/icons';
 import { Bar, Checkbox, Cover, SectionTitle, T } from '@/ui/parts';
 import { C, F, KIND_COLOR, KIND_LABEL, publisherColor } from '@/ui/theme';
+import { useFillDetails } from '@/ui/use-fill-details';
 
 /**
  * A series is the publication itself — Batman (2016), every issue in number order — built from the
@@ -21,6 +23,7 @@ export default function SeriesScreen() {
   const { lib, act } = useStore();
   const view = seriesView(lib, id);
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const fill = useFillDetails();
   if (!view) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, padding: 16 }}>
@@ -80,7 +83,7 @@ export default function SeriesScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[r.collection.kind] }]}>{KIND_LABEL[r.collection.kind]}</Text>
                     <Text style={T.bodyMedium}>{r.collection.title}</Text>
-                    <Text style={T.tiny}>{[`#${r.first}${r.last !== r.first ? `–${r.last}` : ''}`, r.collection.writer].filter(Boolean).join(' · ')}</Text>
+                    <Text style={T.tiny}>{[`#${r.first}${r.last !== r.first ? `–${r.last}` : ''}`, r.collection.writer || creditsSummary(lib, r.collection.id).mainWriters.join(', ')].filter(Boolean).join(' · ')}</Text>
                   </View>
                   <Text style={[T.small, T.num]}>{r.read} / {r.count}</Text>
                 </View>
@@ -90,6 +93,16 @@ export default function SeriesScreen() {
           ) : (
             <Text style={T.small}>None of these issues are in a run yet.</Text>
           )}
+          <Pressable accessibilityRole="button" disabled={fill.busy} onPress={() => fill.run(issues.map((r) => r.issue.id))} style={s.fillBtn}>
+            <Text style={[T.small, { color: C.text }]}>{fill.busy ? `Getting details · ${fill.status}` : 'Fill writer & artist details for this series'}</Text>
+          </Pressable>
+          {fill.busy ? (
+            <Pressable accessibilityRole="button" onPress={fill.stop} style={{ alignSelf: 'flex-start', minHeight: 32, justifyContent: 'center' }}>
+              <Text style={T.small}>Stop</Text>
+            </Pressable>
+          ) : fill.status ? (
+            <Text style={T.tiny}>{fill.status}</Text>
+          ) : null}
           {gaps.length ? (
             <Text style={[T.tiny, { lineHeight: 18 }]}>
               Not in your library: {gaps.slice(0, 6).map(([a, b]) => (a === b ? `#${a}` : `#${a}–${b}`)).join(', ')}
@@ -143,5 +156,6 @@ const s = StyleSheet.create({
   hero: { flexDirection: 'row', gap: 16, paddingHorizontal: 16 },
   title: { fontFamily: F.condBold, fontSize: 30, lineHeight: 31, color: C.text },
   card: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 14, gap: 8 },
+  fillBtn: { minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
   issueRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 50, borderTopWidth: 1, borderTopColor: C.divider },
 });

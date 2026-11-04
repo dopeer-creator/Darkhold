@@ -3,13 +3,15 @@ import { useRef, useState, type ComponentRef, type MutableRefObject } from 'reac
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { collectionStatus, coverFor, entryUnits, issueTitle, lastRead, moveUnit, nextUp, progress, type Library } from '@/domain/library';
+import { creditsSummary, splitNames } from '@/domain/credits';
+import { collectionStatus, coverFor, entryUnits, issueTitle, lastRead, moveUnit, nextUp, progress, walk, type Library } from '@/domain/library';
 import type { Collection, Entry } from '@/domain/types';
 import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight, ChevronUp, CloseIcon, MoreIcon, PlusIcon } from '@/ui/icons';
 import { Bar, Checkbox, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
+import { useFillDetails } from '@/ui/use-fill-details';
 import { C, F, KIND_COLOR, KIND_LABEL, publisherColor, STATUS_LABEL } from '@/ui/theme';
 
 const ROW_LIMIT = 8;
@@ -29,6 +31,7 @@ export default function CollectionScreen() {
   const [menu, setMenu] = useState(false);
   const [options, setOptions] = useState(false);
   const [editing, setEditing] = useState(false);
+  const fill = useFillDetails();
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const contentRef = useRef<ComponentRef<typeof View>>(null);
   const nextRowRef = useRef<ComponentRef<typeof View> | null>(null);
@@ -59,7 +62,10 @@ export default function CollectionScreen() {
   const creators = [c.writer, c.artist].filter(Boolean).join(' & ');
   const years = c.start_year ? `${c.start_year}${c.ongoing ? '–present' : c.end_year && c.end_year !== c.start_year ? `–${c.end_year}` : ''}` : c.ongoing ? 'Ongoing' : '';
 
+  const allIssues = [...new Set(walk(lib, c.id).map((st) => st.issueId))];
+  const credits = creditsSummary(lib, c.id);
   const optionItems: { label: string; go: () => void; danger?: boolean }[] = [
+    { label: 'Fill writer & artist details', go: () => fill.run(allIssues, c.id) },
     { label: 'Mark as read…', go: () => router.push({ pathname: '/mark/[id]', params: { id: c.id } }) },
     { label: 'Edit order', go: () => setEditing(true) },
     { label: c.on_hold ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => updateCollection(db, l, c.id, { on_hold: !c.on_hold })) },
@@ -102,6 +108,16 @@ export default function CollectionScreen() {
           ))}
         </View>
       ) : null}
+      {fill.busy || fill.status ? (
+        <View style={s.fillBar}>
+          <Text style={[T.tiny, { flex: 1, color: C.muted }]} numberOfLines={2}>{fill.busy ? `Getting details · ${fill.status}` : fill.status}</Text>
+          {fill.busy ? (
+            <Pressable accessibilityRole="button" onPress={fill.stop} style={{ minHeight: 36, paddingHorizontal: 10, justifyContent: 'center' }}>
+              <Text style={[T.small, { color: C.text }]}>Stop</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       <ScrollView ref={scrollRef} contentContainerStyle={{ paddingBottom: 48 }}>
         <View ref={contentRef} collapsable={false}>
           <View style={s.hero}>
@@ -110,6 +126,13 @@ export default function CollectionScreen() {
               <Text style={[T.label, { color }]}>{KIND_LABEL[c.kind]}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
               <Text style={s.title}>{c.title}</Text>
               {creators || years ? <Text style={T.small}>{[creators, years].filter(Boolean).join(' · ')}</Text> : null}
+              {!creators && credits.mainWriters.length ? <Text style={T.small}>{credits.mainWriters.join(', ')}</Text> : null}
+              {credits.fillIns.length ? (
+                <Text style={T.tiny} numberOfLines={2}>
+                  Fill-ins: {credits.fillIns.slice(0, 3).map((f) => `${f.writers.join(', ')} (#${lib.issues.get(f.issueId)?.number ?? '?'})`).join(' · ')}
+                  {credits.fillIns.length > 3 ? ` · +${credits.fillIns.length - 3} more` : ''}
+                </Text>
+              ) : null}
               <View style={s.pill}><Text style={[T.tiny, { color: C.text }]}>{STATUS_LABEL[status]}</Text></View>
             </View>
           </View>
@@ -183,6 +206,7 @@ export default function CollectionScreen() {
                   lib={lib}
                   parentId={c.id}
                   nextIssueId={next?.issueId}
+                  mainWriters={credits.mainWriters}
                   open={open}
                   setOpen={setOpen}
                   nextRowRef={nextRowRef}
@@ -209,6 +233,8 @@ type ListProps = {
   onNextRowLayout: () => void;
   onToggle: (issueId: string, read: boolean) => void;
   onIssueMenu: (entry: Entry) => void;
+  /** The run's regular writers; issues by someone else show who wrote them. */
+  mainWriters?: string[];
 };
 
 type Row =
@@ -289,6 +315,9 @@ function EntryList(props: ListProps) {
           {isNext ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>{issue.status === 'reading' ? 'READING NOW' : 'NEXT UP'}</Text> : null}
           {read && issue.completed_at ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>Read {relativeDay(issue.completed_at)}</Text> : null}
           {issue.notes && !read ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>{issue.notes}</Text> : null}
+          {issue.writers && props.mainWriters?.length && !splitNames(issue.writers).some((w) => props.mainWriters!.includes(w)) ? (
+            <Text style={[T.tiny, { fontSize: 11, marginTop: 2, color: C.indie }]}>Written by {issue.writers}</Text>
+          ) : null}
         </View>
         <Checkbox checked={read} label={`${read ? 'Mark unread' : 'Mark read'}: ${issueTitle(lib, issue.id)}`} onPress={() => props.onToggle(issue.id, read)} />
       </Pressable>
@@ -490,6 +519,7 @@ const s = StyleSheet.create({
   optionsMenu: { position: 'absolute', top: 52, right: 12, zIndex: 10, minWidth: 220, marginTop: 0, elevation: 6 },
   doneBtn: { height: 36, paddingHorizontal: 16, borderRadius: 18, backgroundColor: C.text, justifyContent: 'center' },
   reorderRow: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 56, paddingLeft: 12, borderRadius: 12, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
+  fillBar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   partBtn: { height: 32, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center', marginRight: 2 },
   arrow: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   placeHere: { height: 40, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.dc, alignItems: 'center', justifyContent: 'center' },

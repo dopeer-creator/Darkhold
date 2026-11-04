@@ -7,24 +7,52 @@ export type Table = (typeof TABLES)[number];
 /** Columns synced for each table (everything except user_id, which Supabase fills in). */
 export const COLUMNS: Record<Table, string[]> = {
   series: ['id', 'title', 'volume_year', 'publisher'],
-  issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year'],
+  issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id'],
   collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes'],
   entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'note'],
   read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note'],
 };
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
+/** Columns added after the first version, by schema version. */
+const ADDED: Record<number, [Table, string, string][]> = {
+  // 2: slices — an issue entry can name the run or event it is a piece of.
+  2: [['entries', 'via_collection_id', 'TEXT']],
+  // 3: ongoing runs.
+  3: [['collections', 'ongoing', 'INTEGER NOT NULL DEFAULT 0']],
+  // 4: credits per issue.
+  4: [
+    ['issues', 'story_title', 'TEXT'],
+    ['issues', 'writers', 'TEXT'],
+    ['issues', 'artists', 'TEXT'],
+    ['issues', 'cover_date', 'TEXT'],
+    ['issues', 'cv_issue_id', 'INTEGER'],
+  ],
+};
+
+/**
+ * Brings the phone's database up to date. Each step only adds columns that are missing and records
+ * its version in the same transaction, so an app closed halfway through simply carries on next time.
+ */
 export async function migrate(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
-  const version = row?.user_version ?? 0;
+  let version = row?.user_version ?? 0;
   if (version >= SCHEMA_VERSION) return;
-  if (version < 1) await createTables(db);
-  // 2: slices — an issue entry can name the run or event it is a piece of.
-  if (version < 2) await db.execAsync('ALTER TABLE entries ADD COLUMN via_collection_id TEXT;');
-  // 3: ongoing runs.
-  if (version < 3) await db.execAsync('ALTER TABLE collections ADD COLUMN ongoing INTEGER NOT NULL DEFAULT 0;');
-  await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  if (version < 1) {
+    await createTables(db);
+    await db.execAsync('PRAGMA user_version = 1');
+    version = 1;
+  }
+  for (let v = version + 1; v <= SCHEMA_VERSION; v++) {
+    await db.withTransactionAsync(async () => {
+      for (const [table, column, type] of ADDED[v] ?? []) {
+        const cols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+        if (!cols.some((c) => c.name === column)) await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type};`);
+      }
+      await db.execAsync(`PRAGMA user_version = ${v}`);
+    });
+  }
 }
 
 async function createTables(db: SQLiteDatabase) {

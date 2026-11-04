@@ -5,13 +5,14 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, Sc
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { issueTitle } from '@/domain/library';
-import type { IssueStatus } from '@/domain/types';
+import type { Issue, IssueStatus } from '@/domain/types';
 import { findVolume, getComicVineKey, volumeCovers } from '@/lib/comicvine';
 import { daysAgo, moveIssue, removeEntry, setIssueStatus, setReadDate, today, updateIssue, updateSeries } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
 import { Chip, Cover, GhostButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
+import { useFillDetails } from '@/ui/use-fill-details';
 import { pickDay } from '@/ui/pick-day';
 import { C, F, KIND_COLOR, KIND_LABEL } from '@/ui/theme';
 
@@ -35,6 +36,7 @@ export default function IssueScreen() {
   const [editNumber, setEditNumber] = useState(issue?.number ?? '');
   const [editTitle, setEditTitle] = useState(startSeries?.title ?? '');
   const [editYear, setEditYear] = useState(startSeries?.volume_year ? String(startSeries.volume_year) : '');
+  const fill = useFillDetails();
 
   useEffect(() => {
     getComicVineKey(db).then((k) => setHasKey(!!k));
@@ -203,6 +205,24 @@ export default function IssueScreen() {
             ) : null}
           </View>
 
+          <View style={{ gap: 8 }}>
+            <SectionTitle
+              right={
+                fill.busy ? (
+                  <ActivityIndicator color={C.dim} />
+                ) : (
+                  <Pressable accessibilityRole="button" onPress={() => fill.run([issue.id], undefined, true)} style={{ minHeight: 36, justifyContent: 'center' }}>
+                    <Text style={[T.small, { color: C.dc }]}>{hasKey ? 'Fill from Comic Vine' : 'Set up Comic Vine'}</Text>
+                  </Pressable>
+                )
+              }>
+              Credits
+            </SectionTitle>
+            <CreditFields key={[issue.writers, issue.artists, issue.story_title].join('|')} issue={issue} />
+            {issue.cover_date ? <Text style={T.tiny}>Cover date {issue.cover_date}</Text> : null}
+            {fill.status ? <Text style={T.tiny}>{fill.status}</Text> : null}
+          </View>
+
           {series && hasKey ? (
             <Pressable onPress={() => router.push({ pathname: '/covers', params: { series: series.id } })} style={{ paddingVertical: 4 }}>
               <Text style={[T.small, { color: C.dc }]}>Wrong covers for this series? Pick the right one on Comic Vine →</Text>
@@ -258,6 +278,37 @@ export default function IssueScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+/** Writer, artist and story name, editable; re-created when they change (e.g. after a Comic Vine fill). */
+function CreditFields({ issue }: { issue: Issue }) {
+  const { act } = useStore();
+  const [credits, setCredits] = useState({ writers: issue.writers ?? '', artists: issue.artists ?? '', story_title: issue.story_title ?? '' });
+  return (
+    <>
+      {([
+        ['writers', 'Writer'],
+        ['artists', 'Artist'],
+        ['story_title', 'Story'],
+      ] as const).map(([k, label]) => (
+        <View key={k} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={[T.label, { width: 52 }]}>{label.toUpperCase()}</Text>
+          <TextInput
+            value={credits[k]}
+            onChangeText={(v) => setCredits((c) => ({ ...c, [k]: v }))}
+            onBlur={() => {
+              const v = credits[k].trim() || null;
+              if ((issue[k] ?? null) !== v) act((d, l) => updateIssue(d, l, issue.id, { [k]: v }));
+            }}
+            placeholder={k === 'story_title' ? 'Story name' : 'Names, comma between'}
+            placeholderTextColor={C.faint}
+            style={[s.input, { flex: 1 }]}
+            accessibilityLabel={label}
+          />
+        </View>
+      ))}
+    </>
   );
 }
 

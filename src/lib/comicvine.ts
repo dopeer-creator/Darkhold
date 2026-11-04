@@ -19,7 +19,7 @@ export const setComicVineKey = (db: SQLiteDatabase, key: string) => setMeta(db, 
 
 type CvImage = { medium_url?: string; small_url?: string; super_url?: string; original_url?: string };
 export type CvVolume = { id: number; name: string; start_year: string | null; count_of_issues: number; publisher?: { name?: string } | null };
-type CvIssue = { issue_number: string; image?: CvImage | null };
+type CvIssue = { id: number; issue_number: string; image?: CvImage | null };
 
 async function call<T>(key: string, path: string, params: Record<string, string>): Promise<{ results: T; number_of_total_results: number }> {
   const query = new URLSearchParams({ api_key: key, format: 'json', ...params }).toString();
@@ -90,18 +90,24 @@ export async function rematchSeries(db: SQLiteDatabase, lib: Library, key: strin
   return fetchMissingCovers(db, lib, key, undefined, new Set([seriesId]));
 }
 
-/** Every cover in one volume, by issue number. */
-export async function volumeCovers(key: string, volumeId: number): Promise<Map<string, string>> {
-  const covers = new Map<string, string>();
+/** Every issue in one volume, by issue number: its Comic Vine id and cover. */
+export async function volumeIndex(key: string, volumeId: number): Promise<Map<string, { id: number; image: string | null }>> {
+  const index = new Map<string, { id: number; image: string | null }>();
   for (let offset = 0; ; offset += 100) {
-    const page = await call<CvIssue[]>(key, 'issues', { filter: `volume:${volumeId}`, field_list: 'issue_number,image', limit: '100', offset: String(offset) });
+    const page = await call<CvIssue[]>(key, 'issues', { filter: `volume:${volumeId}`, field_list: 'id,issue_number,image', limit: '100', offset: String(offset) });
     for (const i of page.results) {
-      const url = pickImage(i.image);
-      if (url && i.issue_number != null) covers.set(String(i.issue_number).trim(), url);
+      if (i.issue_number != null) index.set(String(i.issue_number).trim(), { id: i.id, image: pickImage(i.image) });
     }
     if (offset + 100 >= page.number_of_total_results || !page.results.length) break;
     await pause();
   }
+  return index;
+}
+
+/** Every cover in one volume, by issue number. */
+export async function volumeCovers(key: string, volumeId: number): Promise<Map<string, string>> {
+  const covers = new Map<string, string>();
+  for (const [n, v] of await volumeIndex(key, volumeId)) if (v.image) covers.set(n, v.image);
   return covers;
 }
 
@@ -222,4 +228,95 @@ export async function applyVolumeToSeries(db: SQLiteDatabase, lib: Library, key:
     if (url !== issue.cover_path) await putRow(db, 'issues', { ...issue, cover_path: url });
   }
   return found;
+}
+
+
+type CvCredit = { name: string; role?: string | null };
+type CvIssueDetail = { name?: string | null; cover_date?: string | null; person_credits?: CvCredit[] | null };
+
+/** Comic Vine roles → our two lists. "penciler, inker" counts as art; covers and letters don't. */
+export function splitCredits(credits: CvCredit[]): { writers: string[]; artists: string[] } {
+  const writers: string[] = [];
+  const artists: string[] = [];
+  for (const c of credits) {
+    const roles = (c.role ?? '').toLowerCase().split(',').map((r) => r.trim());
+    if (roles.includes('writer') || roles.includes('plotter') || roles.includes('script')) writers.push(c.name);
+    if (roles.some((r) => r === 'artist' || r === 'penciler' || r === 'penciller')) artists.push(c.name);
+  }
+  return { writers: [...new Set(writers)], artists: [...new Set(artists)] };
+}
+
+/** One issue's story title, cover date and credits. */
+export async function issueCredits(key: string, cvIssueId: number) {
+  const { results } = await call<CvIssueDetail>(key, `issue/4000-${cvIssueId}`, { field_list: 'name,cover_date,person_credits' });
+  const { writers, artists } = splitCredits(results.person_credits ?? []);
+  return {
+    story_title: results.name?.trim() || null,
+    cover_date: results.cover_date && /^\d{4}-\d{2}-\d{2}$/.test(results.cover_date) ? results.cover_date : null,
+    writers: writers.join(', ') || null,
+    artists: artists.join(', ') || null,
+  };
+}
+
+export interface DetailsRun {
+  filled: number;
+  skipped: number;
+  notFound: number;
+  stoppedEarly: string | null;
+}
+
+/**
+ * Fills writer, artist, story title and cover date for the given issues. Issues that already have
+ * a writer are skipped, so it can be run again after a stop. One request per issue, about one a
+ * second — Comic Vine allows roughly 200 an hour, so it stops politely when told to slow down.
+ */
+export async function fillDetails(
+  db: SQLiteDatabase,
+  lib: Library,
+  key: string,
+  issueIds: string[],
+  onProgress?: (done: number, total: number, label: string) => void,
+  shouldStop?: () => boolean,
+  force = false,
+): Promise<DetailsRun> {
+  const todo = issueIds.map((id) => lib.issues.get(id)).filter((i): i is Issue => !!i && i.number != null && (force || !i.writers));
+  const run: DetailsRun = { filled: 0, skipped: issueIds.length - todo.length, notFound: 0, stoppedEarly: null };
+  const indexes = new Map<string, Map<string, { id: number; image: string | null }> | null>();
+  let done = 0;
+  for (const issue of todo) {
+    if (shouldStop?.()) {
+      run.stoppedEarly = 'Stopped';
+      break;
+    }
+    const series = lib.series.get(issue.series_id);
+    onProgress?.(done, todo.length, series ? `${series.title} #${issue.number}` : '');
+    try {
+      let cvId = issue.cv_issue_id ?? null;
+      if (!cvId && series) {
+        if (!indexes.has(series.id)) {
+          const cached = Number(await getMeta(db, `cv:volume:${series.id}`)) || null;
+          const volumeId = cached ?? (await findVolume(key, series));
+          if (volumeId && !cached) await setMeta(db, `cv:volume:${series.id}`, String(volumeId));
+          indexes.set(series.id, volumeId ? await volumeIndex(key, volumeId) : null);
+          await pause();
+        }
+        const entry = indexes.get(series.id)?.get(issue.number!);
+        cvId = entry?.id ?? null;
+        if (entry?.image && !issue.cover_path) issue.cover_path = entry.image;
+      }
+      if (!cvId) {
+        run.notFound++;
+      } else {
+        const details = await issueCredits(key, cvId);
+        await putRow(db, 'issues', { ...issue, ...details, cv_issue_id: cvId, writers: details.writers ?? issue.writers ?? null });
+        run.filled++;
+        await pause();
+      }
+    } catch (e) {
+      run.stoppedEarly = e instanceof Error ? e.message : String(e);
+      break;
+    }
+    done++;
+  }
+  return run;
 }
