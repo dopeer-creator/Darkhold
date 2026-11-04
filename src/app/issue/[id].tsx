@@ -118,7 +118,11 @@ export default function IssueScreen() {
             <Cover title={series?.title ?? title} publisher={series?.publisher ?? null} width={108} mark={issue.number ?? '?'} uri={issue.cover_path} />
             <View style={{ flex: 1, gap: 6, paddingTop: 4 }}>
               <Text style={s.title}>{title}</Text>
-              {series ? <Text style={T.small}>{series.title}{series.volume_year ? ` (${series.volume_year})` : ''}{series.publisher ? ` · ${series.publisher}` : ''}</Text> : null}
+              {series ? (
+                <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/series/[id]', params: { id: series.id } })} hitSlop={6}>
+                  <Text style={[T.small, { color: C.dc }]}>{series.title}{series.volume_year ? ` (${series.volume_year})` : ''}{series.publisher ? ` · ${series.publisher}` : ''} ›</Text>
+                </Pressable>
+              ) : null}
               {issue.label && issue.number == null ? <Text style={T.tiny}>{issue.label}</Text> : null}
             </View>
           </View>

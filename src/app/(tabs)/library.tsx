@@ -4,6 +4,7 @@ import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindow
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { collectionStatus, coverFor, isNested, issueTitle, progress } from '@/domain/library';
+import { seriesLabel } from '@/domain/series';
 import type { Kind } from '@/domain/types';
 import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
@@ -11,11 +12,12 @@ import { PlusIcon, SearchIcon } from '@/ui/icons';
 import { Bar, Checkbox, Chip, Cover, T } from '@/ui/parts';
 import { C, F, KIND_COLOR, KIND_LABEL, publisherColor } from '@/ui/theme';
 
-const TABS: { key: 'all' | Kind | 'issues'; label: string }[] = [
+const TABS: { key: 'all' | Kind | 'series' | 'issues'; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'crisis', label: 'Crises' },
   { key: 'run', label: 'Runs' },
   { key: 'event', label: 'Events' },
+  { key: 'series', label: 'Series' },
   { key: 'issues', label: 'Issues' },
 ];
 const PUBLISHERS = [
@@ -51,6 +53,24 @@ export default function LibraryScreen() {
       .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id) }))
       .sort((a, b) => rank(a.st) - rank(b.st) || a.c.title.localeCompare(b.c.title));
   }, [lib, tab, query, pub, status]);
+
+  const seriesRows = useMemo(() => {
+    if (tab !== 'series') return [];
+    const q = query.trim().toLowerCase();
+    const pubTest = PUBLISHERS.find((p) => p.key === pub)?.test;
+    const stats = new Map<string, { read: number; total: number; cover: string | null }>();
+    for (const i of lib.issues.values()) {
+      const st = stats.get(i.series_id) ?? { read: 0, total: 0, cover: null };
+      st.total++;
+      if (i.status === 'read') st.read++;
+      st.cover ??= i.cover_path;
+      stats.set(i.series_id, st);
+    }
+    return [...lib.series.values()]
+      .filter((x) => stats.has(x.id) && (!q || seriesLabel(x).toLowerCase().includes(q)) && (!pubTest || pubTest(x.publisher)))
+      .map((x) => ({ s: x, ...stats.get(x.id)! }))
+      .sort((a, b) => a.s.title.localeCompare(b.s.title) || (a.s.volume_year ?? 0) - (b.s.volume_year ?? 0));
+  }, [lib, tab, query, pub]);
 
   const issues = useMemo(() => {
     if (tab !== 'issues') return [];
@@ -89,7 +109,25 @@ export default function LibraryScreen() {
         </ScrollView>
       </View>
 
-      {tab === 'issues' ? (
+      {tab === 'series' ? (
+        <FlatList
+          key="series"
+          data={seriesRows}
+          keyExtractor={(x) => x.s.id}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+          ListEmptyComponent={<Text style={[T.small, { paddingTop: 24 }]}>No series match.</Text>}
+          renderItem={({ item }) => (
+            <Pressable onPress={() => router.push({ pathname: '/series/[id]', params: { id: item.s.id } })} style={s.seriesRow}>
+              <Cover title={item.s.title} publisher={item.s.publisher} width={40} uri={item.cover} />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={T.bodyMedium} numberOfLines={1}>{seriesLabel(item.s)}</Text>
+                <Bar read={item.read} total={item.total} color={publisherColor(item.s.publisher)} height={3} />
+              </View>
+              <Text style={[T.small, T.num]}>{item.read} / {item.total}</Text>
+            </Pressable>
+          )}
+        />
+      ) : tab === 'issues' ? (
         <FlatList
           key="issues"
           data={issues}
@@ -152,6 +190,7 @@ const s = StyleSheet.create({
   tab: { paddingVertical: 10, marginBottom: -1 },
   tabOn: { borderBottomWidth: 2, borderBottomColor: C.text },
   tabText: { fontFamily: F.sans, fontSize: 14, color: C.dim },
+  seriesRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, borderBottomWidth: 1, borderBottomColor: C.divider },
   issueRow: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderBottomWidth: 1, borderBottomColor: C.divider },
   newTile: { borderRadius: 8, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center', gap: 6 },
 });

@@ -4,13 +4,14 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { coverFor, issueTitle, progress } from '@/domain/library';
+import { seriesLabel } from '@/domain/series';
 import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { SearchIcon } from '@/ui/icons';
 import { Checkbox, Cover, T } from '@/ui/parts';
 import { C, F, KIND_LABEL } from '@/ui/theme';
 
-type Hit = { type: 'collection'; id: string } | { type: 'issue'; id: string };
+type Hit = { type: 'collection'; id: string } | { type: 'series'; id: string } | { type: 'issue'; id: string };
 
 /** One box for everything: crises, runs, events, series, issue numbers ("green lantern 63"), writers, characters. */
 export default function Search() {
@@ -32,7 +33,10 @@ export default function Search() {
       })
       .slice(0, 100)
       .map((i) => ({ type: 'issue', id: i.id }));
-    return [...colls, ...issues];
+    const series: Hit[] = [...lib.series.values()]
+      .filter((x) => match(`${x.title} ${x.volume_year ?? ''} ${x.publisher ?? ''}`.toLowerCase()) && [...lib.issues.values()].some((i) => i.series_id === x.id))
+      .map((x) => ({ type: 'series', id: x.id }));
+    return [...colls, ...series, ...issues];
   }, [q, lib]);
 
   return (
@@ -60,6 +64,19 @@ export default function Search() {
                 <View style={{ flex: 1 }}>
                   <Text style={T.bodyMedium}>{c.title}</Text>
                   <Text style={T.tiny}>{KIND_LABEL[c.kind]} · {p.total ? `${p.read} / ${p.total}` : 'No issues yet'}</Text>
+                </View>
+              </Pressable>
+            );
+          }
+          if (item.type === 'series') {
+            const x = lib.series.get(item.id)!;
+            const list = [...lib.issues.values()].filter((i) => i.series_id === x.id);
+            return (
+              <Pressable onPress={() => router.push({ pathname: '/series/[id]', params: { id: x.id } })} style={s.row}>
+                <Cover title={x.title} publisher={x.publisher} width={34} uri={list.find((i) => i.cover_path)?.cover_path} />
+                <View style={{ flex: 1 }}>
+                  <Text style={T.bodyMedium}>{seriesLabel(x)}</Text>
+                  <Text style={T.tiny}>SERIES · {list.filter((i) => i.status === 'read').length} / {list.length}</Text>
                 </View>
               </Pressable>
             );

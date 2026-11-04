@@ -40,6 +40,7 @@ export default function RootLayout() {
             <Stack.Screen name="issue/[id]" />
             <Stack.Screen name="mark/[id]" options={{ presentation: 'modal' }} />
             <Stack.Screen name="covers" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="series/[id]" />
             <Stack.Screen name="part-of" options={{ presentation: 'modal' }} />
           </Stack>
         </StoreProvider>
