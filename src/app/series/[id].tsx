@@ -53,7 +53,10 @@ export default function SeriesScreen() {
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: 48 }}>
         <View style={s.hero}>
-          <Cover title={series.title} publisher={series.publisher} width={96} uri={cover} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Change covers for this series" onPress={() => router.push({ pathname: '/covers', params: { series: series.id } })}>
+            <Cover title={series.title} publisher={series.publisher} width={96} uri={cover} />
+            <Text style={[T.tiny, { textAlign: 'center', marginTop: 4, fontSize: 11 }]}>Change cover</Text>
+          </Pressable>
           <View style={{ flex: 1, gap: 6, paddingTop: 4 }}>
             <Text style={[T.label, { color }]}>SERIES{series.publisher ? ` · ${series.publisher.toUpperCase()}` : ''}</Text>
             <Text style={s.title}>{seriesLabel(series)}</Text>

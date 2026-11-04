@@ -107,6 +107,16 @@ export default function IssueScreen() {
     }
   };
 
+  /** Tapping the cover: look this issue up, or choose the right Comic Vine series for every issue in it. */
+  const changeCover = () => {
+    if (!hasKey) return router.push('/settings');
+    Alert.alert('Change cover', 'You can also paste an image link under Cover, further down.', [
+      { text: 'Cancel', style: 'cancel' },
+      ...(series ? [{ text: 'Pick the series', onPress: () => router.push({ pathname: '/covers', params: { series: series.id } }) }] : []),
+      { text: 'Find this issue', onPress: findCover },
+    ]);
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
       <View style={s.top}>
@@ -117,7 +127,10 @@ export default function IssueScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 22, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
           <View style={{ flexDirection: 'row', gap: 16 }}>
-            <Cover title={series?.title ?? title} publisher={series?.publisher ?? null} width={108} mark={issue.number ?? '?'} uri={issue.cover_path} />
+            <Pressable accessibilityRole="button" accessibilityLabel="Change cover" onPress={changeCover}>
+              <Cover title={series?.title ?? title} publisher={series?.publisher ?? null} width={108} mark={issue.number ?? '?'} uri={issue.cover_path} />
+              <Text style={[T.tiny, { textAlign: 'center', marginTop: 4, fontSize: 11 }]}>Change cover</Text>
+            </Pressable>
             <View style={{ flex: 1, gap: 6, paddingTop: 4 }}>
               <Text style={s.title}>{title}</Text>
               {series ? (
