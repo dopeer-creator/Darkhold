@@ -50,7 +50,7 @@ export function tintFor(title: string) {
   return TINTS[h % TINTS.length];
 }
 
-export const KIND_LABEL = { crisis: 'CRISIS', run: 'RUN', event: 'EVENT', issue: 'ISSUE' } as const;
+export const KIND_LABEL = { crisis: 'CRISIS', run: 'RUN', event: 'EVENT', issue: 'ISSUE', heading: 'CHAPTER' } as const;
 /** Label colour by type, so a crisis reading order reads at a glance: events red, runs blue. */
-export const KIND_COLOR = { crisis: '#D9A441', run: '#6F9BF2', event: '#E5626A', issue: '#A6A3AD' } as const;
+export const KIND_COLOR = { crisis: '#D9A441', run: '#6F9BF2', event: '#E5626A', issue: '#A6A3AD', heading: '#ECEAE5' } as const;
 export const STATUS_LABEL = { not_started: 'Not started', reading: 'Reading', on_hold: 'On hold', completed: 'Completed' } as const;

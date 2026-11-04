@@ -4,7 +4,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { creditsSummary, splitNames } from '@/domain/credits';
-import { collectionStatus, coverFor, entryUnits, issueTitle, lastRead, moveUnit, nextUp, progress, walk, type Library } from '@/domain/library';
+import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, progress, walk, type Library } from '@/domain/library';
 import type { Collection, Entry } from '@/domain/types';
 import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
@@ -87,6 +87,7 @@ export default function CollectionScreen() {
     ...(c.kind !== 'event' ? [{ label: `New event in this ${c.kind}`, go: () => router.push(`/new?kind=event&parent=${c.id}`) }] : []),
     ...(c.kind !== 'event' ? [{ label: c.kind === 'crisis' ? 'Link an existing run or event' : 'Link an existing event', go: () => router.push(`/link?parent=${c.id}`) }] : []),
     { label: 'Add issues', go: () => router.push(`/add-issues?parent=${c.id}`) },
+    { label: 'Add a chapter heading', go: () => router.push({ pathname: '/heading', params: { parent: c.id } }) },
   ];
 
   return (
@@ -244,7 +245,8 @@ type Row =
   | { kind: 'issue'; entry: Entry }
   | { kind: 'group'; key: string; label: string; count: number }
   | { kind: 'collection'; entry: Entry }
-  | { kind: 'slice'; key: string; via: string | null; entries: Entry[]; continued: boolean };
+  | { kind: 'slice'; key: string; via: string | null; entries: Entry[]; continued: boolean }
+  | { kind: 'heading'; entry: Entry };
 
 /**
  * Issues and inner collections in order. Three or more read issues of one series in a row fold into one line.
@@ -254,21 +256,35 @@ function EntryList(props: ListProps) {
   const { lib, parentId, nextIssueId, open, setOpen } = props;
   const [unfolded, setUnfolded] = useState<Record<string, boolean>>({});
   const [showAll, setShowAll] = useState(false);
+  const [folded, setFolded] = useState<Record<string, boolean>>({});
   const entries = lib.children.get(parentId) ?? [];
   const viaOf = (e: Entry) => (e.via_collection_id && lib.collections.has(e.via_collection_id) ? e.via_collection_id : null);
   const hasSlices = entries.some((e) => viaOf(e));
 
   const rows: Row[] = [];
+  const sectionOf = new Map<Row, string>();
   const seenVia = new Set<string>();
+  let section = '';
   for (let i = 0; i < entries.length; ) {
     const e = entries[i];
+    if (e.heading) {
+      section = e.id;
+      rows.push({ kind: 'heading', entry: e });
+      i++;
+      continue;
+    }
     const via = viaOf(e);
+    const before = rows.length;
+    const mark = () => rows.slice(before).forEach((r) => sectionOf.set(r, section));
     if (hasSlices && e.child_issue_id) {
       let j = i;
       while (j < entries.length && entries[j].child_issue_id && viaOf(entries[j]) === via) j++;
-      rows.push({ kind: 'slice', key: `slice:${e.id}`, via, entries: entries.slice(i, j), continued: !!via && seenVia.has(via) });
+      let end = i;
+      while (end < j && !entries[end].heading) end++;
+      rows.push({ kind: 'slice', key: `slice:${e.id}`, via, entries: entries.slice(i, end), continued: !!via && seenVia.has(via) });
       if (via) seenVia.add(via);
-      i = j;
+      mark();
+      i = end;
       continue;
     }
     const issue = e.child_issue_id ? lib.issues.get(e.child_issue_id) : undefined;
@@ -283,22 +299,30 @@ function EntryList(props: ListProps) {
       if (j - i >= 3 && !unfolded[key]) {
         const lastIssue = lib.issues.get(entries[j - 1].child_issue_id!)!;
         rows.push({ kind: 'group', key, label: `${issueTitle(lib, issue.id)}–${lastIssue.number ?? ''}`, count: j - i });
+        mark();
         i = j;
         continue;
       }
     }
     if (e.child_issue_id && issue) rows.push({ kind: 'issue', entry: e });
     else if (e.child_collection_id && lib.collections.has(e.child_collection_id)) rows.push({ kind: 'collection', entry: e });
+    mark();
     i++;
   }
 
+  // Chapter headings fold their section. The section holding the next issue starts open, others closed.
+  const sections = headingSections(lib, parentId);
+  const nextSection = [...sections.entries()].find(([, sec]) => !!nextIssueId && sec.issueIds.has(nextIssueId))?.[0];
+  const isFolded = (id: string) => folded[id] ?? (!!nextSection && id !== nextSection);
+  const inView = rows.filter((r) => r.kind === 'heading' || !sectionOf.get(r) || !isFolded(sectionOf.get(r)!));
+
   // Long issue lists are cut short (blocks, events and runs always show), keeping the next issue in view.
-  const issueRows = rows.filter((r) => r.kind === 'issue' || r.kind === 'group');
+  const issueRows = inView.filter((r) => r.kind === 'issue' || r.kind === 'group');
   const nextIndex = issueRows.findIndex((r) => r.kind === 'issue' && r.entry.child_issue_id === nextIssueId);
   const limit = Math.max(ROW_LIMIT, nextIndex + 4);
   let shown = 0;
-  const visible = showAll ? rows : rows.filter((r) => (r.kind !== 'issue' && r.kind !== 'group') || ++shown <= limit);
-  const hidden = rows.length - visible.length;
+  const visible = showAll ? inView : inView.filter((r) => (r.kind !== 'issue' && r.kind !== 'group') || ++shown <= limit);
+  const hidden = inView.length - visible.length;
 
   const renderIssue = (entry: Entry) => {
     const issue = lib.issues.get(entry.child_issue_id!);
@@ -345,8 +369,32 @@ function EntryList(props: ListProps) {
   );
 
   return (
-    <View style={{ gap: rows.some((r) => r.kind === 'collection' || r.kind === 'slice') ? 10 : 0 }}>
+    <View style={{ gap: rows.some((r) => r.kind === 'collection' || r.kind === 'slice' || r.kind === 'heading') ? 10 : 0 }}>
       {visible.map((r) => {
+        if (r.kind === 'heading') {
+          const sec = sections.get(r.entry.id);
+          const isOpen = !isFolded(r.entry.id);
+          return (
+            <Pressable
+              key={r.entry.id}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: isOpen }}
+              onPress={() => setFolded((f) => ({ ...f, [r.entry.id]: isOpen }))}
+              style={s.heading}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {isOpen ? <ChevronDown color={C.text} /> : <ChevronRight color={C.text} />}
+                <Text style={s.headingText} numberOfLines={2}>{r.entry.heading}</Text>
+                {sec?.total ? <Text style={[T.small, T.num]}>{sec.read} / {sec.total}</Text> : null}
+              </View>
+              {r.entry.note ? <Text style={[T.tiny, { marginLeft: 24 }]}>{r.entry.note}</Text> : null}
+              {sec?.total ? (
+                <View style={{ marginLeft: 24 }}>
+                  <Bar read={sec.read} total={sec.total} color={C.text} height={2} />
+                </View>
+              ) : null}
+            </Pressable>
+          );
+        }
         if (r.kind === 'group') {
           return (
             <Pressable key={r.key} onPress={() => setUnfolded((u) => ({ ...u, [r.key]: true }))} style={s.group}>
@@ -439,6 +487,9 @@ function ReorderList({ lib, parentId, onMove, onRemove }: { lib: Library; parent
   const labelOf = (i: number) => {
     const u = units[i];
     const first = lib.children.get(parentId)?.find((e) => e.id === u.entryIds[0]);
+    if (u.kind === 'heading') {
+      return { tag: KIND_LABEL.heading, color: KIND_COLOR.heading, title: first?.heading ?? '', sub: first?.note ?? '' };
+    }
     if (u.kind === 'collection') {
       const col = lib.collections.get(u.collectionId!)!;
       return { tag: KIND_LABEL[col.kind], color: KIND_COLOR[col.kind], title: col.title, sub: '' };
@@ -488,7 +539,12 @@ function ReorderList({ lib, parentId, onMove, onRemove }: { lib: Library; parent
                 <Text style={T.bodyMedium} numberOfLines={1}>{l.title}</Text>
                 {l.sub ? <Text style={T.tiny} numberOfLines={1}>{l.sub}</Text> : null}
               </Pressable>
-              {canGroup && u.kind !== 'collection' ? (
+              {u.kind === 'heading' ? (
+                <Pressable accessibilityRole="button" accessibilityLabel={`Rename ${l.title}`} onPress={() => router.push({ pathname: '/heading', params: { parent: parentId, entry: u.entryIds[0] } })} style={s.partBtn}>
+                  <Text style={[T.tiny, { color: C.text }]}>Rename</Text>
+                </Pressable>
+              ) : null}
+              {canGroup && u.kind !== 'collection' && u.kind !== 'heading' ? (
                 <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${l.title} as part of a run or event`} onPress={() => router.push({ pathname: '/part-of', params: { parent: parentId, entries: u.entryIds.join(',') } })} style={s.partBtn}>
                   <Text style={[T.tiny, { color: C.text }]}>Part of…</Text>
                 </Pressable>
@@ -523,6 +579,8 @@ const s = StyleSheet.create({
   doneBtn: { height: 36, paddingHorizontal: 16, borderRadius: 18, backgroundColor: C.text, justifyContent: 'center' },
   reorderRow: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 56, paddingLeft: 12, borderRadius: 12, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
   fillBar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  heading: { paddingTop: 10, paddingBottom: 4, gap: 6 },
+  headingText: { flex: 1, fontFamily: F.condBold, fontSize: 18, letterSpacing: 0.6, textTransform: 'uppercase', color: C.text },
   partBtn: { height: 32, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center', marginRight: 2 },
   arrow: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   placeHere: { height: 40, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.dc, alignItems: 'center', justifyContent: 'center' },

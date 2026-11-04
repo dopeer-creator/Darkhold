@@ -31,7 +31,8 @@ export function buildLibrary(rows: {
     const list = children.get(e.parent_id) ?? [];
     list.push(e);
     children.set(e.parent_id, list);
-    add(parents, e.child_issue_id ?? e.child_collection_id!, e.parent_id);
+    const child = e.child_issue_id ?? e.child_collection_id;
+    if (child) add(parents, child, e.parent_id);
     if (e.via_collection_id) add(slicedInto, e.via_collection_id, e.parent_id);
   }
   for (const list of children.values()) list.sort((a, b) => a.position - b.position);
@@ -227,7 +228,7 @@ export function positionBetween(before: number | null, after: number | null): nu
 export interface Unit {
   key: string;
   entryIds: string[];
-  kind: 'collection' | 'issue' | 'slice';
+  kind: 'collection' | 'issue' | 'slice' | 'heading';
   /** The inner collection, or the run/event a slice belongs to. */
   collectionId: string | null;
 }
@@ -237,6 +238,10 @@ export function entryUnits(lib: Library, parentId: string): Unit[] {
   const entries = lib.children.get(parentId) ?? [];
   const units: Unit[] = [];
   for (const e of entries) {
+    if (e.heading) {
+      units.push({ key: e.id, entryIds: [e.id], kind: 'heading', collectionId: null });
+      continue;
+    }
     const via = e.via_collection_id && lib.collections.has(e.via_collection_id) ? e.via_collection_id : null;
     const last = units[units.length - 1];
     if (via && last?.kind === 'slice' && last.collectionId === via) {
@@ -315,6 +320,28 @@ export function suggestedSlices(lib: Library, id: string): { entryId: string; vi
     const homes = (lib.parents.get(e.child_issue_id) ?? []).filter((p) => p !== id && canSlice(lib, id, p));
     const pick = homes.find((p) => lib.collections.get(p)?.kind === 'event') ?? homes[0];
     if (pick) out.push({ entryId: e.id, via: pick });
+  }
+  return out;
+}
+
+/** Progress of each chapter heading's section: the lines after it, up to the next heading. */
+export function headingSections(lib: Library, parentId: string): Map<string, { read: number; total: number; issueIds: Set<string> }> {
+  const out = new Map<string, { read: number; total: number; issueIds: Set<string> }>();
+  let current: { read: number; total: number; issueIds: Set<string> } | null = null;
+  for (const e of lib.children.get(parentId) ?? []) {
+    if (e.heading) {
+      current = { read: 0, total: 0, issueIds: new Set() };
+      out.set(e.id, current);
+      continue;
+    }
+    if (!current) continue;
+    const ids = e.child_issue_id ? [e.child_issue_id] : e.child_collection_id ? walk(lib, e.child_collection_id).map((s) => s.issueId) : [];
+    for (const id of ids) {
+      if (current.issueIds.has(id) || !lib.issues.has(id)) continue;
+      current.issueIds.add(id);
+      current.total++;
+      if (lib.issues.get(id)!.status === 'read') current.read++;
+    }
   }
   return out;
 }

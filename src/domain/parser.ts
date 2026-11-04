@@ -92,7 +92,7 @@ export function parseReadingList(text: string): { items: ParsedLine[]; errors: P
   return { items, errors };
 }
 
-export type BlockKind = 'run' | 'event' | 'issue';
+export type BlockKind = 'run' | 'event' | 'issue' | 'heading';
 
 /** One labelled part of a structured list: "run: Captain America by Chip Zdarsky (continued)". */
 export interface ListBlock {
@@ -112,7 +112,7 @@ export interface StructuredList {
   hasHeaders: boolean;
 }
 
-const HEADER = /^\s*(?:[-*•·]\s*)?(crisis(?:\s+reading\s+list)?|run|event|issues?|one-?shots?)\s*:\s*(.*?)\s*$/i;
+const HEADER = /^\s*(?:[-*•·]\s*)?(crisis(?:\s+reading\s+list)?|run|event|issues?|one-?shots?|chapter|phase|section|heading)\s*:\s*(.*?)\s*$/i;
 const SMALL_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'vs', 'vs.']);
 
 /** "captain america by chip zdarsky" → "Captain America by Chip Zdarsky"; words already capitalised stay. */
@@ -151,6 +151,13 @@ export function parseStructuredList(text: string): StructuredList {
         current = null;
         return;
       }
+      if (['chapter', 'phase', 'section', 'heading'].includes(word)) {
+        // A chapter heading line ("phase: 2 · The Incursions"). Issues after it need their own part header.
+        const label = header[2].replace(/:\s*$/, '').trim();
+        if (label) out.blocks.push({ kind: 'heading', title: word === 'phase' && !/^phase\b/i.test(label) ? `Phase ${label}` : label, continued: false, items: [] });
+        current = null;
+        return;
+      }
       const kind: BlockKind = word.startsWith('run') ? 'run' : word.startsWith('event') ? 'event' : 'issue';
       current = { kind, title: kind === 'issue' || !name ? null : titleCase(name), continued, items: [] };
       out.blocks.push(current);
@@ -168,7 +175,7 @@ export function parseStructuredList(text: string): StructuredList {
     }
     current.items.push(r);
   });
-  out.blocks = out.blocks.filter((b) => b.items.length);
+  out.blocks = out.blocks.filter((b) => b.items.length || b.kind === 'heading');
   return out;
 }
 

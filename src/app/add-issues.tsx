@@ -109,7 +109,7 @@ export default function AddIssues() {
                       {b.title ?? (b.lines.length === 1 ? 'Single issue' : 'Single issues')}
                       {b.continued ? <Text style={T.small}> (continued)</Text> : null}
                     </Text>
-                    {b.title ? <Text style={T.tiny}>{findCollection(lib, b.kind, b.title) ? 'in library' : 'new'}</Text> : null}
+                    {b.title && b.kind !== 'heading' ? <Text style={T.tiny}>{findCollection(lib, b.kind, b.title) ? 'in library' : 'new'}</Text> : null}
                   </View>
                 ) : null}
                 {b.lines.map((l, i) => {

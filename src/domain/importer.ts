@@ -92,8 +92,9 @@ export function planImport(lib: Library, file: ExportFile, newId: () => string):
     const parent_id = collMap.get(e.parent_id);
     const child_issue_id = e.child_issue_id ? issueMap.get(e.child_issue_id) : null;
     const child_collection_id = e.child_collection_id ? collMap.get(e.child_collection_id) : null;
-    if (!parent_id || (!child_issue_id && !child_collection_id)) continue;
-    const key = `${parent_id}>${child_issue_id ?? child_collection_id}`;
+    const heading = e.heading ?? null;
+    if (!parent_id || (!child_issue_id && !child_collection_id && !heading)) continue;
+    const key = heading ? `${parent_id}>heading:${heading}` : `${parent_id}>${child_issue_id ?? child_collection_id}`;
     if (linked.has(key)) continue;
     linked.add(key);
     const position = (lastPos.get(parent_id) ?? 0) + 1024;

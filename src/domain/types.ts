@@ -61,6 +61,8 @@ export interface Entry {
   child_collection_id: string | null;
   /** For an issue line: the run or event this issue is a slice of (crisis reading orders). */
   via_collection_id: string | null;
+  /** A chapter heading line ("Phase 2 · The Incursions"): holds no issue or collection; note is its description. */
+  heading?: string | null;
   note: string | null;
 }
 

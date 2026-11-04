@@ -31,11 +31,14 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
     live<Issue>(db, 'issues'),
     live<Collection & { on_hold: number | boolean; ongoing: number | boolean }>(db, 'collections'),
     live<Entry>(db, 'entries'),
-    live<ReadLog>(db, 'read_log'),
+    // With updated_at: the moment it was ticked, so same-day reads come out newest first.
+    db.getAllAsync<ReadLog & { updated_at: string | null }>(`SELECT ${COLUMNS.read_log.join(',')}, updated_at FROM read_log WHERE deleted_at IS NULL`),
   ]);
   return {
     lib: buildLibrary({ series, issues, collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold, ongoing: !!c.ongoing })), entries }),
-    readLog: readLog.sort((a, b) => (b.read_on ?? '').localeCompare(a.read_on ?? '')),
+    readLog: readLog
+      .sort((a, b) => (b.read_on ?? '').localeCompare(a.read_on ?? '') || (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+      .map(({ updated_at: _ignored, ...l }) => l),
   };
 }
 
@@ -142,13 +145,14 @@ async function appendEntry(
   db: SQLiteDatabase,
   lib: Library,
   parentId: string,
-  child: { child_issue_id?: string; child_collection_id?: string; via_collection_id?: string | null },
+  child: { child_issue_id?: string; child_collection_id?: string; via_collection_id?: string | null; heading?: string; note?: string | null },
 ) {
   const list = lib.children.get(parentId) ?? [];
   const position = positionBetween(list.length ? list[list.length - 1].position : null, null);
   const entry: Entry = {
     id: newId(), parent_id: parentId, position, child_issue_id: child.child_issue_id ?? null,
-    child_collection_id: child.child_collection_id ?? null, via_collection_id: child.via_collection_id ?? null, note: null,
+    child_collection_id: child.child_collection_id ?? null, via_collection_id: child.via_collection_id ?? null,
+    heading: child.heading ?? null, note: child.note ?? null,
   };
   await putRow(db, 'entries', entry);
   list.push(entry);
@@ -187,6 +191,10 @@ export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId:
     const madeSeries = new Map<string, string>();
     const madeIssues = new Map<string, string>();
     for (const block of blocks) {
+      if (block.kind === 'heading') {
+        if (block.title) await appendEntry(db, lib, parentId, { heading: block.title });
+        continue;
+      }
       let via: string | null = null;
       if ((block.kind === 'run' || block.kind === 'event') && block.title) {
         const name = block.title.toLowerCase();
@@ -372,4 +380,19 @@ export async function moveIssue(db: SQLiteDatabase, lib: Library, issueId: strin
     await putRow(db, 'issues', { ...issue, series_id: target.id, number, cover_path: moved && issue.cover_path?.includes('comicvine') ? null : issue.cover_path });
   });
   return null;
+}
+
+/** Adds a chapter heading ("Phase 2 · The Incursions") to a list, at the end or just before a given line. */
+export async function addHeading(db: SQLiteDatabase, lib: Library, parentId: string, heading: string, note: string | null, beforeEntryId?: string) {
+  const list = lib.children.get(parentId) ?? [];
+  const at = beforeEntryId ? list.findIndex((e) => e.id === beforeEntryId) : -1;
+  if (at < 0) return appendEntry(db, lib, parentId, { heading, note });
+  const position = positionBetween(list[at - 1]?.position ?? null, list[at].position);
+  await putRow(db, 'entries', { id: newId(), parent_id: parentId, position, child_issue_id: null, child_collection_id: null, via_collection_id: null, heading, note });
+}
+
+/** Renames a chapter heading or changes its description. */
+export async function updateHeading(db: SQLiteDatabase, lib: Library, parentId: string, entryId: string, heading: string, note: string | null) {
+  const e = (lib.children.get(parentId) ?? []).find((x) => x.id === entryId);
+  if (e) await putRow(db, 'entries', { ...e, heading, note });
 }

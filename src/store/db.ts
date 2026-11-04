@@ -9,11 +9,11 @@ export const COLUMNS: Record<Table, string[]> = {
   series: ['id', 'title', 'volume_year', 'publisher'],
   issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id'],
   collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes'],
-  entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'note'],
+  entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'heading', 'note'],
   read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note'],
 };
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /** Columns added after the first version, by schema version. */
 const ADDED: Record<number, [Table, string, string][]> = {
@@ -29,6 +29,14 @@ const ADDED: Record<number, [Table, string, string][]> = {
     ['issues', 'cover_date', 'TEXT'],
     ['issues', 'cv_issue_id', 'INTEGER'],
   ],
+  // 5: chapter headings.
+  5: [['entries', 'heading', 'TEXT']],
+};
+
+/** Extra one-off work for a version, run inside the same transaction. */
+const AFTER: Record<number, string[]> = {
+  // Lines downloaded before the heading column existed here lost their heading text: fetch them again.
+  5: ["DELETE FROM meta WHERE key = 'pulled:entries'"],
 };
 
 /**
@@ -50,6 +58,7 @@ export async function migrate(db: SQLiteDatabase) {
         const cols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
         if (!cols.some((c) => c.name === column)) await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type};`);
       }
+      for (const sql of AFTER[v] ?? []) await db.execAsync(sql);
       await db.execAsync(`PRAGMA user_version = ${v}`);
     });
   }
