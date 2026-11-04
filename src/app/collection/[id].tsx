@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef, useState, type ComponentRef, type MutableRefObject } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState, type ComponentRef, type MutableRefObject } from 'react';
+import { Alert, Animated, Dimensions, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { creditsSummary, splitNames } from '@/domain/credits';
@@ -8,7 +8,7 @@ import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, la
 import type { Collection, Entry } from '@/domain/types';
 import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
-import { BackIcon, ChevronDown, ChevronRight, ChevronUp, CloseIcon, MoreIcon, PlusIcon } from '@/ui/icons';
+import { BackIcon, ChevronDown, ChevronRight, CloseIcon, GripIcon, MoreIcon, PlusIcon } from '@/ui/icons';
 import { Bar, Checkbox, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { useFillDetails } from '@/ui/use-fill-details';
@@ -36,6 +36,20 @@ export default function CollectionScreen() {
   const contentRef = useRef<ComponentRef<typeof View>>(null);
   const nextRowRef = useRef<ComponentRef<typeof View> | null>(null);
   const pendingScroll = useRef(focus === 'next');
+  const scrollY = useRef(0);
+  const viewH = useRef(0);
+  const contentH = useRef(0);
+  const [scrollOn, setScrollOn] = useState(true);
+  const scroller: Scroller = {
+    setEnabled: setScrollOn,
+    scrollBy: (dy) => {
+      const y = Math.max(0, Math.min(scrollY.current + dy, contentH.current - viewH.current));
+      const applied = y - scrollY.current;
+      scrollY.current = y;
+      if (applied) scrollRef.current?.scrollTo({ y, animated: false });
+      return applied;
+    },
+  };
 
   const goToNext = () => {
     if (!next) return;
@@ -119,7 +133,14 @@ export default function CollectionScreen() {
           ) : null}
         </View>
       ) : null}
-      <ScrollView ref={scrollRef} contentContainerStyle={{ paddingBottom: 48 }}>
+      <ScrollView
+        ref={scrollRef}
+        scrollEnabled={scrollOn}
+        scrollEventThrottle={16}
+        onScroll={(e) => (scrollY.current = e.nativeEvent.contentOffset.y)}
+        onLayout={(e) => (viewH.current = e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => (contentH.current = h)}
+        contentContainerStyle={{ paddingBottom: 48 }}>
         <View ref={contentRef} collapsable={false}>
           <View style={s.hero}>
             <Pressable accessibilityRole="button" accessibilityLabel="Choose a cover" onPress={() => router.push({ pathname: '/covers', params: { collection: c.id } })}>
@@ -195,6 +216,7 @@ export default function CollectionScreen() {
                 <ReorderList
                   lib={lib}
                   parentId={c.id}
+                  scroller={scroller}
                   onMove={(ids) => act((db, l) => reorderEntries(db, l, c.id, ids))}
                   onRemove={(ids, label) =>
                     Alert.alert(`Remove ${label}?`, 'Only from this list. The issues stay in your library and anywhere else they appear.', [
@@ -254,7 +276,7 @@ type Row =
  */
 function EntryList(props: ListProps) {
   const { lib, parentId, nextIssueId, open, setOpen } = props;
-  const [unfolded, setUnfolded] = useState<Record<string, boolean>>({});
+  // "Show all" opens everything in this block at once: the hidden rest and every folded run of read issues.
   const [showAll, setShowAll] = useState(false);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const entries = lib.children.get(parentId) ?? [];
@@ -296,7 +318,7 @@ function EntryList(props: ListProps) {
         j++;
       }
       const key = `${parentId}:${e.id}`;
-      if (j - i >= 3 && !unfolded[key]) {
+      if (j - i >= 3 && !showAll) {
         const lastIssue = lib.issues.get(entries[j - 1].child_issue_id!)!;
         rows.push({ kind: 'group', key, label: `${issueTitle(lib, issue.id)}–${lastIssue.number ?? ''}`, count: j - i });
         mark();
@@ -397,9 +419,9 @@ function EntryList(props: ListProps) {
         }
         if (r.kind === 'group') {
           return (
-            <Pressable key={r.key} onPress={() => setUnfolded((u) => ({ ...u, [r.key]: true }))} style={s.group}>
+            <Pressable key={r.key} accessibilityRole="button" onPress={() => setShowAll(true)} style={s.group}>
               <Text style={T.small}>{r.label}</Text>
-              <Text style={T.tiny}>{r.count} read · show</Text>
+              <Text style={T.tiny}>{r.count} read · show all</Text>
             </Pressable>
           );
         }
@@ -466,22 +488,38 @@ function EntryList(props: ListProps) {
           </View>
         );
       })}
-      {hidden > 0 ? (
-        <Pressable onPress={() => setShowAll(true)} style={{ height: 48, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={T.small}>Show {hidden} more</Text>
+      {hidden > 0 || rows.some((r) => r.kind === 'group') ? (
+        <Pressable accessibilityRole="button" onPress={() => setShowAll(true)} style={s.showAll}>
+          <Text style={[T.small, { color: C.text }]}>Show all{hidden > 0 ? ` · ${hidden} more` : ''}</Text>
+        </Pressable>
+      ) : showAll && inView.length > ROW_LIMIT ? (
+        <Pressable accessibilityRole="button" onPress={() => setShowAll(false)} style={s.showAll}>
+          <Text style={T.small}>Show less</Text>
         </Pressable>
       ) : null}
     </View>
   );
 }
 
+/** Lets the reorder list stop the page from scrolling under a drag, and scroll it near the edges. */
+type Scroller = { setEnabled: (on: boolean) => void; scrollBy: (dy: number) => number };
+
+/** Within this many pixels of the top or bottom of the screen, a dragged piece scrolls the page. */
+const EDGE = 110;
+const MAX_SPEED = 28;
+
 /**
- * "Edit order": every piece of this list (an inner run or event, a slice block, or an issue) can be nudged
- * up or down, or picked and placed anywhere in one move. A slice block moves as one piece.
+ * "Edit order": hold a piece by its grip and drag it where it goes; near the top or bottom of the screen the
+ * page scrolls along. Or tap a piece to pick it up, then send it to the top, the bottom, or tap "Place here".
+ * A slice block moves as one piece.
  */
-function ReorderList({ lib, parentId, onMove, onRemove }: { lib: Library; parentId: string; onMove: (ids: string[]) => void; onRemove: (ids: string[], label: string) => void }) {
+function ReorderList({ lib, parentId, scroller, onMove, onRemove }: { lib: Library; parentId: string; scroller: Scroller; onMove: (ids: string[]) => void; onRemove: (ids: string[], label: string) => void }) {
   const canGroup = lib.collections.get(parentId)?.kind !== 'event';
   const [picked, setPicked] = useState<number | null>(null);
+  const [drag, setDrag] = useState<{ from: number; to: number; lineY: number | null } | null>(null);
+  const [lift] = useState(() => new Animated.Value(0));
+  const layouts = useRef<{ y: number; h: number }[]>([]);
+  const live = useRef({ from: -1, to: -1, dy: 0, scrolled: 0, pageY: 0, frame: 0 });
   const units = entryUnits(lib, parentId);
 
   const labelOf = (i: number) => {
@@ -520,49 +558,149 @@ function ReorderList({ lib, parentId, onMove, onRemove }: { lib: Library; parent
       </Pressable>
     ) : null;
 
+  // ── Dragging ──
+  /** Where the dragged piece would land: the number of other pieces whose middle is above its middle. */
+  const follow = () => {
+    const d = live.current;
+    const L = layouts.current;
+    const own = L[d.from];
+    if (!own) return;
+    lift.setValue(d.dy + d.scrolled);
+    const mid = own.y + own.h / 2 + d.dy + d.scrolled;
+    let to = 0;
+    for (let i = 0; i < units.length; i++) {
+      const l = L[i];
+      if (i !== d.from && l && l.y + l.h / 2 < mid) to++;
+    }
+    if (to !== d.to) {
+      d.to = to;
+      // The blue line shows where the piece will land.
+      const slot = to < d.from ? to : to + 1;
+      const last = L[units.length - 1];
+      const lineY = to === d.from ? null : slot < units.length && L[slot] ? L[slot].y - 5 : last ? last.y + last.h + 2 : null;
+      setDrag({ from: d.from, to, lineY });
+    }
+  };
+  const tick = () => {
+    const d = live.current;
+    if (d.from < 0) return;
+    const screen = Dimensions.get('window').height;
+    const speed =
+      d.pageY < EDGE ? -Math.min(MAX_SPEED, (EDGE - d.pageY) / 3) : d.pageY > screen - EDGE ? Math.min(MAX_SPEED, (d.pageY - (screen - EDGE)) / 3) : 0;
+    if (speed) {
+      d.scrolled += scroller.scrollBy(speed);
+      follow();
+    }
+    d.frame = requestAnimationFrame(tick);
+  };
+  const dragStart = (i: number, pageY: number) => {
+    setPicked(null);
+    live.current = { from: i, to: i, dy: 0, scrolled: 0, pageY, frame: 0 };
+    lift.setValue(0);
+    setDrag({ from: i, to: i, lineY: null });
+    scroller.setEnabled(false);
+    live.current.frame = requestAnimationFrame(tick);
+  };
+  const dragMove = (dy: number, pageY: number) => {
+    live.current.dy = dy;
+    live.current.pageY = pageY;
+    follow();
+  };
+  const dragEnd = () => {
+    const d = live.current;
+    cancelAnimationFrame(d.frame);
+    scroller.setEnabled(true);
+    const { from, to } = d;
+    live.current = { ...d, from: -1 };
+    lift.setValue(0);
+    setDrag(null);
+    if (from >= 0) move(from, to);
+  };
+  useEffect(() => {
+    const d = live.current;
+    return () => cancelAnimationFrame(d.frame);
+  }, []);
+
   return (
     <View style={{ gap: 8 }}>
       <Text style={T.tiny}>
         {picked == null
-          ? `Tap a piece to pick it up, then tap where it goes. Arrows nudge one step.${canGroup ? ' “Part of…” labels issues as a run’s or event’s part.' : ''}`
-          : 'Now tap “Place here” where it should go, or tap it again to cancel.'}
+          ? `Hold the dots and drag a piece where it goes. Near the top or bottom of the screen the list scrolls with you. Or tap a piece to send it to the top or bottom.${canGroup ? ' “Part of…” labels issues as a run’s or event’s part.' : ''}`
+          : 'Send it to the top or bottom, or tap “Place here” where it should go. Tap it again to cancel.'}
       </Text>
-      {units.map((u, i) => {
-        const l = labelOf(i);
-        const isPicked = picked === i;
-        return (
-          <View key={u.key} style={{ gap: 8 }}>
-            {target(i)}
-            <View style={[s.reorderRow, isPicked ? { borderColor: C.dc, backgroundColor: '#16223A' } : null]}>
-              <Pressable accessibilityRole="button" accessibilityState={{ selected: isPicked }} onPress={() => setPicked(isPicked ? null : i)} style={{ flex: 1, paddingVertical: 10 }}>
-                <Text style={[T.label, { fontSize: 10, color: l.color }]}>{l.tag}</Text>
-                <Text style={T.bodyMedium} numberOfLines={1}>{l.title}</Text>
-                {l.sub ? <Text style={T.tiny} numberOfLines={1}>{l.sub}</Text> : null}
-              </Pressable>
-              {u.kind === 'heading' ? (
-                <Pressable accessibilityRole="button" accessibilityLabel={`Rename ${l.title}`} onPress={() => router.push({ pathname: '/heading', params: { parent: parentId, entry: u.entryIds[0] } })} style={s.partBtn}>
-                  <Text style={[T.tiny, { color: C.text }]}>Rename</Text>
+      <View style={{ gap: 8 }}>
+        {units.map((u, i) => {
+          const l = labelOf(i);
+          const isPicked = picked === i;
+          const isDragged = drag?.from === i;
+          return (
+            <Animated.View
+              key={u.key}
+              onLayout={(e) => (layouts.current[i] = { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height })}
+              style={[{ gap: 8 }, isDragged ? { zIndex: 10, elevation: 10, transform: [{ translateY: lift }] } : null]}>
+              {target(i)}
+              <View style={[s.reorderRow, isPicked || isDragged ? { borderColor: C.dc, backgroundColor: '#16223A' } : null]}>
+                <Pressable accessibilityRole="button" accessibilityState={{ selected: isPicked }} onPress={() => setPicked(isPicked ? null : i)} style={{ flex: 1, paddingVertical: 10 }}>
+                  <Text style={[T.label, { fontSize: 10, color: l.color }]}>{l.tag}</Text>
+                  <Text style={T.bodyMedium} numberOfLines={1}>{l.title}</Text>
+                  {l.sub ? <Text style={T.tiny} numberOfLines={1}>{l.sub}</Text> : null}
                 </Pressable>
-              ) : null}
-              {canGroup && u.kind !== 'collection' && u.kind !== 'heading' ? (
-                <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${l.title} as part of a run or event`} onPress={() => router.push({ pathname: '/part-of', params: { parent: parentId, entries: u.entryIds.join(',') } })} style={s.partBtn}>
-                  <Text style={[T.tiny, { color: C.text }]}>Part of…</Text>
+                {isPicked ? (
+                  <>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} to the top`} disabled={i === 0} onPress={() => { move(i, 0); setPicked(null); }} style={[s.partBtn, i === 0 ? { opacity: 0.3 } : null]}>
+                      <Text style={[T.tiny, { color: C.text }]}>Top</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} to the bottom`} disabled={i === units.length - 1} onPress={() => { move(i, units.length - 1); setPicked(null); }} style={[s.partBtn, i === units.length - 1 ? { opacity: 0.3 } : null]}>
+                      <Text style={[T.tiny, { color: C.text }]}>Bottom</Text>
+                    </Pressable>
+                  </>
+                ) : u.kind === 'heading' ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Rename ${l.title}`} onPress={() => router.push({ pathname: '/heading', params: { parent: parentId, entry: u.entryIds[0] } })} style={s.partBtn}>
+                    <Text style={[T.tiny, { color: C.text }]}>Rename</Text>
+                  </Pressable>
+                ) : canGroup && u.kind !== 'collection' ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${l.title} as part of a run or event`} onPress={() => router.push({ pathname: '/part-of', params: { parent: parentId, entries: u.entryIds.join(',') } })} style={s.partBtn}>
+                    <Text style={[T.tiny, { color: C.text }]}>Part of…</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${l.title} from this list`} onPress={() => onRemove(u.entryIds, l.title)} style={s.arrow}>
+                  <CloseIcon size={18} color={C.dim} />
                 </Pressable>
-              ) : null}
-              <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} up`} disabled={i === 0} onPress={() => move(i, i - 1)} style={[s.arrow, i === 0 ? { opacity: 0.25 } : null]}>
-                <ChevronUp size={18} color={C.muted} />
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} down`} disabled={i === units.length - 1} onPress={() => move(i, i + 1)} style={[s.arrow, i === units.length - 1 ? { opacity: 0.25 } : null]}>
-                <ChevronDown size={18} color={C.muted} />
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${l.title} from this list`} onPress={() => onRemove(u.entryIds, l.title)} style={s.arrow}>
-                <CloseIcon size={18} color={C.dim} />
-              </Pressable>
-            </View>
-          </View>
-        );
-      })}
-      {target(units.length)}
+                <DragHandle label={`Drag ${l.title}`} onStart={(y) => dragStart(i, y)} onMove={dragMove} onEnd={dragEnd} />
+              </View>
+            </Animated.View>
+          );
+        })}
+        {target(units.length)}
+        {drag?.lineY != null ? <View pointerEvents="none" style={[s.dropLine, { top: drag.lineY }]} /> : null}
+      </View>
+    </View>
+  );
+}
+
+/** The dots at the end of a row: press and drag them to move the row. */
+function DragHandle({ label, onStart, onMove, onEnd }: { label: string; onStart: (pageY: number) => void; onMove: (dy: number, pageY: number) => void; onEnd: () => void }) {
+  const latest = useRef({ onStart, onMove, onEnd });
+  useEffect(() => {
+    latest.current = { onStart, onMove, onEnd };
+  });
+  // The handlers read `latest` only while a finger is down, never during render.
+  // eslint-disable-next-line react-hooks/refs
+  const [responder] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: (e) => latest.current.onStart(e.nativeEvent.pageY),
+      onPanResponderMove: (_e, g) => latest.current.onMove(g.dy, g.moveY),
+      onPanResponderRelease: () => latest.current.onEnd(),
+      onPanResponderTerminate: () => latest.current.onEnd(),
+    }),
+  );
+  return (
+    <View {...responder.panHandlers} accessibilityLabel={label} style={s.grip}>
+      <GripIcon />
     </View>
   );
 }
@@ -583,6 +721,9 @@ const s = StyleSheet.create({
   headingText: { flex: 1, fontFamily: F.condBold, fontSize: 18, letterSpacing: 0.6, textTransform: 'uppercase', color: C.text },
   partBtn: { height: 32, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center', marginRight: 2 },
   arrow: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  grip: { width: 48, height: 56, alignItems: 'center', justifyContent: 'center' },
+  dropLine: { position: 'absolute', left: 0, right: 0, height: 3, borderRadius: 2, backgroundColor: C.dc },
+  showAll: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   placeHere: { height: 40, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.dc, alignItems: 'center', justifyContent: 'center' },
   menuItem: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8 },
   card: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 12, overflow: 'hidden' },

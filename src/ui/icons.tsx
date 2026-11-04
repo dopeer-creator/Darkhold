@@ -74,3 +74,9 @@ export const DragIcon = ({ size = 18, color = C.faint }: P) => (
 export const ChevronUp = ({ size = 16, color = C.muted, width = 2 }: P) => (
   <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="m6 15 6-6 6 6" {...stroke(color, width)} /></Svg>
 );
+/** Six dots: "hold here and drag". */
+export const GripIcon = ({ size = 20, color = C.muted }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    {[6, 12, 18].flatMap((y) => [9, 15].map((x) => <Circle key={`${x}-${y}`} cx={x} cy={y} r={1.7} fill={color} />))}
+  </Svg>
+);
