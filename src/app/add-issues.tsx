@@ -100,8 +100,9 @@ export default function AddIssues() {
               <Text key={e.line} style={[T.small, { color: C.indie }]}>Line {e.line}: {e.message}</Text>
             ))}
             {lines.length ? <Text style={[s.preview]}>Preview · {total} issues{structured?.hasHeaders ? ` in ${blocks.length} parts` : ''}</Text> : null}
-            {blocks.map((b) => (
-              <View key={b.start} style={{ gap: 8 }}>
+            {blocks.map((b, bi) => (
+              // A chapter heading holds no lines, so its start can equal the next part's: key on the position too.
+              <View key={`${bi}:${b.start}`} style={{ gap: 8 }}>
                 {b.kind ? (
                   <View style={s.blockHead}>
                     <Text style={[T.label, { color: KIND_COLOR[b.kind] }]}>{KIND_LABEL[b.kind]}</Text>

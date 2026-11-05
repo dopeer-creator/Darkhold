@@ -92,7 +92,7 @@ export default function ConnectScreen() {
               ListEmptyComponent={<Text style={[T.tiny, { paddingTop: 8 }]}>{query.trim() ? 'Nothing matches. Add it to your library first.' : 'Type part of a name: “Armageddon”, “Spider-Man #10”.'}</Text>}
               renderItem={({ item }) => (
                 <Pressable onPress={() => setPicked(item)} style={({ pressed }) => [s.row, pressed ? { backgroundColor: C.surface2 } : null]}>
-                  <Text style={[T.label, { fontSize: 10, color: item.color, width: 92 }]} numberOfLines={1}>{item.tag}</Text>
+                  <Text style={[T.label, { fontSize: 10, color: item.color, width: 108 }]} numberOfLines={1}>{item.tag}</Text>
                   <Text style={[T.body, { flex: 1 }]} numberOfLines={2}>{item.title}</Text>
                 </Pressable>
               )}

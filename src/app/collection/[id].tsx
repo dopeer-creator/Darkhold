@@ -660,21 +660,7 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove, onOptional }: 
                   <Text style={T.bodyMedium} numberOfLines={1}>{l.title}</Text>
                   {l.sub ? <Text style={T.tiny} numberOfLines={1}>{l.sub}</Text> : null}
                 </Pressable>
-                {isPicked ? (
-                  <>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} to the top`} disabled={i === 0} onPress={() => { move(i, 0); setPicked(null); }} style={[s.partBtn, i === 0 ? { opacity: 0.3 } : null]}>
-                      <Text style={[T.tiny, { color: C.text }]}>Top</Text>
-                    </Pressable>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} to the bottom`} disabled={i === units.length - 1} onPress={() => { move(i, units.length - 1); setPicked(null); }} style={[s.partBtn, i === units.length - 1 ? { opacity: 0.3 } : null]}>
-                      <Text style={[T.tiny, { color: C.text }]}>Bottom</Text>
-                    </Pressable>
-                    {u.kind !== 'heading' ? (
-                      <Pressable accessibilityRole="button" accessibilityLabel={isOptional ? `Count ${l.title} again` : `Make ${l.title} optional`} onPress={() => { onOptional(u.entryIds, !isOptional); setPicked(null); }} style={s.partBtn}>
-                        <Text style={[T.tiny, { color: C.text }]}>{isOptional ? 'Count it' : 'Optional'}</Text>
-                      </Pressable>
-                    ) : null}
-                  </>
-                ) : u.kind === 'heading' ? (
+                {u.kind === 'heading' ? (
                   <Pressable accessibilityRole="button" accessibilityLabel={`Rename ${l.title}`} onPress={() => router.push({ pathname: '/heading', params: { parent: parentId, entry: u.entryIds[0] } })} style={s.partBtn}>
                     <Text style={[T.tiny, { color: C.text }]}>Rename</Text>
                   </Pressable>
@@ -688,6 +674,21 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove, onOptional }: 
                 </Pressable>
                 <DragHandle label={`Drag ${l.title}`} onStart={(y) => dragStart(i, y)} onMove={dragMove} onEnd={dragEnd} />
               </View>
+              {isPicked ? (
+                <View style={s.pickedActions}>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} to the top`} disabled={i === 0} onPress={() => { move(i, 0); setPicked(null); }} style={[s.pickBtn, i === 0 ? { opacity: 0.3 } : null]}>
+                      <Text style={[T.tiny, { color: C.text }]}>Top</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} to the bottom`} disabled={i === units.length - 1} onPress={() => { move(i, units.length - 1); setPicked(null); }} style={[s.pickBtn, i === units.length - 1 ? { opacity: 0.3 } : null]}>
+                      <Text style={[T.tiny, { color: C.text }]}>Bottom</Text>
+                    </Pressable>
+                    {u.kind !== 'heading' ? (
+                      <Pressable accessibilityRole="button" accessibilityLabel={isOptional ? `Count ${l.title} again` : `Make ${l.title} optional`} onPress={() => { onOptional(u.entryIds, !isOptional); setPicked(null); }} style={s.pickBtn}>
+                        <Text style={[T.tiny, { color: C.text }]}>{isOptional ? 'Count it' : 'Optional'}</Text>
+                      </Pressable>
+                    ) : null}
+                </View>
+              ) : null}
             </Animated.View>
           );
         })}
@@ -741,6 +742,8 @@ const s = StyleSheet.create({
   headingText: { flex: 1, fontFamily: F.condBold, fontSize: 18, letterSpacing: 0.6, textTransform: 'uppercase', color: C.text },
   partBtn: { height: 32, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center', marginRight: 2 },
   arrow: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  pickedActions: { flexDirection: 'row', gap: 8, marginTop: -2 },
+  pickBtn: { flex: 1, height: 40, borderRadius: 10, borderWidth: 1, borderColor: C.dc, backgroundColor: '#16223A', alignItems: 'center', justifyContent: 'center' },
   grip: { width: 48, height: 56, alignItems: 'center', justifyContent: 'center' },
   dropLine: { position: 'absolute', left: 0, right: 0, height: 3, borderRadius: 2, backgroundColor: C.dc },
   showAll: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },

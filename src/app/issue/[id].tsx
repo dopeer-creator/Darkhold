@@ -278,7 +278,7 @@ export default function IssueScreen() {
               <Text style={T.tiny}>One issue, linked in each place — reading it anywhere counts everywhere, once.</Text>
               {appearsIn.map((c) => (
                 <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={s.row}>
-                  <Text style={[T.label, { color: KIND_COLOR[c.kind], width: 96 }]} numberOfLines={1}>{kindLabel(c)}</Text>
+                  <Text style={[T.label, { color: KIND_COLOR[c.kind], width: 116 }]} numberOfLines={1}>{kindLabel(c)}</Text>
                   <Text style={[T.body, { flex: 1 }]} numberOfLines={1}>{c.title}</Text>
                 </Pressable>
               ))}
