@@ -80,3 +80,27 @@ export const GripIcon = ({ size = 20, color = C.muted }: P) => (
     {[6, 12, 18].flatMap((y) => [9, 15].map((x) => <Circle key={`${x}-${y}`} cx={x} cy={y} r={1.7} fill={color} />))}
   </Svg>
 );
+/** Era: one line running through several books. */
+export const EraIcon = ({ size = 22, color = C.text, width = 1.8 }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path d="M3 12h18" {...stroke(color, width)} />
+    <Circle cx="5" cy="12" r="2.2" {...stroke(color, width)} />
+    <Circle cx="12" cy="12" r="2.2" {...stroke(color, width)} />
+    <Circle cx="19" cy="12" r="2.2" {...stroke(color, width)} />
+  </Svg>
+);
+/** Arc: one curve inside a run. */
+export const ArcIcon = ({ size = 22, color = C.text, width = 1.8 }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="M4 18C6 8 18 8 20 18" {...stroke(color, width)} /><Path d="M3 18h18" {...stroke(color, width)} /></Svg>
+);
+/** Collected edition: a book on the shelf. */
+export const EditionIcon = ({ size = 22, color = C.text, width = 1.8 }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z" {...stroke(color, width)} />
+    <Path d="M5 17a3 3 0 0 1 3-3h11" {...stroke(color, width)} />
+  </Svg>
+);
+/** Filter: three lines, shortest at the bottom. */
+export const FilterIcon = ({ size = 20, color = C.muted, width = 1.8 }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="M4 6h16M7 12h10M10 18h4" {...stroke(color, width)} /></Svg>
+);
