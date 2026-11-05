@@ -6,6 +6,18 @@ import { CheckIcon, PlayIcon } from './icons';
 import { C, F, publisherColor, tintFor } from './theme';
 
 /**
+ * Comic Vine serves every cover in several sizes at the same address with a different folder
+ * ("/scale_medium/" → "/scale_small/"). Small list thumbnails load the small file, which takes a
+ * fraction of the space in the phone's picture cache; big covers keep the saved size. Other links are left alone.
+ */
+export function sizedCover(uri: string, width: number): string {
+  if (!/comicvine\.gamespot\.com\/a\/uploads\//.test(uri)) return uri;
+  // Measured on one cover: original-size medium 317 KB, small 157 KB, avatar 15 KB.
+  const size = width <= 44 ? 'scale_avatar' : width <= 130 ? 'scale_small' : null;
+  return size ? uri.replace(/\/(scale_medium|scale_large|screen_medium|screen_kubrick|original)\//, `/${size}/`) : uri;
+}
+
+/**
  * A cover: the real image when there is a link (downloaded once, then cached on the phone),
  * otherwise a drawn one with the title, a big mark and a publisher stripe.
  */
@@ -16,7 +28,7 @@ export function Cover({ title, publisher, mark, width, done, uri }: { title: str
   if (uri) {
     return (
       <View style={{ width, height, borderRadius: width > 60 ? 8 : 4, overflow: 'hidden', backgroundColor: tint.bg }}>
-        <Image source={{ uri }} style={{ width, height }} contentFit="cover" cachePolicy="disk" transition={150} recyclingKey={uri} accessibilityLabel={`${title} cover`} />
+        <Image source={{ uri: sizedCover(uri, width) }} style={{ width, height }} contentFit="cover" cachePolicy="disk" transition={150} recyclingKey={uri} accessibilityLabel={`${title} cover`} />
         {done ? (
           <View accessibilityLabel="Completed" style={{ position: 'absolute', right: 6, bottom: 6, width: 20, height: 20, borderRadius: 10, backgroundColor: C.text, alignItems: 'center', justifyContent: 'center' }}>
             <CheckIcon size={12} />

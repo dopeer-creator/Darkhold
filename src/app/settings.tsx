@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Updates from 'expo-updates';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -22,6 +23,12 @@ export default function Settings() {
   const [key, setKey] = useState('');
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const [coverStatus, setCoverStatus] = useState('');
+  const [cacheStatus, setCacheStatus] = useState('');
+  const clearCovers = async () => {
+    setCacheStatus('Clearing…');
+    const [disk] = await Promise.all([Image.clearDiskCache(), Image.clearMemoryCache()]);
+    setCacheStatus(disk ? 'Cleared. Covers download again as you scroll.' : 'Couldn’t clear right now. Try again in a moment.');
+  };
   const [fetching, setFetching] = useState(false);
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateReady, setUpdateReady] = useState(false);
@@ -162,6 +169,23 @@ export default function Settings() {
             </Pressable>
           </View>
           {coverStatus ? <Text style={T.tiny}>{coverStatus}</Text> : null}
+        </View>
+
+        <View style={{ gap: 8 }}>
+          <SectionTitle>Storage</SectionTitle>
+          <View style={s.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={T.body}>Cover pictures</Text>
+              <Text style={T.tiny}>Saved on this phone so lists open fast</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={clearCovers} style={s.smallBtn}>
+              <Text style={[T.small, { color: C.text }]}>Clear</Text>
+            </Pressable>
+          </View>
+          <Text style={T.tiny}>
+            {cacheStatus ||
+              'Only the cover links are kept in your library (and synced), so clearing is safe: pictures download again as you scroll. Android caps this at about 250 MB on its own.'}
+          </Text>
         </View>
 
         <View style={{ gap: 8 }}>
