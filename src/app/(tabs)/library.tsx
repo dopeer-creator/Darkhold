@@ -10,13 +10,14 @@ import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { PlusIcon, SearchIcon } from '@/ui/icons';
 import { Bar, Checkbox, Chip, Cover, T } from '@/ui/parts';
-import { C, F, KIND_COLOR, KIND_LABEL, publisherColor } from '@/ui/theme';
+import { C, F, KIND_COLOR, publisherColor, kindLabel } from '@/ui/theme';
 
 const TABS: { key: 'all' | Kind | 'series' | 'issues'; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'crisis', label: 'Crises' },
   { key: 'run', label: 'Runs' },
   { key: 'event', label: 'Events' },
+  { key: 'crisis', label: 'Reading orders' },
+  { key: 'edition', label: 'Editions' },
   { key: 'series', label: 'Series' },
   { key: 'issues', label: 'Issues' },
 ];
@@ -27,6 +28,7 @@ const PUBLISHERS = [
 ];
 const STATUSES = [
   { key: 'reading', label: 'Reading' },
+  { key: 'planned', label: 'Plan to read' },
   { key: 'on_hold', label: 'On hold' },
   { key: 'completed', label: 'Completed' },
   { key: 'not_started', label: 'Not started' },
@@ -46,7 +48,7 @@ export default function LibraryScreen() {
     const pubTest = PUBLISHERS.find((p) => p.key === pub)?.test;
     return [...lib.collections.values()]
       // "All" shows what sits at the top; events inside a run are under that run (and on the Events tab).
-      .filter((c) => (tab === 'all' ? !isNested(lib, c.id) || !!query.trim() : tab === c.kind))
+      .filter((c) => (tab === 'all' ? !isNested(lib, c.id) || !!query.trim() : TAB_KINDS[tab]?.includes(c.kind)))
       .filter((c) => !pubTest || pubTest(c.publisher))
       .filter((c) => !status || collectionStatus(lib, c.id) === status)
       .filter((c) => !q || [c.title, c.writer, c.artist, c.characters, c.publisher].some((v) => v?.toLowerCase().includes(q)))
@@ -160,7 +162,7 @@ export default function LibraryScreen() {
             item ? (
               <Pressable onPress={() => router.push(`/collection/${item.c.id}`)} style={{ width: tile, gap: 6 }}>
                 <Cover title={item.c.title} publisher={item.c.publisher} width={tile} done={item.st === 'completed'} uri={coverFor(lib, item.c.id)} />
-                <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[item.c.kind] }]}>{KIND_LABEL[item.c.kind]}</Text>
+                <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[item.c.kind] }]}>{kindLabel(item.c)}</Text>
                 <Text numberOfLines={2} style={[T.bodyMedium, { fontSize: 13, lineHeight: 16 }]}>{item.c.title}</Text>
                 <Bar read={item.p.read} total={item.p.total} color={publisherColor(item.c.publisher)} height={3} />
                 <Text style={[T.tiny, T.num, { fontSize: 11 }]}>
@@ -180,7 +182,9 @@ export default function LibraryScreen() {
   );
 }
 
-const rank = (st: string) => ({ reading: 0, not_started: 1, on_hold: 2, completed: 3 })[st] ?? 4;
+const rank = (st: string) => ({ reading: 0, planned: 1, not_started: 2, on_hold: 3, completed: 4 })[st] ?? 5;
+/** Each tab's types: eras sit with reading orders, arcs with runs. */
+const TAB_KINDS: Partial<Record<string, Kind[]>> = { run: ['run', 'arc'], event: ['event'], crisis: ['crisis', 'era'], edition: ['edition'] };
 const num = (n: string | null) => (n == null ? 1e9 : Number.isNaN(Number(n)) ? 1e8 : Number(n));
 
 const s = StyleSheet.create({

@@ -163,13 +163,13 @@ describe('status and home totals', () => {
   });
 });
 
-describe('layering rules', () => {
-  it('follows crisis > run > event > issue', () => {
+describe('nesting', () => {
+  it('lets any list hold any other, as long as it never ends up inside itself', () => {
     const lib = fixture();
-    expect(cannotNest(lib, 'event', 'run')).toBe('An event can only hold issues');
-    expect(cannotNest(lib, 'run', 'crisis')).toBe('A crisis cannot go inside another collection');
-    expect(cannotNest(lib, 'run', 'empty')).toBe('A run can hold events and issues only');
+    expect(cannotNest(lib, 'event', 'empty')).toBeNull();
+    expect(cannotNest(lib, 'run', 'empty')).toBeNull();
     expect(cannotNest(lib, 'crisis', 'empty')).toBeNull();
+    expect(cannotNest(lib, 'run', 'crisis')).toBe('That would put a list inside itself');
   });
 
   it('lets an event sit in a run that is already inside a crisis', () => {
@@ -314,12 +314,11 @@ describe('slices', () => {
     expect(isNested(sliced(), 'caprun')).toBe(true);
   });
 
-  it('allows slices of runs and events in a crisis, and of events in a run', () => {
+  it('lets lines of one list be shown as part of any other list, but not of itself', () => {
     const lib = sliced();
     expect(canSlice(lib, 'arm', 'caprun')).toBe(true);
-    expect(canSlice(lib, 'caprun', 'doom')).toBe(true);
-    expect(canSlice(lib, 'doom', 'caprun')).toBe(false);
-    expect(canSlice(lib, 'caprun', 'arm')).toBe(false);
+    expect(canSlice(lib, 'doom', 'caprun')).toBe(true);
+    expect(canSlice(lib, 'arm', 'arm')).toBe(false);
   });
 });
 

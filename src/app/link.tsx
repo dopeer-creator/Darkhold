@@ -8,7 +8,7 @@ import { linkCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { CloseIcon } from '@/ui/icons';
 import { Cover, T } from '@/ui/parts';
-import { C, F, KIND_LABEL } from '@/ui/theme';
+import { C, F, kindLabel } from '@/ui/theme';
 
 /** Pick an existing run or event to link into ?parent=<id>. It is linked, not copied. */
 export default function LinkExisting() {
@@ -55,7 +55,7 @@ export default function LinkExisting() {
               <Cover title={item.title} publisher={item.publisher} width={36} uri={coverFor(lib, item.id)} />
               <View style={{ flex: 1 }}>
                 <Text style={T.bodyMedium}>{item.title}</Text>
-                <Text style={T.tiny}>{KIND_LABEL[item.kind]} · {p.total ? `${p.read} / ${p.total}` : 'No issues yet'}</Text>
+                <Text style={T.tiny}>{kindLabel(item)} · {p.total ? `${p.read} / ${p.total}` : 'No issues yet'}</Text>
               </View>
             </Pressable>
           );

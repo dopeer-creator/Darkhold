@@ -9,7 +9,7 @@ import { addIssueBlocks, linkIssues } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { ChevronDown, CloseIcon } from '@/ui/icons';
 import { Checkbox, Chip, Cover, PrimaryButton, T } from '@/ui/parts';
-import { C, F, KIND_COLOR, KIND_LABEL } from '@/ui/theme';
+import { C, F, KIND_COLOR, KIND_LABEL, kindLabel } from '@/ui/theme';
 
 type Mode = 'library' | 'range' | 'paste';
 
@@ -57,7 +57,7 @@ export default function AddIssues() {
           <Pressable onPress={() => !params.parent && setParentId(null)} style={s.target}>
             <View style={{ flex: 1 }}>
               <Text style={T.tiny}>Adding to</Text>
-              <Text numberOfLines={1} style={[T.bodyMedium, { fontSize: 14 }]}>{parent.title} <Text style={T.tiny}>· {KIND_LABEL[parent.kind].toLowerCase()}</Text></Text>
+              <Text numberOfLines={1} style={[T.bodyMedium, { fontSize: 14 }]}>{parent.title} <Text style={T.tiny}>· {kindLabel(parent).toLowerCase()}</Text></Text>
             </View>
             {!params.parent ? <ChevronDown /> : null}
           </Pressable>
@@ -126,9 +126,13 @@ export default function AddIssues() {
                       </View>
                       {l.note ? <Text style={T.tiny}>{l.note}</Text> : null}
                       {l.assumedOneShot ? <Text style={[T.tiny, { color: C.indie }]}>No number given — added as #1</Text> : null}
-                      {l.choices.length > 1 || (l.choices.length > 0 && !l.series) ? (
+                      {l.choices.length > 1 || (l.choices.length > 0 && !l.series) || (l.series && l.volumeYear == null && l.series.volume_year != null) ? (
                         <View style={{ gap: 6 }}>
-                          <Text style={[T.tiny, { color: C.indie }]}>Which {l.seriesTitle}?</Text>
+                          <Text style={[T.tiny, { color: C.indie }]}>
+                            {l.series && l.volumeYear == null && l.choices.length === 1
+                              ? `No year given, so it goes into your ${l.series.title} (${l.series.volume_year}). A different volume? Tap New series and add the year after the name.`
+                              : `Which ${l.seriesTitle}?`}
+                          </Text>
                           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                             {l.choices.map((ch) => (
                               <Chip key={ch.id} label={ch.volume_year ? String(ch.volume_year) : 'No year'} active={l.series?.id === ch.id} onPress={() => setOverrides((o) => ({ ...o, [idx]: ch.id }))} />
@@ -137,7 +141,9 @@ export default function AddIssues() {
                           </View>
                         </View>
                       ) : !l.series ? (
-                        <Text style={T.tiny}>New series</Text>
+                        <Text style={[T.tiny, l.volumeYear == null ? { color: C.indie } : null]}>
+                          {l.volumeYear == null ? `New series with no year. Write it as “${l.seriesTitle} (YYYY)”, the year it started, so another volume never gets mixed in.` : 'New series'}
+                        </Text>
                       ) : null}
                     </View>
                   );
@@ -233,7 +239,7 @@ function PickTarget({ lib, onPick }: { lib: Library; onPick: (id: string) => voi
             <Cover title={item.title} publisher={item.publisher} width={30} />
             <View style={{ flex: 1, paddingLeft: 12 }}>
               <Text style={T.bodyMedium}>{item.title}</Text>
-              <Text style={T.tiny}>{KIND_LABEL[item.kind]}</Text>
+              <Text style={T.tiny}>{kindLabel(item)}</Text>
             </View>
           </Pressable>
         )}

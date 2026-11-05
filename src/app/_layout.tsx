@@ -43,6 +43,8 @@ export default function RootLayout() {
             <Stack.Screen name="series/[id]" />
             <Stack.Screen name="heading" options={{ presentation: 'modal' }} />
             <Stack.Screen name="part-of" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="connect" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="merge-series" options={{ presentation: 'modal' }} />
           </Stack>
         </StoreProvider>
       </SQLiteProvider>

@@ -10,7 +10,7 @@ import { CloseIcon } from '@/ui/icons';
 import { GhostButton, PrimaryButton, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { pickDay } from '@/ui/pick-day';
-import { C, F, KIND_LABEL } from '@/ui/theme';
+import { C, F, kindLabel } from '@/ui/theme';
 
 type Choice = 'unknown' | 'today' | 'day';
 
@@ -59,7 +59,7 @@ export default function MarkAll() {
       </View>
       <View style={{ padding: 16, gap: 14 }}>
         <Text style={T.body}>
-          {c.title} <Text style={T.small}>· {KIND_LABEL[c.kind].toLowerCase()}</Text>
+          {c.title} <Text style={T.small}>· {kindLabel(c).toLowerCase()}</Text>
         </Text>
         <Text style={T.small}>
           {unread ? `${unread} issue${unread === 1 ? '' : 's'} will be marked read.` : 'Everything here is already read.'}

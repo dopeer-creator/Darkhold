@@ -4,15 +4,16 @@ import { Alert, Animated, Dimensions, PanResponder, Pressable, ScrollView, Style
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { creditsSummary, splitNames } from '@/domain/credits';
-import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, progress, walk, type Library } from '@/domain/library';
+import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, progress, READING_KINDS, walk, type Library } from '@/domain/library';
 import type { Collection, Entry } from '@/domain/types';
-import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, updateCollection } from '@/store/repo';
+import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight, CloseIcon, GripIcon, MoreIcon, PlusIcon } from '@/ui/icons';
 import { Bar, Checkbox, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
+import { ConnectionsBlock } from '@/ui/connections';
 import { useFillDetails } from '@/ui/use-fill-details';
-import { C, F, KIND_COLOR, KIND_LABEL, publisherColor, STATUS_LABEL } from '@/ui/theme';
+import { C, F, KIND_COLOR, KIND_LABEL, KIND_NAME, kindLabel, publisherColor, STATUS_LABEL } from '@/ui/theme';
 
 const ROW_LIMIT = 8;
 
@@ -83,8 +84,12 @@ export default function CollectionScreen() {
     { label: 'Mark as read…', go: () => router.push({ pathname: '/mark/[id]', params: { id: c.id } }) },
     { label: 'Edit order', go: () => setEditing(true) },
     { label: c.on_hold ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => updateCollection(db, l, c.id, { on_hold: !c.on_hold })) },
+    ...(p.read === 0 || c.planned
+      ? [{ label: c.planned ? 'Take off Plan to read' : 'Plan to read', go: () => act((db, l) => updateCollection(db, l, c.id, { planned: !c.planned })) }]
+      : []),
+    { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
     { label: 'Choose a cover…', go: () => router.push({ pathname: '/covers', params: { collection: c.id } }) },
-    { label: 'Edit details or type', go: () => router.push(`/new?edit=${c.id}`) },
+    { label: 'Edit details, type or label', go: () => router.push(`/new?edit=${c.id}`) },
     { label: 'Delete…', go: () => confirmDelete(c), danger: true },
   ];
 
@@ -92,14 +97,14 @@ export default function CollectionScreen() {
     Alert.alert(`Delete ${col.title}?`, 'Issues you read stay in your history unless you also delete the contents.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete with contents', style: 'destructive', onPress: () => act((db, l) => deleteCollection(db, l, col.id, true)).then(() => router.back()) },
-      { text: `Delete ${KIND_LABEL[col.kind].toLowerCase()} only`, style: 'destructive', onPress: () => act((db, l) => deleteCollection(db, l, col.id, false)).then(() => router.back()) },
+      { text: `Delete ${KIND_NAME[col.kind]} only`, style: 'destructive', onPress: () => act((db, l) => deleteCollection(db, l, col.id, false)).then(() => router.back()) },
     ]);
   };
 
   const menuItems: { label: string; go: () => void }[] = [
-    ...(c.kind === 'crisis' ? [{ label: 'New run in this crisis', go: () => router.push(`/new?kind=run&parent=${c.id}`) }] : []),
-    ...(c.kind !== 'event' ? [{ label: `New event in this ${c.kind}`, go: () => router.push(`/new?kind=event&parent=${c.id}`) }] : []),
-    ...(c.kind !== 'event' ? [{ label: c.kind === 'crisis' ? 'Link an existing run or event' : 'Link an existing event', go: () => router.push(`/link?parent=${c.id}`) }] : []),
+    { label: 'New list inside this one', go: () => router.push(`/new?kind=${c.kind === 'run' ? 'arc' : 'event'}&parent=${c.id}`) },
+    { label: 'Put an existing list inside', go: () => router.push(`/link?parent=${c.id}`) },
+    { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
     { label: 'Add issues', go: () => router.push(`/add-issues?parent=${c.id}`) },
     { label: 'Add a chapter heading', go: () => router.push({ pathname: '/heading', params: { parent: c.id } }) },
   ];
@@ -148,7 +153,7 @@ export default function CollectionScreen() {
               <Text style={[T.tiny, { textAlign: 'center', marginTop: 4, fontSize: 11 }]}>Change cover</Text>
             </Pressable>
             <View style={{ flex: 1, gap: 6, paddingTop: 4 }}>
-              <Text style={[T.label, { color }]}>{KIND_LABEL[c.kind]}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
+              <Text style={[T.label, { color }]}>{kindLabel(c)}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
               <Text style={s.title}>{c.title}</Text>
               {creators || years ? <Text style={T.small}>{[creators, years].filter(Boolean).join(' · ')}</Text> : null}
               {!creators && credits.mainWriters.length ? <Text style={T.small}>{credits.mainWriters.join(', ')}</Text> : null}
@@ -162,7 +167,6 @@ export default function CollectionScreen() {
             </View>
           </View>
           {c.description ? <Text style={[T.small, { paddingHorizontal: 16, paddingTop: 12, lineHeight: 20 }]}>{c.description}</Text> : null}
-
           <View style={{ paddingHorizontal: 16, paddingTop: 18 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Text style={T.num}>
@@ -178,6 +182,10 @@ export default function CollectionScreen() {
               <PrimaryButton label={p.total ? 'All read — add more issues' : 'Add issues to start'} onPress={() => setMenu(true)} style={{ marginTop: 14 }} />
             )}
             {last ? <Text style={[T.tiny, { textAlign: 'center', marginTop: 8 }]}>Last read: {issueTitle(lib, last.issueId)}</Text> : null}
+          </View>
+
+          <View style={{ paddingHorizontal: 16, paddingTop: 22 }}>
+            <ConnectionsBlock collectionId={c.id} />
           </View>
 
           <View style={{ paddingHorizontal: 16, paddingTop: 22 }}>
@@ -200,7 +208,7 @@ export default function CollectionScreen() {
                   </View>
                 )
               }>
-              {c.kind === 'crisis' ? 'Reading path' : 'Reading order'}
+              {READING_KINDS.includes(c.kind) ? 'Reading path' : 'Reading order'}
             </SectionTitle>
             {menu ? (
               <View style={s.menu}>
@@ -218,6 +226,7 @@ export default function CollectionScreen() {
                   parentId={c.id}
                   scroller={scroller}
                   onMove={(ids) => act((db, l) => reorderEntries(db, l, c.id, ids))}
+                  onOptional={(ids, optional) => act((db, l) => setOptional(db, l, c.id, ids, optional))}
                   onRemove={(ids, label) =>
                     Alert.alert(`Remove ${label}?`, 'Only from this list. The issues stay in your library and anywhere else they appear.', [
                       { text: 'Cancel', style: 'cancel' },
@@ -280,7 +289,7 @@ function EntryList(props: ListProps) {
   const [showAll, setShowAll] = useState(false);
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const entries = lib.children.get(parentId) ?? [];
-  const viaOf = (e: Entry) => (e.via_collection_id && lib.collections.has(e.via_collection_id) ? e.via_collection_id : null);
+  const viaOf = (e: Entry) => e.part_of ?? null;
   const hasSlices = entries.some((e) => viaOf(e));
 
   const rows: Row[] = [];
@@ -362,8 +371,9 @@ function EntryList(props: ListProps) {
         <View style={{ flex: 1, paddingVertical: 8 }}>
           <Text style={[T.body, { fontSize: 14, color: read ? C.muted : C.text }]}>{issueTitle(lib, issue.id)}</Text>
           {isNext ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>{issue.status === 'reading' ? 'READING NOW' : 'NEXT UP'}</Text> : null}
+          {entry.optional ? <Text style={[T.label, { color: C.dim, marginTop: 2, fontSize: 10 }]}>OPTIONAL · NOT COUNTED</Text> : null}
           {read && issue.completed_at ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>Read {relativeDay(issue.completed_at)}</Text> : null}
-          {issue.notes && !read ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>{issue.notes}</Text> : null}
+          {issue.notes && !read && !/^optional$/i.test(issue.notes.trim()) ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>{issue.notes}</Text> : null}
           {issue.writers && props.mainWriters?.length && !splitNames(issue.writers).some((w) => props.mainWriters!.includes(w)) ? (
             <Text style={[T.tiny, { fontSize: 11, marginTop: 2, color: C.indie }]}>Written by {issue.writers}</Text>
           ) : null}
@@ -429,19 +439,22 @@ function EntryList(props: ListProps) {
         if (r.kind === 'slice') {
           const via = r.via ? lib.collections.get(r.via)! : null;
           const ids = r.entries.map((e) => e.child_issue_id!);
-          const read = ids.filter((id) => lib.issues.get(id)?.status === 'read').length;
+          // Optional lines show, but the block's count leaves them out (unless the whole block is optional).
+          const counted = r.entries.every((e) => e.optional) ? ids : r.entries.filter((e) => !e.optional).map((e) => e.child_issue_id!);
+          const read = counted.filter((id) => lib.issues.get(id)?.status === 'read').length;
           const hasNext = !!nextIssueId && ids.includes(nextIssueId);
           const isOpen = open[r.key] ?? hasNext;
           const kind = via?.kind ?? 'issue';
+          const optional = r.entries.every((e) => e.optional);
           return (
             <View key={r.key} style={s.card}>
               {header({
-                label: `${KIND_LABEL[kind]}${read === ids.length ? ' · DONE' : hasNext ? ' · UP NEXT' : ''}`,
+                label: `${via ? kindLabel(via) : 'ISSUES'}${optional ? ' · OPTIONAL' : ''}${read === counted.length ? ' · DONE' : hasNext ? ' · UP NEXT' : ''}`,
                 color: KIND_COLOR[kind],
                 title: via ? via.title : ids.length === 1 ? issueTitle(lib, ids[0]) : `${ids.length} single issues`,
                 suffix: r.continued ? '(continued)' : undefined,
                 read,
-                total: ids.length,
+                total: counted.length,
                 isOpen,
                 bar: KIND_COLOR[kind],
                 onPress: () => setOpen((o) => ({ ...o, [r.key]: !isOpen })),
@@ -467,7 +480,7 @@ function EntryList(props: ListProps) {
         return (
           <View key={r.entry.id} style={s.card}>
             {header({
-              label: `${KIND_LABEL[child.kind]}${done ? ' · DONE' : ''}`,
+              label: `${kindLabel(child)}${r.entry.optional ? ' · OPTIONAL' : ''}${done ? ' · DONE' : ''}`,
               color: KIND_COLOR[child.kind],
               title: child.title,
               read: cp.read,
@@ -513,7 +526,7 @@ const MAX_SPEED = 28;
  * page scrolls along. Or tap a piece to pick it up, then send it to the top, the bottom, or tap "Place here".
  * A slice block moves as one piece.
  */
-function ReorderList({ lib, parentId, scroller, onMove, onRemove }: { lib: Library; parentId: string; scroller: Scroller; onMove: (ids: string[]) => void; onRemove: (ids: string[], label: string) => void }) {
+function ReorderList({ lib, parentId, scroller, onMove, onRemove, onOptional }: { lib: Library; parentId: string; scroller: Scroller; onMove: (ids: string[]) => void; onRemove: (ids: string[], label: string) => void; onOptional: (ids: string[], optional: boolean) => void }) {
   const canGroup = lib.collections.get(parentId)?.kind !== 'event';
   const [picked, setPicked] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ from: number; to: number; lineY: number | null } | null>(null);
@@ -530,13 +543,13 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove }: { lib: Libra
     }
     if (u.kind === 'collection') {
       const col = lib.collections.get(u.collectionId!)!;
-      return { tag: KIND_LABEL[col.kind], color: KIND_COLOR[col.kind], title: col.title, sub: '' };
+      return { tag: kindLabel(col), color: KIND_COLOR[col.kind], title: col.title, sub: '' };
     }
     const issues = u.entryIds.map((eid) => lib.children.get(parentId)?.find((e) => e.id === eid)?.child_issue_id).filter(Boolean) as string[];
     const span = issues.length > 1 ? `${issueTitle(lib, issues[0])} – #${lib.issues.get(issues[issues.length - 1])?.number ?? ''}` : issueTitle(lib, first?.child_issue_id ?? '');
     if (u.kind === 'slice') {
       const col = lib.collections.get(u.collectionId!)!;
-      return { tag: KIND_LABEL[col.kind], color: KIND_COLOR[col.kind], title: col.title, sub: `${span} · ${issues.length} issue${issues.length === 1 ? '' : 's'}` };
+      return { tag: kindLabel(col), color: KIND_COLOR[col.kind], title: col.title, sub: `${span} · ${issues.length} issue${issues.length === 1 ? '' : 's'}` };
     }
     return { tag: 'ISSUE', color: KIND_COLOR.issue, title: span, sub: '' };
   };
@@ -626,13 +639,15 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove }: { lib: Libra
       <Text style={T.tiny}>
         {picked == null
           ? `Hold the dots and drag a piece where it goes. Near the top or bottom of the screen the list scrolls with you. Or tap a piece to send it to the top or bottom.${canGroup ? ' “Part of…” labels issues as a run’s or event’s part.' : ''}`
-          : 'Send it to the top or bottom, or tap “Place here” where it should go. Tap it again to cancel.'}
+          : 'Send it to the top or bottom, make it optional (shown but not counted), or tap “Place here” where it should go. Tap it again to cancel.'}
       </Text>
       <View style={{ gap: 8 }}>
         {units.map((u, i) => {
           const l = labelOf(i);
           const isPicked = picked === i;
           const isDragged = drag?.from === i;
+          const lines = (lib.children.get(parentId) ?? []).filter((e) => u.entryIds.includes(e.id));
+          const isOptional = u.kind !== 'heading' && lines.length > 0 && lines.every((e) => e.optional);
           return (
             <Animated.View
               key={u.key}
@@ -641,7 +656,7 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove }: { lib: Libra
               {target(i)}
               <View style={[s.reorderRow, isPicked || isDragged ? { borderColor: C.dc, backgroundColor: '#16223A' } : null]}>
                 <Pressable accessibilityRole="button" accessibilityState={{ selected: isPicked }} onPress={() => setPicked(isPicked ? null : i)} style={{ flex: 1, paddingVertical: 10 }}>
-                  <Text style={[T.label, { fontSize: 10, color: l.color }]}>{l.tag}</Text>
+                  <Text style={[T.label, { fontSize: 10, color: l.color }]}>{l.tag}{isOptional ? ' · OPTIONAL' : ''}</Text>
                   <Text style={T.bodyMedium} numberOfLines={1}>{l.title}</Text>
                   {l.sub ? <Text style={T.tiny} numberOfLines={1}>{l.sub}</Text> : null}
                 </Pressable>
@@ -653,6 +668,11 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove }: { lib: Libra
                     <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} to the bottom`} disabled={i === units.length - 1} onPress={() => { move(i, units.length - 1); setPicked(null); }} style={[s.partBtn, i === units.length - 1 ? { opacity: 0.3 } : null]}>
                       <Text style={[T.tiny, { color: C.text }]}>Bottom</Text>
                     </Pressable>
+                    {u.kind !== 'heading' ? (
+                      <Pressable accessibilityRole="button" accessibilityLabel={isOptional ? `Count ${l.title} again` : `Make ${l.title} optional`} onPress={() => { onOptional(u.entryIds, !isOptional); setPicked(null); }} style={s.partBtn}>
+                        <Text style={[T.tiny, { color: C.text }]}>{isOptional ? 'Count it' : 'Optional'}</Text>
+                      </Pressable>
+                    ) : null}
                   </>
                 ) : u.kind === 'heading' ? (
                   <Pressable accessibilityRole="button" accessibilityLabel={`Rename ${l.title}`} onPress={() => router.push({ pathname: '/heading', params: { parent: parentId, entry: u.entryIds[0] } })} style={s.partBtn}>

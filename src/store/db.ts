@@ -1,19 +1,23 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 /** Tables mirrored from Supabase. `dirty` = changed on this phone and not yet uploaded. */
-export const TABLES = ['series', 'issues', 'collections', 'entries', 'read_log'] as const;
+export const TABLES = ['series', 'issues', 'collections', 'entries', 'read_log', 'links'] as const;
 export type Table = (typeof TABLES)[number];
 
 /** Columns synced for each table (everything except user_id, which Supabase fills in). */
 export const COLUMNS: Record<Table, string[]> = {
-  series: ['id', 'title', 'volume_year', 'publisher'],
+  series: ['id', 'title', 'volume_year', 'publisher', 'cv_volume_id'],
   issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id'],
-  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes'],
-  entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'heading', 'note'],
+  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes', 'label', 'planned'],
+  entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'heading', 'note', 'optional'],
   read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note'],
+  links: ['id', 'kind', 'from_collection_id', 'from_issue_id', 'to_collection_id', 'to_issue_id', 'note'],
 };
 
-const SCHEMA_VERSION = 5;
+/** Yes/no columns: stored as 0/1 here, true/false in Supabase. */
+export const BOOLEAN_COLUMNS = new Set(['on_hold', 'ongoing', 'planned', 'optional']);
+
+const SCHEMA_VERSION = 6;
 
 /** Columns added after the first version, by schema version. */
 const ADDED: Record<number, [Table, string, string][]> = {
@@ -31,12 +35,23 @@ const ADDED: Record<number, [Table, string, string][]> = {
   ],
   // 5: chapter headings.
   5: [['entries', 'heading', 'TEXT']],
+  // 6: labels, plan to read, optional lines, Comic Vine match per series (links table below).
+  6: [
+    ['collections', 'label', 'TEXT'],
+    ['collections', 'planned', 'INTEGER NOT NULL DEFAULT 0'],
+    ['entries', 'optional', 'INTEGER NOT NULL DEFAULT 0'],
+    ['series', 'cv_volume_id', 'INTEGER'],
+  ],
 };
 
 /** Extra one-off work for a version, run inside the same transaction. */
 const AFTER: Record<number, string[]> = {
   // Lines downloaded before the heading column existed here lost their heading text: fetch them again.
   5: ["DELETE FROM meta WHERE key = 'pulled:entries'"],
+  6: [
+    `CREATE TABLE IF NOT EXISTS links (id TEXT PRIMARY KEY NOT NULL, kind TEXT NOT NULL, from_collection_id TEXT, from_issue_id TEXT,
+      to_collection_id TEXT, to_issue_id TEXT, note TEXT, updated_at TEXT, deleted_at TEXT, dirty INTEGER NOT NULL DEFAULT 0)`,
+  ],
 };
 
 /**
@@ -92,7 +107,7 @@ export async function putRow(db: SQLiteDatabase, table: Table, data: object, opt
     if (c === 'dirty') return opts.dirty === false ? 0 : 1;
     if (c === 'updated_at') return (row.updated_at as string) ?? new Date().toISOString();
     const v = row[c];
-    if (v == null && (c === 'on_hold' || c === 'ongoing')) return 0;
+    if (v == null && BOOLEAN_COLUMNS.has(c)) return 0;
     return typeof v === 'boolean' ? (v ? 1 : 0) : (v ?? null);
   });
   await db.runAsync(

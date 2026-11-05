@@ -8,9 +8,10 @@ import { GhostButton, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
 
 const OPTIONS: { label: string; hint: string; href: Href; Icon: ComponentType<{ color?: string }>; bg: string; fg: string }[] = [
-  { label: 'Crisis', hint: 'Several runs and events that meet in one big story', href: '/new?kind=crisis', Icon: CrisisIcon, bg: '#2A1D10', fg: '#E8C48A' },
-  { label: 'Run', hint: "A writer's or character's stretch, holding events and issues", href: '/new?kind=run', Icon: RunIcon, bg: '#14243A', fg: '#9DBDF5' },
-  { label: 'Event', hint: 'One story, like Blood Hunt or Spider-Man: Life Story', href: '/new?kind=event', Icon: EventIcon, bg: '#331619', fg: '#F0B4B4' },
+  { label: 'Run', hint: 'A writer’s stretch on a book', href: '/new?kind=run', Icon: RunIcon, bg: '#14243A', fg: '#9DBDF5' },
+  { label: 'Event', hint: 'One story or miniseries, like Blood Hunt or Green Lantern: Rebirth', href: '/new?kind=event', Icon: EventIcon, bg: '#331619', fg: '#F0B4B4' },
+  { label: 'Reading order', hint: 'You jump between books: a crossover with its tie-ins, or the road into a big event', href: '/new?kind=crisis', Icon: CrisisIcon, bg: '#2A1D10', fg: '#E8C48A' },
+  { label: 'Era, arc or collected edition', hint: 'A long stretch across books, one story inside a run, or a trade or omnibus', href: '/new?kind=era', Icon: CrisisIcon, bg: '#12302F', fg: '#9ED9D3' },
   { label: 'Issues', hint: 'Single issues, a range, or a pasted list', href: '/add-issues', Icon: IssueIcon, bg: '#26262B', fg: '#D8D6D0' },
 ];
 

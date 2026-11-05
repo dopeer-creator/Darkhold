@@ -1,4 +1,9 @@
-import type { Collection, CollectionStatus, Entry, Issue, Kind, Series } from './types';
+import type { Collection, CollectionStatus, Entry, Issue, Kind, Link, LinkKind, Series } from './types';
+
+/** Types whose lines show which run or event each issue belongs to, worked out automatically. */
+export const READING_KINDS: Kind[] = ['crisis', 'era'];
+/** When an issue sits in several lists, the one a reading order shows it as part of: the most specific story first. */
+const PART_OF_RANK: Kind[] = ['event', 'arc', 'run'];
 
 /** An in-memory snapshot of everything, indexed for the tree walks below. */
 export interface Library {
@@ -11,6 +16,8 @@ export interface Library {
   parents: Map<string, string[]>;
   /** For a run or event: the collections that hold slices of it (a crisis reading order). */
   slicedInto: Map<string, string[]>;
+  /** Connections between lists and issues that aren't "inside" (follows, background, tie-in). */
+  links: Link[];
 }
 
 export function buildLibrary(rows: {
@@ -18,6 +25,7 @@ export function buildLibrary(rows: {
   issues: Issue[];
   collections: Collection[];
   entries: Entry[];
+  links?: Link[];
 }): Library {
   const children = new Map<string, Entry[]>();
   const parents = new Map<string, string[]>();
@@ -26,24 +34,45 @@ export function buildLibrary(rows: {
     const list = map.get(key) ?? [];
     if (!list.includes(value)) map.set(key, [...list, value]);
   };
+  const collections = new Map(rows.collections.map((c) => [c.id, c]));
+  const all: Entry[] = [];
   for (const raw of rows.entries) {
-    const e = { ...raw, via_collection_id: raw.via_collection_id ?? null };
+    const e: Entry = { ...raw, via_collection_id: raw.via_collection_id ?? null, optional: !!raw.optional };
+    all.push(e);
     const list = children.get(e.parent_id) ?? [];
     list.push(e);
     children.set(e.parent_id, list);
     const child = e.child_issue_id ?? e.child_collection_id;
     if (child) add(parents, child, e.parent_id);
-    if (e.via_collection_id) add(slicedInto, e.via_collection_id, e.parent_id);
   }
   for (const list of children.values()) list.sort((a, b) => a.position - b.position);
+  // "Part of": a pinned list wins; in a reading order, otherwise the event or run the issue is in.
+  for (const e of all) {
+    const pinned = e.via_collection_id && e.via_collection_id !== e.parent_id && collections.has(e.via_collection_id) ? e.via_collection_id : null;
+    e.part_of = pinned ?? (e.child_issue_id ? homeFor(collections, parents, e.parent_id, e.child_issue_id) : null);
+    if (e.part_of) add(slicedInto, e.part_of, e.parent_id);
+  }
   return {
     series: new Map(rows.series.map((s) => [s.id, s])),
     issues: new Map(rows.issues.map((i) => [i.id, i])),
-    collections: new Map(rows.collections.map((c) => [c.id, c])),
+    collections,
     children,
     parents,
     slicedInto,
+    links: rows.links ?? [],
   };
+}
+
+/** In a reading order: the event (else arc, else run) an issue line belongs to, or null. */
+function homeFor(collections: Map<string, Collection>, parents: Map<string, string[]>, parentId: string, issueId: string): string | null {
+  const parent = collections.get(parentId);
+  if (!parent || !READING_KINDS.includes(parent.kind)) return null;
+  const homes = (parents.get(issueId) ?? []).filter((p) => p !== parentId && collections.has(p));
+  for (const kind of PART_OF_RANK) {
+    const hit = homes.find((p) => collections.get(p)!.kind === kind);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 /** True when a collection sits inside another one, whole or as slices. */
@@ -57,26 +86,28 @@ export interface Step {
   path: string[];
   /** The run or event this issue is a slice of, when it sits in a crisis reading order. */
   via: string | null;
+  /** On an optional line (or inside one): shown, but not counted toward progress. */
+  optional: boolean;
 }
 
 /** Every issue under a collection in reading order. An issue linked twice appears twice. */
 export function walk(lib: Library, rootId: string): Step[] {
   const out: Step[] = [];
   const onPath = new Set<string>();
-  const visit = (id: string, path: string[]) => {
+  const visit = (id: string, path: string[], optional: boolean) => {
     if (onPath.has(id)) return;
     onPath.add(id);
     const here = [...path, id];
     for (const e of lib.children.get(id) ?? []) {
       if (e.child_issue_id) {
-        if (lib.issues.has(e.child_issue_id)) out.push({ issueId: e.child_issue_id, path: here, via: e.via_collection_id });
+        if (lib.issues.has(e.child_issue_id)) out.push({ issueId: e.child_issue_id, path: here, via: e.part_of ?? null, optional: optional || !!e.optional });
       } else if (e.child_collection_id && lib.collections.has(e.child_collection_id)) {
-        visit(e.child_collection_id, here);
+        visit(e.child_collection_id, here, optional || !!e.optional);
       }
     }
     onPath.delete(id);
   };
-  visit(rootId, []);
+  visit(rootId, [], false);
   return out;
 }
 
@@ -86,21 +117,21 @@ export interface Progress {
   left: number;
 }
 
-/** Counts each issue once, however many times it is linked inside the collection. */
+/** Counts each issue once, however many times it is linked inside the collection. Optional lines don't count. */
 export function progress(lib: Library, rootId: string): Progress {
   const seen = new Set<string>();
   let read = 0;
   for (const s of walk(lib, rootId)) {
-    if (seen.has(s.issueId)) continue;
+    if (s.optional || seen.has(s.issueId)) continue;
     seen.add(s.issueId);
     if (lib.issues.get(s.issueId)!.status === 'read') read++;
   }
   return { read, total: seen.size, left: seen.size - read };
 }
 
-/** Where to pick up: an issue marked "currently reading" wins, else the first unread one in order. */
+/** Where to pick up: an issue marked "currently reading" wins, else the first unread one in order. Optional lines are skipped. */
 export function nextUp(lib: Library, rootId: string): Step | null {
-  const steps = walk(lib, rootId);
+  const steps = walk(lib, rootId).filter((s) => !s.optional);
   return (
     steps.find((s) => lib.issues.get(s.issueId)!.status === 'reading') ??
     steps.find((s) => lib.issues.get(s.issueId)!.status === 'unread') ??
@@ -136,26 +167,20 @@ export function collectionStatus(lib: Library, id: string): CollectionStatus {
   const p = progress(lib, id);
   if (p.total > 0 && p.read === p.total && !hasEmptyPart(lib, id)) return 'completed';
   if (c?.on_hold) return 'on_hold';
-  if (p.read > 0 || walk(lib, id).some((s) => lib.issues.get(s.issueId)!.status === 'reading')) return 'reading';
-  return 'not_started';
+  if (p.read > 0 || walk(lib, id).some((s) => !s.optional && lib.issues.get(s.issueId)!.status === 'reading')) return 'reading';
+  return c?.planned ? 'planned' : 'not_started';
 }
 
-const ALLOWED: Record<Kind, Kind[]> = { crisis: ['run', 'event'], run: ['event'], event: [] };
-
-/** Why a collection can't go inside another, or null if it can. Mirrors the database trigger. */
+/** Why a list can't go inside another, or null if it can: any list can hold any other, but never itself. Mirrors the database trigger. */
 export function cannotNest(lib: Library, parentId: string, childId: string): string | null {
   const parent = lib.collections.get(parentId);
   const child = lib.collections.get(childId);
   if (!parent || !child) return 'Not found';
-  if (parent.kind === 'event') return 'An event can only hold issues';
-  if (!ALLOWED[parent.kind].includes(child.kind)) {
-    return child.kind === 'crisis' ? 'A crisis cannot go inside another collection' : 'A run can hold events and issues only';
-  }
   const stack = [childId];
   const seen = new Set<string>();
   while (stack.length) {
     const id = stack.pop()!;
-    if (id === parentId) return 'That would put a collection inside itself';
+    if (id === parentId) return 'That would put a list inside itself';
     if (seen.has(id)) continue;
     seen.add(id);
     for (const e of lib.children.get(id) ?? []) if (e.child_collection_id) stack.push(e.child_collection_id);
@@ -163,11 +188,9 @@ export function cannotNest(lib: Library, parentId: string, childId: string): str
   return null;
 }
 
-/** Whether a collection may hold slices of another: a crisis takes runs and events, a run takes events. */
+/** Whether lines of one list can be shown as part of another: any two different lists. */
 export function canSlice(lib: Library, parentId: string, viaId: string): boolean {
-  const parent = lib.collections.get(parentId);
-  const via = lib.collections.get(viaId);
-  return !!parent && !!via && parentId !== viaId && ALLOWED[parent.kind].includes(via.kind);
+  return lib.collections.has(parentId) && lib.collections.has(viaId) && parentId !== viaId;
 }
 
 /** Collections being read that aren't already inside (or sliced into) another collection being read. */
@@ -195,7 +218,7 @@ export function stats(lib: Library): Stats {
   const roots = activeRoots(lib);
   const left = new Set<string>();
   for (const id of roots) {
-    for (const s of walk(lib, id)) if (lib.issues.get(s.issueId)!.status !== 'read') left.add(s.issueId);
+    for (const s of walk(lib, id)) if (!s.optional && lib.issues.get(s.issueId)!.status !== 'read') left.add(s.issueId);
   }
   let completed = 0;
   for (const id of lib.collections.keys()) if (collectionStatus(lib, id) === 'completed') completed++;
@@ -242,7 +265,7 @@ export function entryUnits(lib: Library, parentId: string): Unit[] {
       units.push({ key: e.id, entryIds: [e.id], kind: 'heading', collectionId: null });
       continue;
     }
-    const via = e.via_collection_id && lib.collections.has(e.via_collection_id) ? e.via_collection_id : null;
+    const via = e.part_of ?? null;
     const last = units[units.length - 1];
     if (via && last?.kind === 'slice' && last.collectionId === via) {
       last.entryIds.push(e.id);
@@ -269,11 +292,11 @@ export function moveUnit(units: Unit[], from: number, to: number): string[] {
 export function coverFor(lib: Library, collectionId: string): string | null {
   const c = lib.collections.get(collectionId);
   if (c?.cover_path) return c.cover_path;
-  // A crisis builds to its finale, so it wears its last event's cover (Secret Wars, Armageddon…).
-  if (c?.kind === 'crisis') {
+  // A reading order builds to its finale, so it wears its last event's cover (Secret Wars, Armageddon…).
+  if (c && READING_KINDS.includes(c.kind)) {
     const entries = lib.children.get(collectionId) ?? [];
     for (let k = entries.length - 1; k >= 0; k--) {
-      const target = lib.collections.get(entries[k].child_collection_id ?? entries[k].via_collection_id ?? '');
+      const target = lib.collections.get(entries[k].child_collection_id ?? entries[k].part_of ?? '');
       if (target?.kind !== 'event') continue;
       const cover = coverFor(lib, target.id);
       if (cover) return cover;
@@ -287,43 +310,6 @@ export function coverFor(lib: Library, collectionId: string): string | null {
   return null;
 }
 
-/** Why a collection can't become another kind, or null if it can. */
-export function cannotChangeKind(lib: Library, id: string, kind: Kind): string | null {
-  const c = lib.collections.get(id);
-  if (!c || c.kind === kind) return null;
-  const entries = lib.children.get(id) ?? [];
-  const holders = [...(lib.parents.get(id) ?? []), ...(lib.slicedInto.get(id) ?? [])].map((p) => lib.collections.get(p)).filter((p) => !!p);
-  if (kind === 'event' && entries.some((e) => e.child_collection_id || e.via_collection_id)) {
-    return 'An event holds issues only. Take the runs, events and labelled parts out first.';
-  }
-  if (kind === 'run' && entries.some((e) => (e.child_collection_id && lib.collections.get(e.child_collection_id)?.kind !== 'event') || (e.via_collection_id && lib.collections.get(e.via_collection_id)?.kind !== 'event'))) {
-    return 'A run can hold events and issues only. Take the runs inside it out first.';
-  }
-  if (kind === 'crisis' && holders.length) {
-    return `A crisis can't sit inside another collection. It is inside ${holders.map((h) => h!.title).join(', ')}.`;
-  }
-  if (kind === 'run' && holders.some((h) => h!.kind !== 'crisis')) {
-    return 'A run can only sit inside a crisis.';
-  }
-  return null;
-}
-
-/**
- * For a crisis or run: issue lines that already belong to a run or event elsewhere, and which one.
- * Used to turn plain lines into labelled parts, e.g. Batman #21 → part of the Batman (2016) run.
- * Prefers an event over a run, as it is the more specific story.
- */
-export function suggestedSlices(lib: Library, id: string): { entryId: string; via: string }[] {
-  const out: { entryId: string; via: string }[] = [];
-  for (const e of lib.children.get(id) ?? []) {
-    if (!e.child_issue_id || e.via_collection_id) continue;
-    const homes = (lib.parents.get(e.child_issue_id) ?? []).filter((p) => p !== id && canSlice(lib, id, p));
-    const pick = homes.find((p) => lib.collections.get(p)?.kind === 'event') ?? homes[0];
-    if (pick) out.push({ entryId: e.id, via: pick });
-  }
-  return out;
-}
-
 /** Progress of each chapter heading's section: the lines after it, up to the next heading. */
 export function headingSections(lib: Library, parentId: string): Map<string, { read: number; total: number; issueIds: Set<string> }> {
   const out = new Map<string, { read: number; total: number; issueIds: Set<string> }>();
@@ -334,7 +320,7 @@ export function headingSections(lib: Library, parentId: string): Map<string, { r
       out.set(e.id, current);
       continue;
     }
-    if (!current) continue;
+    if (!current || e.optional) continue;
     const ids = e.child_issue_id ? [e.child_issue_id] : e.child_collection_id ? walk(lib, e.child_collection_id).map((s) => s.issueId) : [];
     for (const id of ids) {
       if (current.issueIds.has(id) || !lib.issues.has(id)) continue;
@@ -342,6 +328,46 @@ export function headingSections(lib: Library, parentId: string): Map<string, { r
       current.total++;
       if (lib.issues.get(id)!.status === 'read') current.read++;
     }
+  }
+  return out;
+}
+
+export interface Connection {
+  link: Link;
+  /** The other end, as a list or an issue. */
+  collectionId: string | null;
+  issueId: string | null;
+}
+
+/** What a connection reads as, seen from this side. */
+export type ConnectionGroup = 'before' | 'next' | 'background' | 'background_for' | 'tie_in_of' | 'tie_ins';
+
+export const CONNECTION_TITLE: Record<ConnectionGroup, string> = {
+  before: 'Before this',
+  next: 'What’s next',
+  background: 'Background',
+  background_for: 'Background for',
+  tie_in_of: 'Tie-in of',
+  tie_ins: 'Tie-ins',
+};
+
+const GROUP_OF: Record<LinkKind, [ConnectionGroup, ConnectionGroup]> = {
+  follows: ['before', 'next'],
+  background: ['background', 'background_for'],
+  tie_in: ['tie_in_of', 'tie_ins'],
+};
+
+/** A list's or issue's connections, grouped as they read from its side ("Before this: Armageddon"). */
+export function connections(lib: Library, end: { collectionId?: string; issueId?: string }): Map<ConnectionGroup, Connection[]> {
+  const out = new Map<ConnectionGroup, Connection[]>();
+  const push = (g: ConnectionGroup, c: Connection) => out.set(g, [...(out.get(g) ?? []), c]);
+  const exists = (collectionId: string | null, issueId: string | null) => (collectionId ? lib.collections.has(collectionId) : !!issueId && lib.issues.has(issueId));
+  for (const link of lib.links) {
+    const [mine, theirs] = GROUP_OF[link.kind];
+    const isFrom = end.collectionId ? link.from_collection_id === end.collectionId : !!end.issueId && link.from_issue_id === end.issueId;
+    const isTo = end.collectionId ? link.to_collection_id === end.collectionId : !!end.issueId && link.to_issue_id === end.issueId;
+    if (isFrom && exists(link.to_collection_id, link.to_issue_id)) push(mine, { link, collectionId: link.to_collection_id, issueId: link.to_issue_id });
+    if (isTo && exists(link.from_collection_id, link.from_issue_id)) push(theirs, { link, collectionId: link.from_collection_id, issueId: link.from_issue_id });
   }
   return out;
 }

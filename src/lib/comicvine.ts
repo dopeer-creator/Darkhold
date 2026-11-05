@@ -80,7 +80,7 @@ export async function findVolume(key: string, series: Series): Promise<number | 
 
 /** Forgets a series' Comic Vine match and the covers it brought, then looks again (after fixing a name or year). */
 export async function rematchSeries(db: SQLiteDatabase, lib: Library, key: string, seriesId: string): Promise<CoverRun> {
-  await setMeta(db, `cv:volume:${seriesId}`, '');
+  await rememberVolume(db, lib, seriesId, null);
   for (const issue of lib.issues.values()) {
     if (issue.series_id === seriesId && issue.cover_path?.includes('comicvine')) {
       issue.cover_path = null;
@@ -137,12 +137,11 @@ export async function fetchMissingCovers(
     done++;
     if (!series) continue;
     onProgress?.(done, bySeries.size, series.title);
-    const cacheKey = `cv:volume:${seriesId}`;
-    let volumeId = Number(await getMeta(db, cacheKey)) || null;
+    let volumeId = await rememberedVolume(db, lib, seriesId);
     if (!volumeId) {
       volumeId = await findVolume(key, series);
       await pause();
-      if (volumeId) await setMeta(db, cacheKey, String(volumeId));
+      if (volumeId) await rememberVolume(db, lib, seriesId, volumeId);
     }
     if (!volumeId) {
       run.seriesNotFound.push(series.volume_year ? `${series.title} (${series.volume_year})` : series.title);
@@ -217,7 +216,7 @@ export async function volumesNamed(key: string, title: string): Promise<VolumeCh
  * an earlier match are replaced; links you pasted yourself are kept.
  */
 export async function applyVolumeToSeries(db: SQLiteDatabase, lib: Library, key: string, seriesId: string, volumeId: number) {
-  await setMeta(db, `cv:volume:${seriesId}`, String(volumeId));
+  await rememberVolume(db, lib, seriesId, volumeId);
   const covers = await volumeCovers(key, volumeId);
   let found = 0;
   for (const issue of lib.issues.values()) {
@@ -294,9 +293,9 @@ export async function fillDetails(
       let cvId = issue.cv_issue_id ?? null;
       if (!cvId && series) {
         if (!indexes.has(series.id)) {
-          const cached = Number(await getMeta(db, `cv:volume:${series.id}`)) || null;
+          const cached = await rememberedVolume(db, lib, series.id);
           const volumeId = cached ?? (await findVolume(key, series));
-          if (volumeId && !cached) await setMeta(db, `cv:volume:${series.id}`, String(volumeId));
+          if (volumeId && !cached) await rememberVolume(db, lib, series.id, volumeId);
           indexes.set(series.id, volumeId ? await volumeIndex(key, volumeId) : null);
           await pause();
         }
@@ -319,4 +318,19 @@ export async function fillDetails(
     done++;
   }
   return run;
+}
+
+/** The Comic Vine volume a series was matched to: saved on the series (synced), or from older local notes. */
+async function rememberedVolume(db: SQLiteDatabase, lib: Library, seriesId: string): Promise<number | null> {
+  return lib.series.get(seriesId)?.cv_volume_id ?? (Number(await getMeta(db, `cv:volume:${seriesId}`)) || null);
+}
+
+/** Saves (or forgets, with null) which Comic Vine volume a series is, so the same comic always matches the same way. */
+async function rememberVolume(db: SQLiteDatabase, lib: Library, seriesId: string, volumeId: number | null) {
+  await setMeta(db, `cv:volume:${seriesId}`, volumeId ? String(volumeId) : '');
+  const series = lib.series.get(seriesId);
+  if (series && (series.cv_volume_id ?? null) !== volumeId) {
+    series.cv_volume_id = volumeId;
+    await putRow(db, 'series', series);
+  }
 }

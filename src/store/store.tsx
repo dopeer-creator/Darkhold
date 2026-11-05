@@ -128,7 +128,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-const EMPTY: Library = { series: new Map(), issues: new Map(), collections: new Map(), children: new Map(), parents: new Map(), slicedInto: new Map() };
+const EMPTY: Library = { series: new Map(), issues: new Map(), collections: new Map(), children: new Map(), parents: new Map(), slicedInto: new Map(), links: [] };
 
 export function useStore() {
   const s = useContext(Ctx);

@@ -3,23 +3,24 @@ import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { activeRoots, coverFor, issueTitle, nextUp, progress, stats } from '@/domain/library';
+import { activeRoots, collectionStatus, connections, coverFor, issueTitle, nextUp, progress, stats } from '@/domain/library';
 import { useStore } from '@/store/store';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
-import { C, F, KIND_LABEL, publisherColor } from '@/ui/theme';
+import { C, F, publisherColor, kindLabel } from '@/ui/theme';
 
 export default function Home() {
   const { lib, readLog, sync, ready, session } = useStore();
   const roots = useMemo(() => activeRoots(lib), [lib]);
   const totals = useMemo(() => stats(lib), [lib]);
   const empty = ready && lib.collections.size === 0 && lib.issues.size === 0;
+  const planned = useMemo(() => [...lib.collections.values()].filter((c) => collectionStatus(lib, c.id) === 'planned').sort((a, b) => a.title.localeCompare(b.title)), [lib]);
 
   const recent = readLog.slice(0, 5).map((l) => {
     const issue = lib.issues.get(l.issue_id);
     const parent = lib.parents.get(l.issue_id)?.[0];
     const coll = parent ? lib.collections.get(parent) : undefined;
-    return { id: l.id, issueId: l.issue_id, title: issueTitle(lib, l.issue_id), number: issue?.number ?? '', where: coll ? `${KIND_LABEL[coll.kind][0]}${KIND_LABEL[coll.kind].slice(1).toLowerCase()} · ${coll.title}` : '', parentId: parent, publisher: coll?.publisher ?? null, seriesTitle: issue ? (lib.series.get(issue.series_id)?.title ?? '') : '', day: l.read_on, cover: issue?.cover_path ?? null };
+    return { id: l.id, issueId: l.issue_id, title: issueTitle(lib, l.issue_id), number: issue?.number ?? '', where: coll ? `${kindLabel(coll)[0]}${kindLabel(coll).slice(1).toLowerCase()} · ${coll.title}` : '', parentId: parent, publisher: coll?.publisher ?? null, seriesTitle: issue ? (lib.series.get(issue.series_id)?.title ?? '') : '', day: l.read_on, cover: issue?.cover_path ?? null };
   });
 
   return (
@@ -44,10 +45,10 @@ export default function Home() {
           <View style={s.emptyCard}>
             <Text style={[T.h1, { fontSize: 24 }]}>Start your library</Text>
             <Text style={[T.small, { lineHeight: 20 }]}>
-              Make a run, an event or a crisis, then add its issues: type them, enter a range, or paste a whole reading order.
+              Make a run, an event or a reading order, then add its issues: type them, enter a range, or paste a whole list.
             </Text>
             <PrimaryButton label="Create a run" onPress={() => router.push('/new?kind=run')} />
-            <GhostButton label="Event, crisis or something else" onPress={() => router.push('/add')} />
+            <GhostButton label="Event, reading order or something else" onPress={() => router.push('/add')} />
           </View>
         ) : null}
 
@@ -68,7 +69,7 @@ export default function Home() {
                     <View style={{ flexDirection: 'row', gap: 12 }}>
                       <Cover title={c.title} publisher={c.publisher} width={72} uri={coverFor(lib, id)} />
                       <View style={{ flex: 1, gap: 4 }}>
-                        <Text style={[T.label, { color }]}>{KIND_LABEL[c.kind]}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
+                        <Text style={[T.label, { color }]}>{kindLabel(c)}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
                         <Text numberOfLines={2} style={s.cardTitle}>{c.title}</Text>
                         <Text style={[T.small, T.num]}>{p.read} / {p.total} issues</Text>
                         <View style={{ marginTop: 4 }}><Bar read={p.read} total={p.total} color={color} /></View>
@@ -85,6 +86,26 @@ export default function Home() {
                 );
               })}
             </ScrollView>
+          </View>
+        ) : null}
+
+        {planned.length ? (
+          <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+            <SectionTitle right={<Text style={T.tiny}>{planned.length}</Text>}>Plan to read</SectionTitle>
+            {planned.map((c, i) => {
+              const before = connections(lib, { collectionId: c.id }).get('before')?.[0];
+              const after = before?.collectionId ? lib.collections.get(before.collectionId)?.title : before?.issueId ? issueTitle(lib, before.issueId) : null;
+              return (
+                <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={[s.row, i < planned.length - 1 ? s.rowLine : null]}>
+                  <Cover title={c.title} publisher={c.publisher} width={36} uri={coverFor(lib, c.id)} />
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={T.bodyMedium}>{c.title}</Text>
+                    <Text numberOfLines={1} style={T.tiny}>{kindLabel(c)}{after ? ` · after ${after}` : ''}</Text>
+                  </View>
+                  <Text style={[T.tiny, T.num]}>{progress(lib, c.id).total}</Text>
+                </Pressable>
+              );
+            })}
           </View>
         ) : null}
 

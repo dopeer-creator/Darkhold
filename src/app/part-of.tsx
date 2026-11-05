@@ -9,7 +9,7 @@ import { createCollection, setPartOf } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { CloseIcon } from '@/ui/icons';
 import { Checkbox, Chip, SectionTitle, T } from '@/ui/parts';
-import { C, F, KIND_COLOR, KIND_LABEL } from '@/ui/theme';
+import { C, F, KIND_COLOR, kindLabel } from '@/ui/theme';
 
 /**
  * "Part of…": mark lines of a crisis (or run) as one run's or event's part, e.g. Batman #21–22 and
@@ -41,7 +41,7 @@ export default function PartOf() {
   if (!parent) return null;
 
   const targets = [...lib.collections.values()]
-    .filter((c) => canSlice(lib, parentId, c.id))
+    .filter((c) => canSlice(lib, parentId, c.id) && !['crisis', 'era', 'edition'].includes(c.kind))
     .sort((a, b) => Number(isHome(b.id)) - Number(isHome(a.id)) || a.title.localeCompare(b.title));
   function isHome(id: string) {
     return lines.some((e) => picked.has(e.id) && (lib.parents.get(e.child_issue_id!) ?? []).includes(id));
@@ -82,7 +82,7 @@ export default function PartOf() {
               <View key={e.id} style={s.row}>
                 <View style={{ flex: 1 }}>
                   <Text style={T.body}>{issueTitle(lib, e.child_issue_id!)}</Text>
-                  {via ? <Text style={[T.tiny, { color: KIND_COLOR[via.kind] }]}>{KIND_LABEL[via.kind]} · {via.title}</Text> : null}
+                  {via ? <Text style={[T.tiny, { color: KIND_COLOR[via.kind] }]}>{kindLabel(via)} · {via.title}</Text> : null}
                 </View>
                 <Checkbox
                   checked={on}
@@ -105,7 +105,8 @@ export default function PartOf() {
           <SectionTitle>A new one</SectionTitle>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Chip label="Event" active={newKind === 'event'} onPress={() => setNewKind('event')} />
-            {parent.kind === 'crisis' ? <Chip label="Run" active={newKind === 'run'} onPress={() => setNewKind('run')} /> : null}
+            <Chip label="Run" active={newKind === 'run'} onPress={() => setNewKind('run')} />
+            <Chip label="Arc" active={newKind === 'arc'} onPress={() => setNewKind('arc')} />
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TextInput value={newName} onChangeText={setNewName} placeholder={newKind === 'event' ? 'e.g. The Button' : 'e.g. The Flash (2016)'} placeholderTextColor={C.faint} style={s.input} accessibilityLabel="New name" />
@@ -119,7 +120,7 @@ export default function PartOf() {
           <SectionTitle>Or one you have</SectionTitle>
           {targets.map((c) => (
             <Pressable key={c.id} onPress={() => apply(c.id, c.title)} style={s.row}>
-              <Text style={[T.label, { color: KIND_COLOR[c.kind], width: 52 }]}>{KIND_LABEL[c.kind]}</Text>
+              <Text style={[T.label, { color: KIND_COLOR[c.kind], width: 52 }]}>{kindLabel(c)}</Text>
               <Text style={[T.body, { flex: 1 }]} numberOfLines={1}>{c.title}</Text>
               {isHome(c.id) ? <Text style={T.tiny}>has these</Text> : null}
             </Pressable>

@@ -1,4 +1,5 @@
-export type Kind = 'crisis' | 'run' | 'event';
+/** A list's type. 'crisis' is shown as "Reading order"; it keeps its old name in the database. */
+export type Kind = 'crisis' | 'run' | 'event' | 'era' | 'arc' | 'edition';
 export type IssueStatus = 'unread' | 'reading' | 'read';
 export type DatePrecision = 'day' | 'unknown';
 
@@ -7,6 +8,8 @@ export interface Series {
   title: string;
   volume_year: number | null;
   publisher: string | null;
+  /** The Comic Vine volume this series was matched to. */
+  cv_volume_id?: number | null;
 }
 
 export interface Issue {
@@ -48,6 +51,10 @@ export interface Collection {
   on_hold: boolean;
   /** Still coming out: show "2024–present" rather than an end year. */
   ongoing: boolean;
+  /** Set by you: on the "Plan to read" shelf until you start it. */
+  planned?: boolean;
+  /** Your own word for the type, shown instead of it ("Saga", "Omnibus"). */
+  label?: string | null;
   rating: number | null;
   notes: string | null;
 }
@@ -64,6 +71,29 @@ export interface Entry {
   /** A chapter heading line ("Phase 2 · The Incursions"): holds no issue or collection; note is its description. */
   heading?: string | null;
   note: string | null;
+  /** Shown and tickable, but not counted toward progress ("optional but recommended"). */
+  optional?: boolean;
+  /**
+   * Worked out when the library loads, never stored: the list this line is shown as part of.
+   * The pinned via_collection_id if there is one, else (in a reading order) the event or run the issue sits in.
+   */
+  part_of?: string | null;
+}
+
+export type LinkKind = 'follows' | 'background' | 'tie_in';
+
+/**
+ * A connection that isn't "inside": from follows to (comes after it), from has to as background
+ * (reads better knowing it), or from is a tie-in of to. Each end is a list or one issue.
+ */
+export interface Link {
+  id: string;
+  kind: LinkKind;
+  from_collection_id: string | null;
+  from_issue_id: string | null;
+  to_collection_id: string | null;
+  to_issue_id: string | null;
+  note: string | null;
 }
 
 export interface ReadLog {
@@ -75,4 +105,4 @@ export interface ReadLog {
   note: string | null;
 }
 
-export type CollectionStatus = 'not_started' | 'reading' | 'on_hold' | 'completed';
+export type CollectionStatus = 'not_started' | 'planned' | 'reading' | 'on_hold' | 'completed';

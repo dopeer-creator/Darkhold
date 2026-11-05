@@ -1,3 +1,5 @@
+import type { Collection, Kind } from '@/domain/types';
+
 export const C = {
   bg: '#111113',
   bar: '#141416',
@@ -50,7 +52,25 @@ export function tintFor(title: string) {
   return TINTS[h % TINTS.length];
 }
 
-export const KIND_LABEL = { crisis: 'CRISIS', run: 'RUN', event: 'EVENT', issue: 'ISSUE', heading: 'CHAPTER' } as const;
-/** Label colour by type, so a crisis reading order reads at a glance: events red, runs blue. */
-export const KIND_COLOR = { crisis: '#D9A441', run: '#6F9BF2', event: '#E5626A', issue: '#A6A3AD', heading: '#ECEAE5' } as const;
-export const STATUS_LABEL = { not_started: 'Not started', reading: 'Reading', on_hold: 'On hold', completed: 'Completed' } as const;
+export const KIND_LABEL = {
+  crisis: 'READING ORDER', run: 'RUN', event: 'EVENT', era: 'ERA', arc: 'ARC', edition: 'COLLECTED EDITION', issue: 'ISSUE', heading: 'CHAPTER',
+} as const;
+/** Label colour by type, so a reading order reads at a glance: events red, runs blue. */
+export const KIND_COLOR = {
+  crisis: '#D9A441', run: '#6F9BF2', event: '#E5626A', era: '#5FC0B4', arc: '#A98BE0', edition: '#C9B27A', issue: '#A6A3AD', heading: '#ECEAE5',
+} as const;
+/** The type in a sentence: "New reading order", "Delete run only". */
+export const KIND_NAME: Record<Kind, string> = { crisis: 'reading order', run: 'run', event: 'event', era: 'era', arc: 'arc', edition: 'collected edition' };
+/** What each type is for, shown when you pick one. */
+export const KIND_HINT: Record<Kind, string> = {
+  crisis: 'You jump between books: a crossover with its tie-ins, or the road into a big event',
+  run: 'A writer’s stretch on a book',
+  event: 'One story or miniseries, like Blood Hunt or Green Lantern: Rebirth',
+  era: 'A long stretch across several books, like Geoff Johns’ Green Lantern',
+  arc: 'One story inside a run, like Court of Owls',
+  edition: 'A trade, omnibus or other collected book',
+};
+export const KINDS: Kind[] = ['run', 'event', 'crisis', 'era', 'arc', 'edition'];
+/** A list's label: your own word if you gave one, else its type. */
+export const kindLabel = (c: Pick<Collection, 'kind' | 'label'>) => (c.label?.trim() ? c.label.trim().toUpperCase() : KIND_LABEL[c.kind]);
+export const STATUS_LABEL = { not_started: 'Not started', planned: 'Plan to read', reading: 'Reading', on_hold: 'On hold', completed: 'Completed' } as const;

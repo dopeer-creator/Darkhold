@@ -1,10 +1,10 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { supabase } from '@/lib/supabase';
-import { COLUMNS, getMeta, putRow, setMeta, TABLES, type Table } from './db';
+import { BOOLEAN_COLUMNS, COLUMNS, getMeta, putRow, setMeta, TABLES, type Table } from './db';
 
 // Parents before children, so foreign keys exist when rows arrive.
-const ORDER: Table[] = ['series', 'collections', 'issues', 'entries', 'read_log'];
+const ORDER: Table[] = ['series', 'collections', 'issues', 'entries', 'read_log', 'links'];
 
 /**
  * Two-way sync with Supabase. Phone changes upload first (Supabase stamps the time),
@@ -21,7 +21,7 @@ export async function syncNow(db: SQLiteDatabase): Promise<{ pushed: number; pul
     if (!dirty.length) continue;
     const rows = dirty.map((r) => {
       const out: Record<string, unknown> = {};
-      for (const c of COLUMNS[table]) out[c] = c === 'on_hold' || c === 'ongoing' ? !!r[c] : r[c];
+      for (const c of COLUMNS[table]) out[c] = BOOLEAN_COLUMNS.has(c) ? !!r[c] : r[c];
       out.deleted_at = r.deleted_at;
       return out;
     });

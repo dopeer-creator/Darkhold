@@ -7,14 +7,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { issueTitle } from '@/domain/library';
 import type { Issue, IssueStatus } from '@/domain/types';
 import { findVolume, getComicVineKey, volumeCovers } from '@/lib/comicvine';
-import { daysAgo, moveIssue, removeEntry, setIssueStatus, setReadDate, today, updateIssue, updateSeries } from '@/store/repo';
+import { daysAgo, mergeSeries, moveIssue, removeEntry, setIssueStatus, setOptional, setReadDate, today, updateIssue, updateSeries } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
 import { Chip, Cover, GhostButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { useFillDetails } from '@/ui/use-fill-details';
 import { pickDay } from '@/ui/pick-day';
-import { C, F, KIND_COLOR, KIND_LABEL } from '@/ui/theme';
+import { ConnectionsBlock } from '@/ui/connections';
+import { C, F, KIND_COLOR, kindLabel } from '@/ui/theme';
 
 const STATUSES: { key: IssueStatus; label: string }[] = [
   { key: 'unread', label: 'Unread' },
@@ -53,6 +54,7 @@ export default function IssueScreen() {
   const title = issueTitle(lib, issue.id);
   const yesterday = daysAgo(1);
   const parentColl = parent ? lib.collections.get(parent) : undefined;
+  const lineOptional = !!(parent && entry && lib.children.get(parent)?.find((e) => e.id === entry)?.optional);
   const appearsIn = [...new Set([...(lib.parents.get(issue.id) ?? [])])]
     .map((cid) => lib.collections.get(cid))
     .filter((c): c is NonNullable<typeof c> => !!c);
@@ -82,7 +84,13 @@ export default function IssueScreen() {
   const saveWholeSeries = () => {
     if (!series) return;
     const clash = [...lib.series.values()].find((x) => x.id !== series.id && x.title.toLowerCase() === editTitle.trim().toLowerCase() && (x.volume_year ?? null) === year);
-    if (clash) return Alert.alert('That series already exists', `Use "Only this issue" to move issues into ${clash.title}${clash.volume_year ? ` (${clash.volume_year})` : ''} one by one.`);
+    if (clash) {
+      const name = `${clash.title}${clash.volume_year ? ` (${clash.volume_year})` : ''}`;
+      return Alert.alert(`${name} already exists`, `Merge all ${inSeries} issues into it? Issues with the same number become one, keeping your read marks.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Merge', onPress: () => act((d, l) => mergeSeries(d, l, series.id, clash.id)) },
+      ]);
+    }
     Alert.alert(`Change all ${inSeries} issues?`, `${series.title}${series.volume_year ? ` (${series.volume_year})` : ''} becomes ${editTitle.trim()}${year ? ` (${year})` : ''} everywhere.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Change series', onPress: () => act((d, l) => updateSeries(d, l, series.id, { title: editTitle.trim(), volume_year: year })) },
@@ -270,13 +278,21 @@ export default function IssueScreen() {
               <Text style={T.tiny}>One issue, linked in each place — reading it anywhere counts everywhere, once.</Text>
               {appearsIn.map((c) => (
                 <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={s.row}>
-                  <Text style={[T.label, { color: KIND_COLOR[c.kind], width: 56 }]}>{KIND_LABEL[c.kind]}</Text>
+                  <Text style={[T.label, { color: KIND_COLOR[c.kind], width: 96 }]} numberOfLines={1}>{kindLabel(c)}</Text>
                   <Text style={[T.body, { flex: 1 }]} numberOfLines={1}>{c.title}</Text>
                 </Pressable>
               ))}
             </View>
           ) : null}
 
+          <ConnectionsBlock issueId={issue.id} />
+
+          {entry && parentColl ? (
+            <GhostButton
+              label={lineOptional ? `Count it in ${parentColl.title} again` : `Optional in ${parentColl.title}`}
+              onPress={() => act((d, l) => setOptional(d, l, parentColl.id, [entry], !lineOptional))}
+            />
+          ) : null}
           {entry && parentColl ? (
             <GhostButton
               label={`Remove from ${parentColl.title}`}

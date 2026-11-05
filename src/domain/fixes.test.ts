@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { chooseVolume, type CvVolume } from '@/lib/comicvine';
-import { buildLibrary, cannotChangeKind, coverFor, suggestedSlices } from './library';
-import type { Collection, Entry, Issue, Kind } from './types';
+import { buildLibrary, cannotNest, collectionStatus, connections, coverFor, nextUp, progress } from './library';
+import type { Collection, Entry, Issue, Kind, Link } from './types';
 
 const vol = (id: number, name: string, start_year: string, count: number, publisher = 'DC Comics'): CvVolume => ({ id, name, start_year, count_of_issues: count, publisher: { name: publisher } });
 
@@ -34,8 +34,8 @@ const coll = (id: string, kind: Kind): Collection => ({
   id, kind, title: id, publisher: 'DC', writer: null, artist: null, characters: null, start_year: null, end_year: null, description: null, cover_path: null, on_hold: false, ongoing: false, rating: null, notes: null,
 });
 let n = 0;
-const line = (parent_id: string, child: { issue?: string; coll?: string; via?: string }): Entry => ({
-  id: `e${++n}`, parent_id, position: n, child_issue_id: child.issue ?? null, child_collection_id: child.coll ?? null, via_collection_id: child.via ?? null, note: null,
+const line = (parent_id: string, child: { issue?: string; coll?: string; via?: string; optional?: boolean }): Entry => ({
+  id: `e${++n}`, parent_id, position: n, child_issue_id: child.issue ?? null, child_collection_id: child.coll ?? null, via_collection_id: child.via ?? null, note: null, optional: child.optional,
 });
 
 // Doomsday Clock entered as an event: DC Universe Rebirth #1, The Button (Batman/Flash #21–22), then Doomsday Clock #1–2.
@@ -73,27 +73,69 @@ describe('crisis cover', () => {
   });
 });
 
-describe('changing type', () => {
-  it('lets an event of plain issues become a crisis', () => {
-    expect(cannotChangeKind(doomsday(), 'clock', 'crisis')).toBeNull();
-  });
-
-  it('stops changes that would break the layering', () => {
+describe('lists are labels', () => {
+  it('any list can hold any other, but never itself', () => {
     const lib = doomsday();
+    expect(cannotNest(lib, 'clock', 'crisis')).toBeNull();
+    expect(cannotNest(lib, 'batrun', 'crisis')).toBeNull();
     lib.children.set('crisis', [line('crisis', { coll: 'batrun' })]);
-    lib.parents.set('batrun', ['crisis']);
-    expect(cannotChangeKind(lib, 'crisis', 'event')).toMatch(/holds issues only/);
-    expect(cannotChangeKind(lib, 'batrun', 'crisis')).toMatch(/inside crisis/);
+    expect(cannotNest(lib, 'batrun', 'crisis')).toMatch(/inside itself/);
+  });
+});
+
+describe('part of, worked out', () => {
+  it('in a reading order, shows each issue as part of its event, else its run', () => {
+    const base = doomsday();
+    const lib = buildLibrary({
+      series: [],
+      issues: [...base.issues.values()],
+      collections: [...base.collections.values(), coll('order', 'crisis')],
+      entries: [...[...base.children.values()].flat(), line('order', { issue: 'b21' }), line('order', { issue: 'd1' }), line('order', { issue: 'dcur', via: 'batrun' })],
+    });
+    const parts = lib.children.get('order')!.map((e) => e.part_of);
+    // Batman #21 is in the Batman run and in the Doomsday Clock event: the event wins. A pinned line keeps its pin.
+    expect(parts).toEqual(['clock', 'clock', 'batrun']);
   });
 
-  it('suggests labelling issues that already belong to a run', () => {
+  it('leaves runs and events as plain lists', () => {
     const lib = doomsday();
-    lib.collections.get('clock')!.kind = 'crisis';
-    const s = suggestedSlices(lib, 'clock').map((x) => [lib.children.get('clock')!.find((e) => e.id === x.entryId)!.child_issue_id, x.via]);
-    expect(s).toEqual([
-      ['b21', 'batrun'],
-      ['f21', 'flarun'],
-      ['b22', 'batrun'],
-    ]);
+    expect(lib.children.get('batrun')!.every((e) => e.part_of == null)).toBe(true);
+  });
+});
+
+describe('optional lines and plan to read', () => {
+  it('shows optional issues without counting them', () => {
+    const lib = buildLibrary({
+      series: [],
+      issues: [issue('a', 's', '1'), issue('ion', 'ion', '1'), issue('b', 's', '2')],
+      collections: [coll('road', 'crisis')],
+      entries: [line('road', { issue: 'a' }), line('road', { issue: 'ion', optional: true }), line('road', { issue: 'b' })],
+    });
+    lib.issues.get('a')!.status = 'read';
+    expect(progress(lib, 'road')).toEqual({ read: 1, total: 2, left: 1 });
+    expect(nextUp(lib, 'road')!.issueId).toBe('b');
+    lib.issues.get('b')!.status = 'read';
+    expect(collectionStatus(lib, 'road')).toBe('completed');
+  });
+
+  it('a planned list not started yet is on the Plan to read shelf', () => {
+    const lib = doomsday();
+    lib.collections.get('clock')!.planned = true;
+    expect(collectionStatus(lib, 'clock')).toBe('planned');
+    lib.issues.get('d1')!.status = 'read';
+    expect(collectionStatus(lib, 'clock')).toBe('reading');
+  });
+});
+
+describe('connections', () => {
+  it('reads from each side: before this / what’s next', () => {
+    const lib = doomsday();
+    const follows: Link = { id: 'l1', kind: 'follows', from_collection_id: 'flarun', from_issue_id: null, to_collection_id: 'clock', to_issue_id: null, note: null };
+    const background: Link = { id: 'l2', kind: 'background', from_issue_id: 'd1', from_collection_id: null, to_issue_id: 'b21', to_collection_id: null, note: 'The Button' };
+    lib.links.push(follows, background);
+    expect(connections(lib, { collectionId: 'flarun' }).get('before')![0].collectionId).toBe('clock');
+    expect(connections(lib, { collectionId: 'clock' }).get('next')![0].collectionId).toBe('flarun');
+    expect(connections(lib, { issueId: 'd1' }).get('background')![0].issueId).toBe('b21');
+    expect(connections(lib, { issueId: 'b21' }).get('background_for')![0].issueId).toBe('d1');
   });
 });

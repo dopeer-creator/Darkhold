@@ -3,9 +3,9 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { ExportFile } from '@/domain/importer';
 import { planImport } from '@/domain/importer';
-import { buildLibrary, canSlice, cannotChangeKind, cannotNest, positionBetween, suggestedSlices, walk, type Library } from '@/domain/library';
+import { buildLibrary, canSlice, cannotNest, positionBetween, walk, type Library } from '@/domain/library';
 import type { BlockKind, ResolvedLine } from '@/domain/parser';
-import type { Collection, Entry, Issue, IssueStatus, Kind, ReadLog, Series } from '@/domain/types';
+import type { Collection, Entry, Issue, IssueStatus, Kind, Link, LinkKind, ReadLog, Series } from '@/domain/types';
 import { COLUMNS, putRow, TABLES, type Table } from './db';
 
 export const newId = () => randomUUID();
@@ -26,16 +26,23 @@ export interface Snapshot {
 }
 
 export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
-  const [series, issues, collections, entries, readLog] = await Promise.all([
+  const [series, issues, collections, entries, links, readLog] = await Promise.all([
     live<Series>(db, 'series'),
     live<Issue>(db, 'issues'),
-    live<Collection & { on_hold: number | boolean; ongoing: number | boolean }>(db, 'collections'),
-    live<Entry>(db, 'entries'),
+    live<Collection & { on_hold: number | boolean; ongoing: number | boolean; planned?: number | boolean }>(db, 'collections'),
+    live<Entry & { optional?: number | boolean }>(db, 'entries'),
+    live<Link>(db, 'links'),
     // With updated_at: the moment it was ticked, so same-day reads come out newest first.
     db.getAllAsync<ReadLog & { updated_at: string | null }>(`SELECT ${COLUMNS.read_log.join(',')}, updated_at FROM read_log WHERE deleted_at IS NULL`),
   ]);
   return {
-    lib: buildLibrary({ series, issues, collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold, ongoing: !!c.ongoing })), entries }),
+    lib: buildLibrary({
+      series,
+      issues,
+      collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold, ongoing: !!c.ongoing, planned: !!c.planned })),
+      entries: entries.map((e) => ({ ...e, optional: !!e.optional })),
+      links,
+    }),
     readLog: readLog
       .sort((a, b) => (b.read_on ?? '').localeCompare(a.read_on ?? '') || (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
       .map(({ updated_at: _ignored, ...l }) => l),
@@ -125,7 +132,7 @@ export async function updateIssue(db: SQLiteDatabase, lib: Library, issueId: str
 function collectionRow(fields: Pick<Collection, 'kind' | 'title'> & Partial<Collection>): Collection {
   return {
     publisher: null, writer: null, artist: null, characters: null, start_year: null, end_year: null,
-    description: null, cover_path: null, on_hold: false, ongoing: false, rating: null, notes: null, ...fields, id: newId(),
+    description: null, cover_path: null, on_hold: false, ongoing: false, planned: false, label: null, rating: null, notes: null, ...fields, id: newId(),
   };
 }
 
@@ -145,14 +152,14 @@ async function appendEntry(
   db: SQLiteDatabase,
   lib: Library,
   parentId: string,
-  child: { child_issue_id?: string; child_collection_id?: string; via_collection_id?: string | null; heading?: string; note?: string | null },
+  child: { child_issue_id?: string; child_collection_id?: string; via_collection_id?: string | null; heading?: string; note?: string | null; optional?: boolean },
 ) {
   const list = lib.children.get(parentId) ?? [];
   const position = positionBetween(list.length ? list[list.length - 1].position : null, null);
   const entry: Entry = {
     id: newId(), parent_id: parentId, position, child_issue_id: child.child_issue_id ?? null,
     child_collection_id: child.child_collection_id ?? null, via_collection_id: child.via_collection_id ?? null,
-    heading: child.heading ?? null, note: child.note ?? null,
+    heading: child.heading ?? null, note: child.note ?? null, optional: !!child.optional,
   };
   await putRow(db, 'entries', entry);
   list.push(entry);
@@ -233,7 +240,8 @@ export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId:
           if (via && !(lib.children.get(via) ?? []).some((e) => e.child_issue_id === issueId)) {
             await appendEntry(db, lib, via, { child_issue_id: issueId });
           }
-          await appendEntry(db, lib, parentId, { child_issue_id: issueId, via_collection_id: via });
+          // "Ion #1–12 (optional)" in a pasted list: shown, but not counted.
+          await appendEntry(db, lib, parentId, { child_issue_id: issueId, via_collection_id: via, optional: /^optional\b/i.test(line.note ?? '') });
         }
       }
     }
@@ -268,10 +276,11 @@ async function removeCollection(db: SQLiteDatabase, lib: Library, id: string, wi
   for (const parent of lib.parents.get(id) ?? []) {
     for (const e of lib.children.get(parent) ?? []) if (e.child_collection_id === id) await softDelete(db, 'entries', e.id);
   }
-  // Slices of it in a crisis stay as plain issue lines.
+  // Slices of it in a reading order stay as plain issue lines; its connections go with it.
   for (const holder of lib.slicedInto.get(id) ?? []) {
     for (const e of lib.children.get(holder) ?? []) if (e.via_collection_id === id) await putRow(db, 'entries', { ...e, via_collection_id: null });
   }
+  for (const l of lib.links) if (l.from_collection_id === id || l.to_collection_id === id) await softDelete(db, 'links', l.id);
   await softDelete(db, 'collections', id);
   if (!withContents) return;
   for (const e of children) {
@@ -309,22 +318,12 @@ export async function isEmpty(db: SQLiteDatabase) {
 }
 
 /**
- * Changes a collection's kind (event / run / crisis) after checking the layering rules. Turning it
- * into a crisis or run also labels issues that already belong to a run or event elsewhere as parts
- * of it. Returns why not, or null when done.
+ * Changes a list's type. Types are labels, so anything can become anything; in a reading order the
+ * app works out which run or event each issue belongs to by itself.
  */
 export async function changeKind(db: SQLiteDatabase, lib: Library, id: string, kind: Kind) {
-  const reason = cannotChangeKind(lib, id, kind);
-  if (reason) return reason;
   const c = lib.collections.get(id);
-  if (!c || c.kind === kind) return null;
-  await db.withTransactionAsync(async () => {
-    await putRow(db, 'collections', { ...c, kind });
-    c.kind = kind;
-    if (kind === 'event') return;
-    const byId = new Map((lib.children.get(id) ?? []).map((e) => [e.id, e]));
-    for (const { entryId, via } of suggestedSlices(lib, id)) await putRow(db, 'entries', { ...byId.get(entryId)!, via_collection_id: via });
-  });
+  if (c && c.kind !== kind) await putRow(db, 'collections', { ...c, kind });
   return null;
 }
 
@@ -352,7 +351,7 @@ export async function setPartOf(db: SQLiteDatabase, lib: Library, parentId: stri
 export async function updateSeries(db: SQLiteDatabase, lib: Library, seriesId: string, patch: Pick<Series, 'title' | 'volume_year'>) {
   const s = lib.series.get(seriesId);
   if (!s) return;
-  await putRow(db, 'series', { ...s, ...patch });
+  await putRow(db, 'series', { ...s, ...patch, cv_volume_id: null });
   await db.runAsync('DELETE FROM meta WHERE key = ?', `cv:volume:${seriesId}`);
 }
 
@@ -395,4 +394,84 @@ export async function addHeading(db: SQLiteDatabase, lib: Library, parentId: str
 export async function updateHeading(db: SQLiteDatabase, lib: Library, parentId: string, entryId: string, heading: string, note: string | null) {
   const e = (lib.children.get(parentId) ?? []).find((x) => x.id === entryId);
   if (e) await putRow(db, 'entries', { ...e, heading, note });
+}
+
+/** Marks lines of a list optional (shown, not counted) or counted again. */
+export async function setOptional(db: SQLiteDatabase, lib: Library, parentId: string, entryIds: string[], optional: boolean) {
+  const byId = new Map((lib.children.get(parentId) ?? []).map((e) => [e.id, e]));
+  await db.withTransactionAsync(async () => {
+    for (const id of entryIds) {
+      const e = byId.get(id);
+      if (e && !!e.optional !== optional) await putRow(db, 'entries', { ...e, optional });
+    }
+  });
+}
+
+/** One end of a connection: a list or a single issue. */
+export type LinkEnd = { collectionId: string } | { issueId: string };
+const endCols = (side: 'from' | 'to', end: LinkEnd) =>
+  'collectionId' in end ? { [`${side}_collection_id`]: end.collectionId, [`${side}_issue_id`]: null } : { [`${side}_collection_id`]: null, [`${side}_issue_id`]: end.issueId };
+
+/** Connects two lists or issues: from follows to, from has to as background, or from is a tie-in of to. */
+export async function addLink(db: SQLiteDatabase, kind: LinkKind, from: LinkEnd, to: LinkEnd, note: string | null) {
+  const row = { id: newId(), kind, ...endCols('from', from), ...endCols('to', to), note } as Link;
+  if ((row.from_collection_id && row.from_collection_id === row.to_collection_id) || (row.from_issue_id && row.from_issue_id === row.to_issue_id)) {
+    return 'It can’t be connected to itself';
+  }
+  await putRow(db, 'links', row);
+  return null;
+}
+
+export async function removeLink(db: SQLiteDatabase, linkId: string) {
+  await softDelete(db, 'links', linkId);
+}
+
+/**
+ * Merges one series into another: every issue moves over, and where both have the same number the two
+ * become one issue (read if either was read), with every list, history line and connection pointing at it.
+ */
+export async function mergeSeries(db: SQLiteDatabase, lib: Library, fromId: string, intoId: string) {
+  const from = lib.series.get(fromId);
+  const into = lib.series.get(intoId);
+  if (!from || !into || fromId === intoId) return 'Pick another series';
+  const byNumber = new Map([...lib.issues.values()].filter((i) => i.series_id === intoId && i.number != null).map((i) => [i.number!, i]));
+  let combined = 0;
+  await db.withTransactionAsync(async () => {
+    for (const issue of [...lib.issues.values()].filter((i) => i.series_id === fromId)) {
+      const keep = issue.number != null ? byNumber.get(issue.number) : undefined;
+      if (!keep) {
+        await putRow(db, 'issues', { ...issue, series_id: intoId });
+        continue;
+      }
+      combined++;
+      const read = keep.status === 'read' || issue.status === 'read';
+      await putRow(db, 'issues', {
+        ...keep,
+        status: read ? 'read' : keep.status === 'reading' || issue.status === 'reading' ? 'reading' : 'unread',
+        completed_at: keep.completed_at ?? issue.completed_at,
+        date_precision: keep.completed_at ? keep.date_precision : issue.date_precision,
+        rating: keep.rating ?? issue.rating, notes: keep.notes ?? issue.notes, cover_path: keep.cover_path ?? issue.cover_path,
+        story_title: keep.story_title ?? issue.story_title, writers: keep.writers ?? issue.writers, artists: keep.artists ?? issue.artists,
+        cover_date: keep.cover_date ?? issue.cover_date, cv_issue_id: keep.cv_issue_id ?? issue.cv_issue_id,
+      });
+      // Lines that held the duplicate now hold the kept issue; a list that had both keeps one line.
+      for (const parentId of lib.parents.get(issue.id) ?? []) {
+        const list = lib.children.get(parentId) ?? [];
+        const hasKeep = list.some((e) => e.child_issue_id === keep.id);
+        for (const e of list.filter((x) => x.child_issue_id === issue.id)) {
+          if (hasKeep) await softDelete(db, 'entries', e.id);
+          else await putRow(db, 'entries', { ...e, child_issue_id: keep.id });
+        }
+      }
+      await db.runAsync('UPDATE read_log SET issue_id = ?, updated_at = ?, dirty = 1 WHERE issue_id = ? AND deleted_at IS NULL', keep.id, new Date().toISOString(), issue.id);
+      for (const l of lib.links) {
+        if (l.from_issue_id === issue.id) await putRow(db, 'links', { ...l, from_issue_id: keep.id });
+        if (l.to_issue_id === issue.id) await putRow(db, 'links', { ...l, to_issue_id: keep.id });
+      }
+      await softDelete(db, 'issues', issue.id);
+    }
+    await putRow(db, 'series', { ...into, volume_year: into.volume_year ?? from.volume_year, publisher: into.publisher ?? from.publisher, cv_volume_id: into.cv_volume_id ?? from.cv_volume_id ?? null });
+    await softDelete(db, 'series', fromId);
+  });
+  return { combined };
 }

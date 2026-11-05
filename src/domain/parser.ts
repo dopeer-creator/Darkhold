@@ -112,7 +112,7 @@ export interface StructuredList {
   hasHeaders: boolean;
 }
 
-const HEADER = /^\s*(?:[-*•·]\s*)?(crisis(?:\s+reading\s+list)?|run|event|issues?|one-?shots?|chapter|phase|section|heading)\s*:\s*(.*?)\s*$/i;
+const HEADER = /^\s*(?:[-*•·]\s*)?(crisis(?:\s+reading\s+list)?|reading\s+order|run|event|issues?|one-?shots?|chapter|phase|section|heading)\s*:\s*(.*?)\s*$/i;
 const SMALL_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'vs', 'vs.']);
 
 /** "captain america by chip zdarsky" → "Captain America by Chip Zdarsky"; words already capitalised stay. */
@@ -146,7 +146,7 @@ export function parseStructuredList(text: string): StructuredList {
       let name = header[2].replace(/:\s*$/, '').trim();
       const continued = /\(\s*cont(?:inued|'?d)?\.?\s*\)/i.test(name);
       name = name.replace(/\([^()]*\)/g, '').replace(/\s+/g, ' ').replace(/:\s*$/, '').trim();
-      if (word.startsWith('crisis')) {
+      if (word.startsWith('crisis') || word.startsWith('reading')) {
         out.crisisTitle = name ? titleCase(name) : null;
         current = null;
         return;

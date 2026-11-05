@@ -9,7 +9,7 @@ import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { SearchIcon } from '@/ui/icons';
 import { Checkbox, Cover, T } from '@/ui/parts';
-import { C, F, KIND_LABEL } from '@/ui/theme';
+import { C, F, kindLabel } from '@/ui/theme';
 
 type Hit = { type: 'collection'; id: string } | { type: 'series'; id: string } | { type: 'issue'; id: string };
 
@@ -24,7 +24,7 @@ export default function Search() {
     const words = query.split(' ');
     const match = (text: string) => words.every((w) => text.includes(w));
     const colls: Hit[] = [...lib.collections.values()]
-      .filter((c) => match([c.title, c.writer, c.artist, c.characters, c.publisher, KIND_LABEL[c.kind]].join(' ').toLowerCase()))
+      .filter((c) => match([c.title, c.writer, c.artist, c.characters, c.publisher, kindLabel(c)].join(' ').toLowerCase()))
       .map((c) => ({ type: 'collection', id: c.id }));
     const issues: Hit[] = [...lib.issues.values()]
       .filter((i) => {
@@ -63,7 +63,7 @@ export default function Search() {
                 <Cover title={c.title} publisher={c.publisher} width={34} uri={coverFor(lib, c.id)} />
                 <View style={{ flex: 1 }}>
                   <Text style={T.bodyMedium}>{c.title}</Text>
-                  <Text style={T.tiny}>{KIND_LABEL[c.kind]} · {p.total ? `${p.read} / ${p.total}` : 'No issues yet'}</Text>
+                  <Text style={T.tiny}>{kindLabel(c)} · {p.total ? `${p.read} / ${p.total}` : 'No issues yet'}</Text>
                 </View>
               </Pressable>
             );

@@ -11,7 +11,7 @@ import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight } from '@/ui/icons';
 import { Bar, Checkbox, Cover, SectionTitle, T } from '@/ui/parts';
-import { C, F, KIND_COLOR, KIND_LABEL, publisherColor } from '@/ui/theme';
+import { C, F, KIND_COLOR, publisherColor, kindLabel } from '@/ui/theme';
 import { useFillDetails } from '@/ui/use-fill-details';
 
 /**
@@ -33,6 +33,7 @@ export default function SeriesScreen() {
   }
   const { series, issues, runs, read, total, gaps } = view;
   const color = publisherColor(series.publisher);
+  const twins = [...lib.series.values()].filter((x) => x.id !== series.id && x.title.trim().toLowerCase() === series.title.trim().toLowerCase() && [...lib.issues.values()].some((i) => i.series_id === x.id));
   const cover = issues.find((r) => r.issue.cover_path)?.issue.cover_path ?? null;
   const nextUnread = issues.find((r) => r.issue.status !== 'read')?.issue.id;
 
@@ -84,7 +85,7 @@ export default function SeriesScreen() {
               <Pressable key={r.collection.id} onPress={() => router.push(`/collection/${r.collection.id}`)} style={s.card}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[r.collection.kind] }]}>{KIND_LABEL[r.collection.kind]}</Text>
+                    <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[r.collection.kind] }]}>{kindLabel(r.collection)}</Text>
                     <Text style={T.bodyMedium}>{r.collection.title}</Text>
                     <Text style={T.tiny}>{[`#${r.first}${r.last !== r.first ? `–${r.last}` : ''}`, r.collection.writer || creditsSummary(lib, r.collection.id).mainWriters.join(', ')].filter(Boolean).join(' · ')}</Text>
                   </View>
@@ -106,6 +107,20 @@ export default function SeriesScreen() {
           ) : fill.status ? (
             <Text style={T.tiny}>{fill.status}</Text>
           ) : null}
+          {twins.length ? (
+            <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/merge-series', params: { from: series.id } })} style={s.fillBtn}>
+              <Text style={[T.small, { color: C.indie }]}>
+                You also have {twins.map((t) => seriesLabel(t)).join(', ')}. Same comic? Merge them →
+              </Text>
+            </Pressable>
+          ) : (
+            <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/merge-series', params: { from: series.id } })} style={{ alignSelf: 'flex-start', minHeight: 36, justifyContent: 'center' }}>
+              <Text style={[T.small, { color: C.dc }]}>Saved twice under another name? Merge into another series →</Text>
+            </Pressable>
+          )}
+          {!series.volume_year ? (
+            <Text style={[T.tiny, { color: C.indie }]}>No year on this series. Add it from any issue (Edit issue → whole series) so a new “{series.title}” never gets mixed in.</Text>
+          ) : null}
           {gaps.length ? (
             <Text style={[T.tiny, { lineHeight: 18 }]}>
               Not in your library: {gaps.slice(0, 6).map(([a, b]) => (a === b ? `#${a}` : `#${a}–${b}`)).join(', ')}
@@ -125,7 +140,7 @@ export default function SeriesScreen() {
                 <Pressable accessibilityRole="button" accessibilityState={{ expanded: isOpen }} onPress={() => setOpen((o) => ({ ...o, [g.key]: !isOpen }))} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   {isOpen ? <ChevronDown /> : <ChevronRight />}
                   <View style={{ flex: 1 }}>
-                    <Text style={[T.label, { fontSize: 10, color: g.home ? KIND_COLOR[g.home.kind] : C.dim }]}>{g.home ? KIND_LABEL[g.home.kind] : 'NOT IN A RUN'}</Text>
+                    <Text style={[T.label, { fontSize: 10, color: g.home ? KIND_COLOR[g.home.kind] : C.dim }]}>{g.home ? kindLabel(g.home) : 'NOT IN A RUN'}</Text>
                     <Text style={T.bodyMedium} numberOfLines={1}>{g.home ? g.home.title : 'On their own'} <Text style={T.small}>{span}</Text></Text>
                   </View>
                   <Text style={[T.small, T.num]}>{done} / {g.rows.length}</Text>
