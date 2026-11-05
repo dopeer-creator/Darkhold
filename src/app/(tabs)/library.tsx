@@ -18,7 +18,6 @@ const TABS: { key: 'all' | Kind | 'series' | 'issues'; label: string }[] = [
   { key: 'event', label: 'Events' },
   { key: 'era', label: 'Eras' },
   { key: 'crisis', label: 'Reading orders' },
-  { key: 'arc', label: 'Arcs' },
   { key: 'edition', label: 'Editions' },
   { key: 'series', label: 'Series' },
   { key: 'issues', label: 'Issues' },
@@ -119,7 +118,9 @@ export default function LibraryScreen() {
       </View>
       {/* Every type in a small grid, so each one is one tap away. */}
       <View style={s.tabs} accessibilityRole="tablist">
-        {TABS.map((t) => {
+        {[TABS.slice(0, 4), TABS.slice(4)].map((row, r) => (
+        <View key={r} style={s.tabRow}>
+        {row.map((t) => {
           const on = tab === t.key;
           const n = counts.get(t.key) ?? 0;
           return (
@@ -128,6 +129,8 @@ export default function LibraryScreen() {
             </Pressable>
           );
         })}
+        </View>
+        ))}
       </View>
       {filtersOpen ? (
         <View style={s.panel}>
@@ -233,9 +236,10 @@ const num = (n: string | null) => (n == null ? 1e9 : Number.isNaN(Number(n)) ? 1
 const s = StyleSheet.create({
   search: { marginTop: 12, height: 44, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
   searchInput: { flex: 1, color: C.text, fontFamily: F.sans, fontSize: 15, paddingVertical: 0 },
-  tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, marginTop: 12 },
-  // Three equal columns: nine buttons in a tidy 3 x 3.
-  tab: { flexBasis: '31%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, height: 34, paddingHorizontal: 4, borderRadius: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  tabs: { gap: 6, paddingHorizontal: 16, marginTop: 12 },
+  tabRow: { flexDirection: 'row', gap: 6 },
+  // Two rows of four; longer names get a wider button.
+  tab: { flexGrow: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, height: 34, paddingHorizontal: 10, borderRadius: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   tabOn: { backgroundColor: C.text, borderColor: C.text },
   tabText: { flexShrink: 1, fontFamily: F.medium, fontSize: 12.5, color: C.muted },
   filterBtn: { height: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },

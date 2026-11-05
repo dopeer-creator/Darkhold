@@ -102,7 +102,7 @@ export default function CollectionScreen() {
   };
 
   const menuItems: { label: string; go: () => void }[] = [
-    { label: 'New list inside this one', go: () => router.push(`/new?kind=${c.kind === 'run' ? 'arc' : 'event'}&parent=${c.id}`) },
+    { label: 'New list inside this one', go: () => router.push(`/new?kind=event&parent=${c.id}`) },
     { label: 'Put an existing list inside', go: () => router.push(`/link?parent=${c.id}`) },
     { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
     { label: 'Add issues', go: () => router.push(`/add-issues?parent=${c.id}`) },

@@ -106,7 +106,6 @@ export default function PartOf() {
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Chip label="Event" active={newKind === 'event'} onPress={() => setNewKind('event')} />
             <Chip label="Run" active={newKind === 'run'} onPress={() => setNewKind('run')} />
-            <Chip label="Arc" active={newKind === 'arc'} onPress={() => setNewKind('arc')} />
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TextInput value={newName} onChangeText={setNewName} placeholder={newKind === 'event' ? 'e.g. The Button' : 'e.g. The Flash (2016)'} placeholderTextColor={C.faint} style={s.input} accessibilityLabel="New name" />

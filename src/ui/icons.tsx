@@ -89,10 +89,6 @@ export const EraIcon = ({ size = 22, color = C.text, width = 1.8 }: P) => (
     <Circle cx="19" cy="12" r="2.2" {...stroke(color, width)} />
   </Svg>
 );
-/** Arc: one curve inside a run. */
-export const ArcIcon = ({ size = 22, color = C.text, width = 1.8 }: P) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="M4 18C6 8 18 8 20 18" {...stroke(color, width)} /><Path d="M3 18h18" {...stroke(color, width)} /></Svg>
-);
 /** Collected edition: a book on the shelf. */
 export const EditionIcon = ({ size = 22, color = C.text, width = 1.8 }: P) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
