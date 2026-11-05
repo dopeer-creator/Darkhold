@@ -12,7 +12,7 @@ import { C, F, KIND_HINT, KIND_LABEL, KIND_NAME, KINDS } from '@/ui/theme';
 
 const PUBLISHERS = ['DC', 'Marvel', 'Image', 'Dark Horse', 'IDW', 'Boom!'];
 const PLACEHOLDER: Record<Kind, string> = {
-  crisis: 'Road to Secret Wars', run: "Scott Snyder's Batman", event: 'Blackest Night', era: "Geoff Johns' Green Lantern", arc: 'Court of Owls', edition: 'Batman by Grant Morrison Omnibus Vol. 1',
+  crisis: 'Road to Secret Wars', run: "Scott Snyder's Batman", event: 'Blackest Night', era: "Grant Morrison's Batman", arc: 'Court of Owls', edition: 'Batman by Grant Morrison Omnibus Vol. 1',
 };
 
 /** Create a list (run, event, reading order…) or edit one (?edit=<id>). With ?parent=<id> it goes inside that list. */

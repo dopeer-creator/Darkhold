@@ -64,9 +64,9 @@ export const KIND_NAME: Record<Kind, string> = { crisis: 'reading order', run: '
 /** What each type is for, shown when you pick one. */
 export const KIND_HINT: Record<Kind, string> = {
   crisis: 'You jump between books: a crossover with its tie-ins, or the road into a big event',
-  run: 'A writer’s stretch on a book',
+  run: 'One writer on one book. A relaunch or another book is a new run',
   event: 'One story or miniseries, like Blood Hunt or Green Lantern: Rebirth',
-  era: 'A long stretch across several books, like Geoff Johns’ Green Lantern',
+  era: 'A writer’s story across several books and runs, like Grant Morrison’s Batman or Geoff Johns’ Green Lantern',
   arc: 'One story inside a run, like Court of Owls',
   edition: 'A trade, omnibus or other collected book',
 };
