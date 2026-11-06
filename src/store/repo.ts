@@ -3,7 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { ExportFile } from '@/domain/importer';
 import { planImport } from '@/domain/importer';
-import { buildLibrary, canSlice, cannotNest, hasMarker, nextMarkers, nextUp, positionBetween, walk, type Library } from '@/domain/library';
+import { buildLibrary, canSlice, cannotNest, positionBetween, walk, type Library } from '@/domain/library';
 import type { BlockKind, ResolvedLine } from '@/domain/parser';
 import type { Collection, Entry, Issue, IssueStatus, Kind, Link, LinkKind, ReadLog, Series } from '@/domain/types';
 import { COLUMNS, putRow, TABLES, type Table } from './db';
@@ -29,7 +29,7 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
   const [series, issues, collections, entries, links, readLog] = await Promise.all([
     live<Series>(db, 'series'),
     live<Issue & { upcoming?: number | boolean }>(db, 'issues'),
-    live<Collection & { on_hold: number | boolean; ongoing: number | boolean; planned?: number | boolean }>(db, 'collections'),
+    live<Collection & { on_hold: number | boolean; ongoing: number | boolean; planned?: number | boolean; reading_now?: number | boolean }>(db, 'collections'),
     live<Entry & { optional?: number | boolean }>(db, 'entries'),
     live<Link>(db, 'links'),
     // With updated_at: the moment it was ticked, so same-day reads come out newest first.
@@ -39,7 +39,7 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
     lib: buildLibrary({
       series,
       issues: issues.map((i) => ({ ...i, upcoming: !!i.upcoming })),
-      collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold, ongoing: !!c.ongoing, planned: !!c.planned })),
+      collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold, ongoing: !!c.ongoing, planned: !!c.planned, reading_now: !!c.reading_now })),
       entries: entries.map((e) => ({ ...e, optional: !!e.optional })),
       links,
     }),
@@ -83,45 +83,25 @@ async function applyStatus(db: SQLiteDatabase, issue: Issue, status: IssueStatus
 export async function setIssueStatus(db: SQLiteDatabase, lib: Library, issueId: string, status: IssueStatus, date?: ReadDate) {
   const issue = lib.issues.get(issueId);
   if (!issue || (issue.status === status && date === undefined)) return;
-  await db.withTransactionAsync(async () => {
-    await applyStatus(db, issue, status, date);
-    await carryOn(db, lib, new Map([[issueId, status]]));
-  });
+  await db.withTransactionAsync(() => applyStatus(db, issue, status, date));
 }
 
-/** Marks the next issue "currently reading" in each active list whose current one was just finished. */
-async function carryOn(db: SQLiteDatabase, lib: Library, changes: Map<string, IssueStatus>) {
-  for (const id of nextMarkers(lib, changes)) await applyStatus(db, lib.issues.get(id)!, 'reading', undefined);
-}
-
-/** Starts (or resumes) a list: takes it off hold and marks its next issue "currently reading". */
+/** Starts (or resumes) a list: switches it to Reading now and takes it off hold. */
 export async function startReading(db: SQLiteDatabase, lib: Library, collectionId: string) {
   const c = lib.collections.get(collectionId);
-  if (!c) return;
-  await db.withTransactionAsync(async () => {
-    if (c.on_hold) await putRow(db, 'collections', { ...c, on_hold: false });
-    if (hasMarker(lib, collectionId)) return;
-    const next = nextUp(lib, collectionId);
-    if (next) await applyStatus(db, lib.issues.get(next.issueId)!, 'reading', undefined);
-  });
+  if (c) await putRow(db, 'collections', { ...c, reading_now: true, on_hold: false });
 }
 
-/** Stops reading a list without putting it on hold: its "currently reading" issues go back to unread. */
+/** Stops reading a list without putting it on hold. */
 export async function stopReading(db: SQLiteDatabase, lib: Library, collectionId: string) {
-  const marked = [...new Set(walk(lib, collectionId).map((s) => s.issueId))].filter((id) => lib.issues.get(id)!.status === 'reading');
-  await db.withTransactionAsync(async () => {
-    for (const id of marked) await applyStatus(db, lib.issues.get(id)!, 'unread', undefined);
-  });
+  const c = lib.collections.get(collectionId);
+  if (c) await putRow(db, 'collections', { ...c, reading_now: false });
 }
 
 /** Changes when a read issue was read (null = date unknown). Marks it read if it wasn't. */
 export async function setReadDate(db: SQLiteDatabase, lib: Library, issueId: string, date: string | null) {
   const issue = lib.issues.get(issueId);
-  if (issue)
-    await db.withTransactionAsync(async () => {
-      await applyStatus(db, issue, 'read', date);
-      await carryOn(db, lib, new Map([[issueId, 'read' as IssueStatus]]));
-    });
+  if (issue) await db.withTransactionAsync(() => applyStatus(db, issue, 'read', date));
 }
 
 /**
@@ -133,7 +113,6 @@ export async function markCollection(db: SQLiteDatabase, lib: Library, collectio
   const targets = ids.map((id) => lib.issues.get(id)!).filter((i) => (status === 'read' ? i.status !== 'read' : i.status !== 'unread'));
   await db.withTransactionAsync(async () => {
     for (const issue of targets) await applyStatus(db, issue, status, date);
-    await carryOn(db, lib, new Map(targets.map((i) => [i.id, status as IssueStatus])));
   });
   return targets.length;
 }
@@ -165,7 +144,7 @@ export async function updateIssue(db: SQLiteDatabase, lib: Library, issueId: str
 function collectionRow(fields: Pick<Collection, 'kind' | 'title'> & Partial<Collection>): Collection {
   return {
     publisher: null, writer: null, artist: null, characters: null, start_year: null, end_year: null,
-    description: null, cover_path: null, on_hold: false, ongoing: false, planned: false, label: null, rating: null, notes: null, ...fields, id: newId(),
+    description: null, cover_path: null, on_hold: false, ongoing: false, planned: false, reading_now: false, label: null, rating: null, notes: null, ...fields, id: newId(),
   };
 }
 

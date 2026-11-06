@@ -57,6 +57,8 @@ export interface Collection {
   ongoing: boolean;
   /** Set by you: on the "Plan to read" shelf until you start it. */
   planned?: boolean;
+  /** Switched on when you're actively reading this list: only these show in Continue reading. */
+  reading_now?: boolean;
   /** Your own word for the type, shown instead of it ("Saga", "Omnibus"). */
   label?: string | null;
   rating: number | null;

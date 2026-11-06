@@ -84,7 +84,7 @@ export default function CollectionScreen() {
     { label: 'Mark as read…', go: () => router.push({ pathname: '/mark/[id]', params: { id: c.id } }) },
     { label: 'Edit order', go: () => setEditing(true) },
     { label: c.on_hold ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => (c.on_hold ? startReading(db, l, c.id) : updateCollection(db, l, c.id, { on_hold: true }))) },
-    ...(status === 'reading' ? [{ label: 'Stop reading (not on hold)', go: () => act((db, l) => stopReading(db, l, c.id)) }] : []),
+    ...(status === 'reading' ? [{ label: 'Stop reading', go: () => act((db, l) => stopReading(db, l, c.id)) }] : []),
     ...((status !== 'reading' && status !== 'completed') || c.planned
       ? [{ label: c.planned ? 'Take off Plan to read' : 'Plan to read', go: () => act((db, l) => updateCollection(db, l, c.id, { planned: !c.planned })) }]
       : []),

@@ -124,7 +124,7 @@ describe('optional lines and plan to read', () => {
     expect(collectionStatus(lib, 'clock')).toBe('planned');
     lib.issues.get('d1')!.status = 'read';
     expect(collectionStatus(lib, 'clock')).toBe('planned');
-    lib.issues.get('d2')!.status = 'reading';
+    lib.collections.get('clock')!.reading_now = true;
     expect(collectionStatus(lib, 'clock')).toBe('reading');
   });
 });

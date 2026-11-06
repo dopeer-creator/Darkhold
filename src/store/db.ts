@@ -8,16 +8,16 @@ export type Table = (typeof TABLES)[number];
 export const COLUMNS: Record<Table, string[]> = {
   series: ['id', 'title', 'volume_year', 'publisher', 'cv_volume_id'],
   issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id', 'upcoming', 'release_on'],
-  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes', 'label', 'planned'],
+  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes', 'label', 'planned', 'reading_now'],
   entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'heading', 'note', 'optional'],
   read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note'],
   links: ['id', 'kind', 'from_collection_id', 'from_issue_id', 'to_collection_id', 'to_issue_id', 'note'],
 };
 
 /** Yes/no columns: stored as 0/1 here, true/false in Supabase. */
-export const BOOLEAN_COLUMNS = new Set(['on_hold', 'ongoing', 'planned', 'optional', 'upcoming']);
+export const BOOLEAN_COLUMNS = new Set(['on_hold', 'ongoing', 'planned', 'reading_now', 'optional', 'upcoming']);
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /** Columns added after the first version, by schema version. */
 const ADDED: Record<number, [Table, string, string][]> = {
@@ -47,6 +47,8 @@ const ADDED: Record<number, [Table, string, string][]> = {
     ['issues', 'upcoming', 'INTEGER NOT NULL DEFAULT 0'],
     ['issues', 'release_on', 'TEXT'],
   ],
+  // 8: the Reading now switch on a list.
+  8: [['collections', 'reading_now', 'INTEGER NOT NULL DEFAULT 0']],
 };
 
 /** Extra one-off work for a version, run inside the same transaction. */
@@ -57,6 +59,8 @@ const AFTER: Record<number, string[]> = {
     `CREATE TABLE IF NOT EXISTS links (id TEXT PRIMARY KEY NOT NULL, kind TEXT NOT NULL, from_collection_id TEXT, from_issue_id TEXT,
       to_collection_id TEXT, to_issue_id TEXT, note TEXT, updated_at TEXT, deleted_at TEXT, dirty INTEGER NOT NULL DEFAULT 0)`,
   ],
+  // Lists downloaded before the Reading now column existed here lost that switch: fetch them again.
+  8: ["DELETE FROM meta WHERE key = 'pulled:collections'"],
 };
 
 /**
