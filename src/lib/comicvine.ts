@@ -153,7 +153,7 @@ export async function fetchMissingCovers(
     for (const issue of issues) {
       const url = covers.get(issue.number!);
       if (url) {
-        await putRow(db, 'issues', { ...issue, cover_path: url });
+        await putRow(db, 'issues', { ...issue, cover_path: url, upcoming: false });
         run.found++;
       } else {
         run.missing++;
@@ -224,7 +224,7 @@ export async function applyVolumeToSeries(db: SQLiteDatabase, lib: Library, key:
     if (issue.cover_path && !issue.cover_path.includes('comicvine')) continue;
     const url = covers.get(issue.number) ?? null;
     if (url) found++;
-    if (url !== issue.cover_path) await putRow(db, 'issues', { ...issue, cover_path: url });
+    if (url !== issue.cover_path || (url && issue.upcoming)) await putRow(db, 'issues', { ...issue, cover_path: url, upcoming: url ? false : issue.upcoming });
   }
   return found;
 }
@@ -307,7 +307,7 @@ export async function fillDetails(
         run.notFound++;
       } else {
         const details = await issueCredits(key, cvId);
-        await putRow(db, 'issues', { ...issue, ...details, cv_issue_id: cvId, writers: details.writers ?? issue.writers ?? null });
+        await putRow(db, 'issues', { ...issue, ...details, cv_issue_id: cvId, writers: details.writers ?? issue.writers ?? null, upcoming: false });
         run.filled++;
         await pause();
       }

@@ -112,7 +112,7 @@ describe('optional lines and plan to read', () => {
       entries: [line('road', { issue: 'a' }), line('road', { issue: 'ion', optional: true }), line('road', { issue: 'b' })],
     });
     lib.issues.get('a')!.status = 'read';
-    expect(progress(lib, 'road')).toEqual({ read: 1, total: 2, left: 1 });
+    expect(progress(lib, 'road')).toEqual({ read: 1, total: 2, left: 1, upcoming: 0 });
     expect(nextUp(lib, 'road')!.issueId).toBe('b');
     lib.issues.get('b')!.status = 'read';
     expect(collectionStatus(lib, 'road')).toBe('completed');

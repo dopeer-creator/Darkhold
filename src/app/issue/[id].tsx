@@ -4,14 +4,14 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { issueTitle } from '@/domain/library';
+import { issueTitle, notOutYet } from '@/domain/library';
 import type { Issue, IssueStatus } from '@/domain/types';
 import { findVolume, getComicVineKey, volumeCovers } from '@/lib/comicvine';
-import { daysAgo, mergeSeries, moveIssue, removeEntry, setIssueStatus, setOptional, setReadDate, today, updateIssue, updateSeries } from '@/store/repo';
+import { daysAgo, mergeSeries, moveIssue, removeEntry, setIssueStatus, setOptional, setReadDate, setRelease, today, updateIssue, updateSeries } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
 import { Chip, Cover, GhostButton, SectionTitle, T } from '@/ui/parts';
-import { relativeDay } from '@/ui/format';
+import { relativeDay, releaseLabel } from '@/ui/format';
 import { useFillDetails } from '@/ui/use-fill-details';
 import { pickDay } from '@/ui/pick-day';
 import { ConnectionsBlock } from '@/ui/connections';
@@ -165,6 +165,41 @@ export default function IssueScreen() {
               ))}
             </View>
           </View>
+
+          {issue.upcoming && issue.status === 'unread' ? (
+            <View style={{ gap: 8 }}>
+              <SectionTitle>Release</SectionTitle>
+              <View style={s.releaseBox}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[T.label, { color: C.indie }]}>{notOutYet(issue) ? 'NOT OUT YET' : 'OUT NOW'}</Text>
+                  <Text style={T.small}>{issue.release_on ? `Release: ${releaseLabel(issue.release_on)}` : 'No release date yet'}</Text>
+                </View>
+                <Pressable accessibilityRole="button" onPress={() => act((d, l) => setRelease(d, l, issue.id, false, null))} style={s.outBtn}>
+                  <Text style={[T.small, { color: C.onLight, fontFamily: F.semibold }]}>It’s out</Text>
+                </Pressable>
+              </View>
+              <TextInput
+                key={issue.release_on ?? 'none'}
+                defaultValue={issue.release_on ?? ''}
+                onEndEditing={(e) => {
+                  const v = e.nativeEvent.text.trim();
+                  if (v === (issue.release_on ?? '')) return;
+                  if (v && !/^\d{4}-\d{2}(-\d{2})?$/.test(v)) return Alert.alert('Use a year and month', 'Like 2027-02, or 2027-02-10 for an exact day.');
+                  act((d, l) => setRelease(d, l, issue.id, true, v || null));
+                }}
+                placeholder="Release date: 2027-02 or 2027-02-10"
+                placeholderTextColor={C.faint}
+                autoCapitalize="none"
+                style={s.input}
+                accessibilityLabel="Release date"
+              />
+              <Text style={T.tiny}>It clears by itself on that date, when you tick it, or when Comic Vine finds it.</Text>
+            </View>
+          ) : issue.status === 'unread' ? (
+            <Pressable accessibilityRole="button" onPress={() => act((d, l) => setRelease(d, l, issue.id, true, null))} style={{ alignSelf: 'flex-start', minHeight: 36, justifyContent: 'center' }}>
+              <Text style={[T.small, { color: C.dc }]}>Not out yet? Mark it as coming</Text>
+            </Pressable>
+          ) : null}
 
           {issue.status === 'read' ? (
             <View style={{ gap: 8 }}>
@@ -349,6 +384,8 @@ const s = StyleSheet.create({
   segItem: { flex: 1, height: 40, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   star: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   input: { minHeight: 48, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, color: C.text, fontFamily: F.sans, fontSize: 15, paddingHorizontal: 14 },
+  releaseBox: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
+  outBtn: { height: 40, paddingHorizontal: 16, borderRadius: 20, backgroundColor: C.text, justifyContent: 'center' },
   smallBtn: { height: 48, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, borderBottomWidth: 1, borderBottomColor: C.divider },
 });

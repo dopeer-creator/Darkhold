@@ -88,6 +88,8 @@ export interface Step {
   via: string | null;
   /** On an optional line (or inside one): shown, but not counted toward progress. */
   optional: boolean;
+  /** Not out yet: shown, skipped by Next up, left out of the counts. */
+  upcoming: boolean;
 }
 
 /** Every issue under a collection in reading order. An issue linked twice appears twice. */
@@ -100,7 +102,8 @@ export function walk(lib: Library, rootId: string): Step[] {
     const here = [...path, id];
     for (const e of lib.children.get(id) ?? []) {
       if (e.child_issue_id) {
-        if (lib.issues.has(e.child_issue_id)) out.push({ issueId: e.child_issue_id, path: here, via: e.part_of ?? null, optional: optional || !!e.optional });
+        const issue = lib.issues.get(e.child_issue_id);
+        if (issue) out.push({ issueId: e.child_issue_id, path: here, via: e.part_of ?? null, optional: optional || !!e.optional, upcoming: notOutYet(issue) });
       } else if (e.child_collection_id && lib.collections.has(e.child_collection_id)) {
         visit(e.child_collection_id, here, optional || !!e.optional);
       }
@@ -115,23 +118,46 @@ export interface Progress {
   read: number;
   total: number;
   left: number;
+  /** Issues in the list that aren't out yet; not in total or left. */
+  upcoming: number;
+}
+
+/** Today as "YYYY-MM-DD", local time. */
+export function todayKey(now = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * True while an announced issue can't be read yet. It stops being "not out yet" by itself once its
+ * release day (or the first of its release month) has come, or once it's read or being read.
+ */
+export function notOutYet(issue: Issue, today = todayKey()): boolean {
+  if (!issue.upcoming || issue.status !== 'unread') return false;
+  if (!issue.release_on) return true;
+  const day = issue.release_on.length === 7 ? `${issue.release_on}-01` : issue.release_on;
+  return day > today;
 }
 
 /** Counts each issue once, however many times it is linked inside the collection. Optional lines don't count. */
 export function progress(lib: Library, rootId: string): Progress {
   const seen = new Set<string>();
+  const later = new Set<string>();
   let read = 0;
   for (const s of walk(lib, rootId)) {
-    if (s.optional || seen.has(s.issueId)) continue;
+    if (s.optional || seen.has(s.issueId) || later.has(s.issueId)) continue;
+    if (s.upcoming) {
+      later.add(s.issueId);
+      continue;
+    }
     seen.add(s.issueId);
     if (lib.issues.get(s.issueId)!.status === 'read') read++;
   }
-  return { read, total: seen.size, left: seen.size - read };
+  return { read, total: seen.size, left: seen.size - read, upcoming: later.size };
 }
 
 /** Where to pick up: an issue marked "currently reading" wins, else the first unread one in order. Optional lines are skipped. */
 export function nextUp(lib: Library, rootId: string): Step | null {
-  const steps = walk(lib, rootId).filter((s) => !s.optional);
+  const steps = walk(lib, rootId).filter((s) => !s.optional && !s.upcoming);
   return (
     steps.find((s) => lib.issues.get(s.issueId)!.status === 'reading') ??
     steps.find((s) => lib.issues.get(s.issueId)!.status === 'unread') ??
@@ -165,7 +191,7 @@ export function hasEmptyPart(lib: Library, id: string): boolean {
 export function collectionStatus(lib: Library, id: string): CollectionStatus {
   const c = lib.collections.get(id);
   const p = progress(lib, id);
-  if (p.total > 0 && p.read === p.total && !hasEmptyPart(lib, id)) return 'completed';
+  if (p.total > 0 && p.read === p.total && p.upcoming === 0 && !hasEmptyPart(lib, id)) return 'completed';
   if (c?.on_hold) return 'on_hold';
   if (p.read > 0 || walk(lib, id).some((s) => !s.optional && lib.issues.get(s.issueId)!.status === 'reading')) return 'reading';
   return c?.planned ? 'planned' : 'not_started';
@@ -218,7 +244,7 @@ export function stats(lib: Library): Stats {
   const roots = activeRoots(lib);
   const left = new Set<string>();
   for (const id of roots) {
-    for (const s of walk(lib, id)) if (!s.optional && lib.issues.get(s.issueId)!.status !== 'read') left.add(s.issueId);
+    for (const s of walk(lib, id)) if (!s.optional && !s.upcoming && lib.issues.get(s.issueId)!.status !== 'read') left.add(s.issueId);
   }
   let completed = 0;
   for (const id of lib.collections.keys()) if (collectionStatus(lib, id) === 'completed') completed++;
@@ -323,7 +349,7 @@ export function headingSections(lib: Library, parentId: string): Map<string, { r
     if (!current || e.optional) continue;
     const ids = e.child_issue_id ? [e.child_issue_id] : e.child_collection_id ? walk(lib, e.child_collection_id).map((s) => s.issueId) : [];
     for (const id of ids) {
-      if (current.issueIds.has(id) || !lib.issues.has(id)) continue;
+      if (current.issueIds.has(id) || !lib.issues.has(id) || notOutYet(lib.issues.get(id)!)) continue;
       current.issueIds.add(id);
       current.total++;
       if (lib.issues.get(id)!.status === 'read') current.read++;

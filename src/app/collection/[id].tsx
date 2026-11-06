@@ -4,13 +4,13 @@ import { Alert, Animated, Dimensions, PanResponder, Pressable, ScrollView, Style
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { creditsSummary, splitNames } from '@/domain/credits';
-import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, progress, READING_KINDS, walk, type Library } from '@/domain/library';
+import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, type Library, walk } from '@/domain/library';
 import type { Collection, Entry } from '@/domain/types';
 import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight, CloseIcon, GripIcon, MoreIcon, PlusIcon } from '@/ui/icons';
 import { Bar, Checkbox, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
-import { relativeDay } from '@/ui/format';
+import { relativeDay, releaseLabel } from '@/ui/format';
 import { ConnectionsBlock } from '@/ui/connections';
 import { useFillDetails } from '@/ui/use-fill-details';
 import { C, F, KIND_COLOR, KIND_LABEL, KIND_NAME, kindLabel, publisherColor, STATUS_LABEL } from '@/ui/theme';
@@ -173,7 +173,7 @@ export default function CollectionScreen() {
                 <Text style={{ fontFamily: F.cond, fontSize: 26, color: C.text }}>{p.read}</Text>
                 <Text style={T.small}> / {p.total} read</Text>
               </Text>
-              <Text style={[T.small, T.num]}>{p.left} left · {p.total ? Math.round((p.read / p.total) * 100) : 0}%</Text>
+              <Text style={[T.small, T.num]}>{p.left} left{p.upcoming ? ` · ${p.upcoming} not out yet` : ''} · {p.total ? Math.round((p.read / p.total) * 100) : 0}%</Text>
             </View>
             <View style={{ marginTop: 8 }}><Bar read={p.read} total={p.total} color={color} height={6} /></View>
             {next ? (
@@ -369,8 +369,9 @@ function EntryList(props: ListProps) {
         onLongPress={() => props.onIssueMenu(entry)}
         style={s.issueRow}>
         <View style={{ flex: 1, paddingVertical: 8 }}>
-          <Text style={[T.body, { fontSize: 14, color: read ? C.muted : C.text }]}>{issueTitle(lib, issue.id)}</Text>
+          <Text style={[T.body, { fontSize: 14, color: read || notOutYet(issue) ? C.muted : C.text }]}>{issueTitle(lib, issue.id)}</Text>
           {isNext ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>{issue.status === 'reading' ? 'READING NOW' : 'NEXT UP'}</Text> : null}
+          {notOutYet(issue) ? <Text style={[T.label, { color: C.indie, marginTop: 2, fontSize: 10 }]}>NOT OUT YET{issue.release_on ? ` · ${releaseLabel(issue.release_on).toUpperCase()}` : ''}</Text> : null}
           {entry.optional ? <Text style={[T.label, { color: C.dim, marginTop: 2, fontSize: 10 }]}>OPTIONAL · NOT COUNTED</Text> : null}
           {read && issue.completed_at ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>Read {relativeDay(issue.completed_at)}</Text> : null}
           {issue.notes && !read && !/^optional$/i.test(issue.notes.trim()) ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>{issue.notes}</Text> : null}
@@ -440,7 +441,7 @@ function EntryList(props: ListProps) {
           const via = r.via ? lib.collections.get(r.via)! : null;
           const ids = r.entries.map((e) => e.child_issue_id!);
           // Optional lines show, but the block's count leaves them out (unless the whole block is optional).
-          const counted = r.entries.every((e) => e.optional) ? ids : r.entries.filter((e) => !e.optional).map((e) => e.child_issue_id!);
+          const counted = (r.entries.every((e) => e.optional) ? ids : r.entries.filter((e) => !e.optional).map((e) => e.child_issue_id!)).filter((id) => !notOutYet(lib.issues.get(id)!));
           const read = counted.filter((id) => lib.issues.get(id)?.status === 'read').length;
           const hasNext = !!nextIssueId && ids.includes(nextIssueId);
           const isOpen = open[r.key] ?? hasNext;

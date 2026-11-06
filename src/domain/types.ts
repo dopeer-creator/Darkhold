@@ -34,6 +34,10 @@ export interface Issue {
   /** "YYYY-MM-DD" as printed on the cover. */
   cover_date?: string | null;
   cv_issue_id?: number | null;
+  /** Announced but not out yet. Clears itself once the release date passes, it's read, or Comic Vine has it. */
+  upcoming?: boolean;
+  /** Known release day ("2027-02-10") or month ("2027-02"); null when there's no date yet. */
+  release_on?: string | null;
 }
 
 export interface Collection {

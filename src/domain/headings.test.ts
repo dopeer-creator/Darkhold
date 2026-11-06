@@ -41,7 +41,7 @@ describe('chapter headings', () => {
     const lib = road();
     const s = headingSections(lib, 'road');
     expect([s.get('h1')!.read, s.get('h1')!.total, s.get('h2')!.read, s.get('h2')!.total]).toEqual([2, 2, 0, 2]);
-    expect(progress(lib, 'road')).toEqual({ read: 2, total: 4, left: 2 });
+    expect(progress(lib, 'road')).toEqual({ read: 2, total: 4, left: 2, upcoming: 0 });
     expect(nextUp(lib, 'road')!.issueId).toBe('3');
   });
 

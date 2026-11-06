@@ -28,7 +28,7 @@ export interface Snapshot {
 export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
   const [series, issues, collections, entries, links, readLog] = await Promise.all([
     live<Series>(db, 'series'),
-    live<Issue>(db, 'issues'),
+    live<Issue & { upcoming?: number | boolean }>(db, 'issues'),
     live<Collection & { on_hold: number | boolean; ongoing: number | boolean; planned?: number | boolean }>(db, 'collections'),
     live<Entry & { optional?: number | boolean }>(db, 'entries'),
     live<Link>(db, 'links'),
@@ -38,7 +38,7 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
   return {
     lib: buildLibrary({
       series,
-      issues,
+      issues: issues.map((i) => ({ ...i, upcoming: !!i.upcoming })),
       collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold, ongoing: !!c.ongoing, planned: !!c.planned })),
       entries: entries.map((e) => ({ ...e, optional: !!e.optional })),
       links,
@@ -63,12 +63,12 @@ export type ReadDate = string | null | undefined;
 async function applyStatus(db: SQLiteDatabase, issue: Issue, status: IssueStatus, date: ReadDate) {
   const logs = await db.getAllAsync<{ id: string }>('SELECT id FROM read_log WHERE issue_id = ? AND deleted_at IS NULL ORDER BY read_on DESC', issue.id);
   if (status !== 'read') {
-    await putRow(db, 'issues', { ...issue, status, completed_at: null, date_precision: 'unknown' });
+    await putRow(db, 'issues', { ...issue, status, completed_at: null, date_precision: 'unknown', upcoming: status === 'reading' ? false : issue.upcoming });
     for (const l of logs) await softDelete(db, 'read_log', l.id);
     return;
   }
   const day = date === undefined ? today() : date;
-  await putRow(db, 'issues', { ...issue, status, completed_at: day, date_precision: day ? 'day' : 'unknown' });
+  await putRow(db, 'issues', { ...issue, status, completed_at: day, date_precision: day ? 'day' : 'unknown', upcoming: false });
   // One history line per issue: move it to the new day, or drop it when the date is unknown.
   const [keep, ...extra] = logs;
   for (const l of extra) await softDelete(db, 'read_log', l.id);
@@ -228,9 +228,11 @@ export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId:
           let issueId = line.existing[k] ?? madeIssues.get(issueKey) ?? null;
           if (!issueId) {
             issueId = newId();
+            const release = releaseFromNote(line.note);
             await putRow(db, 'issues', {
               id: issueId, series_id: seriesId, number: line.numbers[k], label: null, status: line.checked ? 'read' : 'unread',
-              completed_at: null, date_precision: 'unknown', rating: null, notes: line.note, cover_path: null, pub_year: null,
+              completed_at: null, date_precision: 'unknown', rating: null, notes: release ? null : line.note, cover_path: null, pub_year: null,
+              upcoming: !!release && !line.checked, release_on: release?.on ?? null,
             });
             madeIssues.set(issueKey, issueId);
           } else if (line.checked) {
@@ -474,4 +476,17 @@ export async function mergeSeries(db: SQLiteDatabase, lib: Library, fromId: stri
     await softDelete(db, 'series', fromId);
   });
   return { combined };
+}
+
+/** "not out yet", "coming 2027-02", "out 2027-02-10" in a pasted line's brackets → not out yet, with the date if there is one. */
+export function releaseFromNote(note: string | null): { on: string | null } | null {
+  if (!note || !/^(not out yet|coming|out|upcoming|unreleased)\b/i.test(note.trim())) return null;
+  const date = note.match(/\b(\d{4}-\d{2}(?:-\d{2})?)\b/);
+  return { on: date ? date[1] : null };
+}
+
+/** Marks an issue as not out yet (with an optional day or month), or as out. */
+export async function setRelease(db: SQLiteDatabase, lib: Library, issueId: string, upcoming: boolean, releaseOn: string | null) {
+  const issue = lib.issues.get(issueId);
+  if (issue) await putRow(db, 'issues', { ...issue, upcoming, release_on: upcoming ? releaseOn : null });
 }

@@ -21,3 +21,11 @@ export function relativeDay(day: string | null): string {
 }
 
 export const monthName = (m: number) => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m];
+
+/** A release day or month for a "not out yet" tag: "10 Feb 2027" or "Feb 2027"; empty when unknown. */
+export function releaseLabel(on: string | null | undefined): string {
+  if (!on) return '';
+  const [y, m, d] = on.split('-').map(Number);
+  if (!y || !m) return on;
+  return d ? `${d} ${MONTHS[m - 1]} ${y}` : `${MONTHS[m - 1]} ${y}`;
+}

@@ -95,9 +95,9 @@ function fixture() {
 describe('progress', () => {
   it('counts an issue once even when its event is linked twice', () => {
     const lib = fixture();
-    expect(progress(lib, 'crisis')).toEqual({ read: 3, total: 5, left: 2 });
-    expect(progress(lib, 'run')).toEqual({ read: 3, total: 5, left: 2 });
-    expect(progress(lib, 'event')).toEqual({ read: 2, total: 3, left: 1 });
+    expect(progress(lib, 'crisis')).toEqual({ read: 3, total: 5, left: 2, upcoming: 0 });
+    expect(progress(lib, 'run')).toEqual({ read: 3, total: 5, left: 2, upcoming: 0 });
+    expect(progress(lib, 'event')).toEqual({ read: 2, total: 3, left: 1, upcoming: 0 });
   });
 
   it('reads a change to one issue everywhere it appears', () => {
@@ -300,13 +300,13 @@ describe('slices', () => {
     const step = nextUp(lib, 'arm')!;
     expect(step.issueId).toBe('o1');
     expect(step.via).toBe('doom');
-    expect(progress(lib, 'arm')).toEqual({ read: 1, total: 3, left: 2 });
+    expect(progress(lib, 'arm')).toEqual({ read: 1, total: 3, left: 2, upcoming: 0 });
   });
 
   it('keeps the run whole: reading in the crisis moves the run too', () => {
     const lib = sliced();
     lib.issues.get('c2')!.status = 'read';
-    expect(progress(lib, 'caprun')).toEqual({ read: 2, total: 2, left: 0 });
+    expect(progress(lib, 'caprun')).toEqual({ read: 2, total: 2, left: 0, upcoming: 0 });
   });
 
   it('shows only the crisis on Continue Reading, not the runs sliced into it', () => {
