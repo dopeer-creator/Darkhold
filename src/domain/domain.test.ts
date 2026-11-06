@@ -1,21 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  activeRoots,
-  canSlice,
-  coverFor,
-  entryUnits,
-  moveUnit,
-  isNested,
-  buildLibrary,
-  cannotNest,
-  collectionStatus,
-  issueTitle,
-  lastRead,
-  nextUp,
-  progress,
-  stats,
-} from './library';
+import { activeRoots, canSlice, coverFor, entryUnits, moveUnit, isNested, buildLibrary, cannotNest, collectionStatus, issueTitle, lastRead, nextUp, progress, stats, nextMarkers } from './library';
 import { parseReadingList, parseStructuredList, resolveAgainstLibrary, titleCase } from './parser';
 import type { Collection, Entry, Issue, Kind, Series } from './types';
 import armageddon from '../../scripts/armageddon.txt?raw';
@@ -145,6 +130,8 @@ describe('continue reading', () => {
 describe('status and home totals', () => {
   it('works status out from issues; on hold is the only manual one', () => {
     const lib = fixture();
+    expect(collectionStatus(lib, 'run')).toBe('not_started');
+    lib.issues.get('bn2')!.status = 'reading';
     expect(collectionStatus(lib, 'run')).toBe('reading');
     expect(collectionStatus(lib, 'empty')).toBe('not_started');
     lib.collections.get('run')!.on_hold = true;
@@ -155,11 +142,43 @@ describe('status and home totals', () => {
   });
 
   it('shows only the outermost collection being read on Continue Reading', () => {
-    expect(activeRoots(fixture())).toEqual(['crisis']);
+    const lib = fixture();
+    lib.issues.get('bn2')!.status = 'reading';
+    expect(activeRoots(lib)).toEqual(['crisis']);
   });
 
   it('counts library totals once per issue', () => {
-    expect(stats(fixture())).toEqual({ issuesRead: 3, issuesLeft: 2, reading: 1, completed: 0 });
+    const lib = fixture();
+    lib.issues.get('bn2')!.status = 'reading';
+    expect(stats(lib)).toEqual({ issuesRead: 3, issuesLeft: 2, reading: 1, completed: 0 });
+  });
+});
+
+describe('currently reading', () => {
+  it('a list with issues read elsewhere is not started until you mark something in it', () => {
+    const lib = fixture();
+    expect(collectionStatus(lib, 'event')).toBe('not_started');
+    expect(activeRoots(lib)).toEqual([]);
+  });
+
+  it('finishing the current issue moves the marker to the next one in each active list', () => {
+    const lib = fixture();
+    lib.issues.get('bn2')!.status = 'reading';
+    expect(nextMarkers(lib, new Map([['bn2', 'read']]))).toEqual(['gl44']);
+  });
+
+  it('stopping (back to unread) or ticking in a list you are not reading starts nothing', () => {
+    const lib = fixture();
+    lib.issues.get('bn2')!.status = 'reading';
+    expect(nextMarkers(lib, new Map([['bn2', 'unread']]))).toEqual([]);
+    expect(nextMarkers(fixture(), new Map([['bn2', 'read']]))).toEqual([]);
+  });
+
+  it('on hold lists keep still', () => {
+    const lib = fixture();
+    lib.issues.get('bn2')!.status = 'reading';
+    for (const id of ['crisis', 'run', 'event']) lib.collections.get(id)!.on_hold = true;
+    expect(nextMarkers(lib, new Map([['bn2', 'read']]))).toEqual([]);
   });
 });
 
@@ -310,7 +329,9 @@ describe('slices', () => {
   });
 
   it('shows only the crisis on Continue Reading, not the runs sliced into it', () => {
-    expect(activeRoots(sliced())).toEqual(['arm']);
+    const lib = sliced();
+    lib.issues.get(nextUp(lib, 'arm')!.issueId)!.status = 'reading';
+    expect(activeRoots(lib)).toEqual(['arm']);
     expect(isNested(sliced(), 'caprun')).toBe(true);
   });
 

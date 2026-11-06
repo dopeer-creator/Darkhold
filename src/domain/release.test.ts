@@ -33,7 +33,7 @@ describe('not out yet', () => {
     });
     expect(progress(lib, 'road')).toEqual({ read: 1, total: 1, left: 0, upcoming: 1 });
     expect(nextUp(lib, 'road')).toBeNull();
-    expect(collectionStatus(lib, 'road')).toBe('reading');
+    expect(collectionStatus(lib, 'road')).not.toBe('completed');
   });
 
   it('reads "(not out yet)" or "(coming 2027-02)" from a pasted line', () => {

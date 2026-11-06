@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { activeRoots, collectionStatus, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats } from '@/domain/library';
-import { updateCollection } from '@/store/repo';
+import { startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
@@ -51,6 +51,22 @@ export default function Home() {
             </Text>
             <PrimaryButton label="Create a run" onPress={() => router.push('/new?kind=run')} />
             <GhostButton label="Event, reading order or something else" onPress={() => router.push('/add')} />
+          </View>
+        ) : null}
+
+        {!empty ? (
+          <View style={s.stats}>
+            {[
+              [totals.issuesRead, 'Issues read'],
+              [totals.issuesLeft, 'Issues left'],
+              [totals.reading, 'Lists reading'],
+              [totals.completed, 'Lists finished'],
+            ].map(([n, label], i) => (
+              <View key={label} style={[s.stat, i ? { borderLeftWidth: 1, borderLeftColor: C.border } : null]}>
+                <Text style={[s.statNum, T.num]}>{n}</Text>
+                <Text style={[T.tiny, { color: C.muted, fontSize: 11 }]}>{label}</Text>
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -103,7 +119,7 @@ export default function Home() {
                     <Text numberOfLines={1} style={T.bodyMedium}>{c.title}</Text>
                     <Text numberOfLines={1} style={[T.tiny, T.num]}>{kindLabel(c)} · {p.read} / {p.total} read</Text>
                   </View>
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Resume ${c.title}`} onPress={() => act((db, l) => updateCollection(db, l, c.id, { on_hold: false }))} style={s.resume}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Resume ${c.title}`} onPress={() => act((db, l) => startReading(db, l, c.id))} style={s.resume}>
                     <Text style={[T.small, { color: C.text }]}>Resume</Text>
                   </Pressable>
                 </Pressable>
@@ -129,22 +145,6 @@ export default function Home() {
                 </Pressable>
               );
             })}
-          </View>
-        ) : null}
-
-        {!empty ? (
-          <View style={s.stats}>
-            {[
-              [totals.issuesRead, 'Issues read'],
-              [totals.issuesLeft, 'Issues left'],
-              [totals.reading, 'Reading'],
-              [totals.completed, 'Finished'],
-            ].map(([n, label], i) => (
-              <View key={label} style={[s.stat, i ? { borderLeftWidth: 1, borderLeftColor: C.border } : null]}>
-                <Text style={[s.statNum, T.num]}>{n}</Text>
-                <Text style={[T.tiny, { color: C.muted, fontSize: 11 }]}>{label}</Text>
-              </View>
-            ))}
           </View>
         ) : null}
 
@@ -177,7 +177,7 @@ const s = StyleSheet.create({
   emptyCard: { margin: 16, padding: 16, gap: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14 },
   card: { width: 300, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, gap: 12 },
   cardTitle: { fontFamily: F.cond, fontSize: 21, lineHeight: 22, color: C.text },
-  stats: { flexDirection: 'row', marginHorizontal: 16, marginTop: 20, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingVertical: 14 },
+  stats: { flexDirection: 'row', marginHorizontal: 16, marginTop: 8, marginBottom: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border, paddingVertical: 14 },
   stat: { flex: 1, alignItems: 'center', gap: 2 },
   statNum: { fontFamily: F.cond, fontSize: 30, lineHeight: 32, color: C.text },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },

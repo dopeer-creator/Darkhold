@@ -28,9 +28,9 @@ describe('starting data', () => {
     expect(issueTitle(lib, step.issueId)).toBe('Brightest Day #2');
   });
 
-  it('marks finished events completed and the Marvel crisis as reading', () => {
+  it('marks finished events completed; part-read lists wait until you mark one currently reading', () => {
     expect(collectionStatus(lib, byTitle('Blood Hunt'))).toBe('completed');
-    expect(collectionStatus(lib, byTitle('Armageddon', 'crisis'))).toBe('reading');
+    expect(collectionStatus(lib, byTitle('Armageddon', 'crisis'))).toBe('not_started');
     expect(collectionStatus(lib, byTitle('Batman: New 52'))).toBe('not_started');
   });
 
@@ -57,6 +57,6 @@ describe('starting data', () => {
   });
 
   it('gives the home totals', () => {
-    expect(stats(lib)).toEqual({ issuesRead: 188, issuesLeft: 90, reading: 2, completed: 8 });
+    expect(stats(lib)).toEqual({ issuesRead: 188, issuesLeft: 0, reading: 0, completed: 8 });
   });
 });

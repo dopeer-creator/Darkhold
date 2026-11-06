@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { creditsSummary, splitNames } from '@/domain/credits';
 import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, type Library, walk } from '@/domain/library';
 import type { Collection, Entry } from '@/domain/types';
-import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, updateCollection } from '@/store/repo';
+import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, startReading, stopReading, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight, CloseIcon, GripIcon, MoreIcon, PlusIcon } from '@/ui/icons';
 import { Bar, Checkbox, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
@@ -83,8 +83,9 @@ export default function CollectionScreen() {
     { label: 'Fill writer & artist details', go: () => fill.run(allIssues, c.id) },
     { label: 'Mark as read…', go: () => router.push({ pathname: '/mark/[id]', params: { id: c.id } }) },
     { label: 'Edit order', go: () => setEditing(true) },
-    { label: c.on_hold ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => updateCollection(db, l, c.id, { on_hold: !c.on_hold })) },
-    ...(p.read === 0 || c.planned
+    { label: c.on_hold ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => (c.on_hold ? startReading(db, l, c.id) : updateCollection(db, l, c.id, { on_hold: true }))) },
+    ...(status === 'reading' ? [{ label: 'Stop reading (not on hold)', go: () => act((db, l) => stopReading(db, l, c.id)) }] : []),
+    ...((status !== 'reading' && status !== 'completed') || c.planned
       ? [{ label: c.planned ? 'Take off Plan to read' : 'Plan to read', go: () => act((db, l) => updateCollection(db, l, c.id, { planned: !c.planned })) }]
       : []),
     { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
@@ -163,7 +164,7 @@ export default function CollectionScreen() {
                   {credits.fillIns.length > 3 ? ` · +${credits.fillIns.length - 3} more` : ''}
                 </Text>
               ) : null}
-              <View style={s.pill}><Text style={[T.tiny, { color: C.text }]}>{STATUS_LABEL[status]}</Text></View>
+              <View style={s.pill}><Text style={[T.tiny, { color: C.text }]}>{status === 'not_started' && p.read > 0 ? 'Not reading yet' : STATUS_LABEL[status]}</Text></View>
             </View>
           </View>
           {c.description ? <Text style={[T.small, { paddingHorizontal: 16, paddingTop: 12, lineHeight: 20 }]}>{c.description}</Text> : null}
@@ -176,7 +177,14 @@ export default function CollectionScreen() {
               <Text style={[T.small, T.num]}>{p.left} left{p.upcoming ? ` · ${p.upcoming} not out yet` : ''} · {p.total ? Math.round((p.read / p.total) * 100) : 0}%</Text>
             </View>
             <View style={{ marginTop: 8 }}><Bar read={p.read} total={p.total} color={color} height={6} /></View>
-            {next ? (
+            {next && status !== 'reading' ? (
+              <PrimaryButton
+                label={`${c.on_hold ? 'Resume' : 'Start reading'} · ${issueTitle(lib, next.issueId)}`}
+                icon="play"
+                onPress={() => act((db, l) => startReading(db, l, c.id)).then(goToNext)}
+                style={{ marginTop: 14 }}
+              />
+            ) : next ? (
               <PrimaryButton label={`Continue · ${issueTitle(lib, next.issueId)}`} icon="play" onPress={goToNext} style={{ marginTop: 14 }} />
             ) : (
               <PrimaryButton label={p.total ? 'All read — add more issues' : 'Add issues to start'} onPress={() => setMenu(true)} style={{ marginTop: 14 }} />

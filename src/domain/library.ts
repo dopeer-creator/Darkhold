@@ -1,4 +1,4 @@
-import type { Collection, CollectionStatus, Entry, Issue, Kind, Link, LinkKind, Series } from './types';
+import type { Collection, CollectionStatus, Entry, Issue, IssueStatus, Kind, Link, LinkKind, Series } from './types';
 
 /** Types whose lines show which run or event each issue belongs to, worked out automatically. */
 export const READING_KINDS: Kind[] = ['crisis', 'era'];
@@ -193,8 +193,36 @@ export function collectionStatus(lib: Library, id: string): CollectionStatus {
   const p = progress(lib, id);
   if (p.total > 0 && p.read === p.total && p.upcoming === 0 && !hasEmptyPart(lib, id)) return 'completed';
   if (c?.on_hold) return 'on_hold';
-  if (p.read > 0 || walk(lib, id).some((s) => !s.optional && lib.issues.get(s.issueId)!.status === 'reading')) return 'reading';
+  // Only an issue you marked "currently reading" makes a list active. Issues read elsewhere (in an event,
+  // say) still tick off here, but they don't start the list.
+  if (hasMarker(lib, id)) return 'reading';
   return c?.planned ? 'planned' : 'not_started';
+}
+
+/** True when some issue in the list is marked "currently reading". */
+export function hasMarker(lib: Library, id: string, statusOf = (issueId: string) => lib.issues.get(issueId)!.status): boolean {
+  return walk(lib, id).some((s) => statusOf(s.issueId) === 'reading');
+}
+
+/**
+ * After issues change status: lists that were active and lost their "currently reading" issue because
+ * it was ticked read get their next issue marked "currently reading", so they stay in Continue reading.
+ * Returns the issues to mark. Stopping (setting the issue back to unread) doesn't carry on.
+ */
+export function nextMarkers(lib: Library, changes: Map<string, IssueStatus>): string[] {
+  const finished = [...changes].some(([id, st]) => st === 'read' && lib.issues.get(id)?.status === 'reading');
+  if (!finished) return [];
+  const now = new Map(changes);
+  const statusOf = (id: string) => now.get(id) ?? lib.issues.get(id)!.status;
+  const out: string[] = [];
+  for (const [id, c] of lib.collections) {
+    if (c.on_hold || !hasMarker(lib, id) || hasMarker(lib, id, statusOf)) continue;
+    const next = walk(lib, id).find((s) => !s.optional && !s.upcoming && statusOf(s.issueId) === 'unread');
+    if (!next) continue;
+    now.set(next.issueId, 'reading');
+    out.push(next.issueId);
+  }
+  return out;
 }
 
 /** Why a list can't go inside another, or null if it can: any list can hold any other, but never itself. Mirrors the database trigger. */

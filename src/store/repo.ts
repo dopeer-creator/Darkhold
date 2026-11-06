@@ -3,7 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { ExportFile } from '@/domain/importer';
 import { planImport } from '@/domain/importer';
-import { buildLibrary, canSlice, cannotNest, positionBetween, walk, type Library } from '@/domain/library';
+import { buildLibrary, canSlice, cannotNest, hasMarker, nextMarkers, nextUp, positionBetween, walk, type Library } from '@/domain/library';
 import type { BlockKind, ResolvedLine } from '@/domain/parser';
 import type { Collection, Entry, Issue, IssueStatus, Kind, Link, LinkKind, ReadLog, Series } from '@/domain/types';
 import { COLUMNS, putRow, TABLES, type Table } from './db';
@@ -83,13 +83,45 @@ async function applyStatus(db: SQLiteDatabase, issue: Issue, status: IssueStatus
 export async function setIssueStatus(db: SQLiteDatabase, lib: Library, issueId: string, status: IssueStatus, date?: ReadDate) {
   const issue = lib.issues.get(issueId);
   if (!issue || (issue.status === status && date === undefined)) return;
-  await db.withTransactionAsync(() => applyStatus(db, issue, status, date));
+  await db.withTransactionAsync(async () => {
+    await applyStatus(db, issue, status, date);
+    await carryOn(db, lib, new Map([[issueId, status]]));
+  });
+}
+
+/** Marks the next issue "currently reading" in each active list whose current one was just finished. */
+async function carryOn(db: SQLiteDatabase, lib: Library, changes: Map<string, IssueStatus>) {
+  for (const id of nextMarkers(lib, changes)) await applyStatus(db, lib.issues.get(id)!, 'reading', undefined);
+}
+
+/** Starts (or resumes) a list: takes it off hold and marks its next issue "currently reading". */
+export async function startReading(db: SQLiteDatabase, lib: Library, collectionId: string) {
+  const c = lib.collections.get(collectionId);
+  if (!c) return;
+  await db.withTransactionAsync(async () => {
+    if (c.on_hold) await putRow(db, 'collections', { ...c, on_hold: false });
+    if (hasMarker(lib, collectionId)) return;
+    const next = nextUp(lib, collectionId);
+    if (next) await applyStatus(db, lib.issues.get(next.issueId)!, 'reading', undefined);
+  });
+}
+
+/** Stops reading a list without putting it on hold: its "currently reading" issues go back to unread. */
+export async function stopReading(db: SQLiteDatabase, lib: Library, collectionId: string) {
+  const marked = [...new Set(walk(lib, collectionId).map((s) => s.issueId))].filter((id) => lib.issues.get(id)!.status === 'reading');
+  await db.withTransactionAsync(async () => {
+    for (const id of marked) await applyStatus(db, lib.issues.get(id)!, 'unread', undefined);
+  });
 }
 
 /** Changes when a read issue was read (null = date unknown). Marks it read if it wasn't. */
 export async function setReadDate(db: SQLiteDatabase, lib: Library, issueId: string, date: string | null) {
   const issue = lib.issues.get(issueId);
-  if (issue) await db.withTransactionAsync(() => applyStatus(db, issue, 'read', date));
+  if (issue)
+    await db.withTransactionAsync(async () => {
+      await applyStatus(db, issue, 'read', date);
+      await carryOn(db, lib, new Map([[issueId, 'read' as IssueStatus]]));
+    });
 }
 
 /**
@@ -101,6 +133,7 @@ export async function markCollection(db: SQLiteDatabase, lib: Library, collectio
   const targets = ids.map((id) => lib.issues.get(id)!).filter((i) => (status === 'read' ? i.status !== 'read' : i.status !== 'unread'));
   await db.withTransactionAsync(async () => {
     for (const issue of targets) await applyStatus(db, issue, status, date);
+    await carryOn(db, lib, new Map(targets.map((i) => [i.id, status as IssueStatus])));
   });
   return targets.length;
 }
