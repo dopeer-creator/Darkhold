@@ -3,17 +3,19 @@ import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { activeRoots, collectionStatus, connections, coverFor, issueTitle, nextUp, progress, stats } from '@/domain/library';
+import { activeRoots, collectionStatus, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats } from '@/domain/library';
+import { updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { C, F, publisherColor, kindLabel } from '@/ui/theme';
 
 export default function Home() {
-  const { lib, readLog, sync, ready, session } = useStore();
+  const { lib, readLog, sync, ready, session, act } = useStore();
   const roots = useMemo(() => activeRoots(lib), [lib]);
   const totals = useMemo(() => stats(lib), [lib]);
   const empty = ready && lib.collections.size === 0 && lib.issues.size === 0;
+  const onHold = useMemo(() => rootsWithStatus(lib, 'on_hold').map((id) => lib.collections.get(id)!).sort((a, b) => a.title.localeCompare(b.title)), [lib]);
   const planned = useMemo(() => [...lib.collections.values()].filter((c) => collectionStatus(lib, c.id) === 'planned').sort((a, b) => a.title.localeCompare(b.title)), [lib]);
 
   const recent = readLog.slice(0, 5).map((l) => {
@@ -89,6 +91,27 @@ export default function Home() {
           </View>
         ) : null}
 
+        {onHold.length ? (
+          <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+            <SectionTitle right={<Text style={T.tiny}>{onHold.length}</Text>}>On hold</SectionTitle>
+            {onHold.map((c, i) => {
+              const p = progress(lib, c.id);
+              return (
+                <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={[s.row, i < onHold.length - 1 ? s.rowLine : null]}>
+                  <Cover title={c.title} publisher={c.publisher} width={36} uri={coverFor(lib, c.id)} />
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={T.bodyMedium}>{c.title}</Text>
+                    <Text numberOfLines={1} style={[T.tiny, T.num]}>{kindLabel(c)} · {p.read} / {p.total} read</Text>
+                  </View>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Resume ${c.title}`} onPress={() => act((db, l) => updateCollection(db, l, c.id, { on_hold: false }))} style={s.resume}>
+                    <Text style={[T.small, { color: C.text }]}>Resume</Text>
+                  </Pressable>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+
         {planned.length ? (
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
             <SectionTitle right={<Text style={T.tiny}>{planned.length}</Text>}>Plan to read</SectionTitle>
@@ -158,5 +181,6 @@ const s = StyleSheet.create({
   stat: { flex: 1, alignItems: 'center', gap: 2 },
   statNum: { fontFamily: F.cond, fontSize: 30, lineHeight: 32, color: C.text },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
+  resume: { height: 34, paddingHorizontal: 12, borderRadius: 17, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center' },
   rowLine: { borderBottomWidth: 1, borderBottomColor: C.divider },
 });

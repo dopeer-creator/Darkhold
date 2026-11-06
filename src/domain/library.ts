@@ -221,7 +221,12 @@ export function canSlice(lib: Library, parentId: string, viaId: string): boolean
 
 /** Collections being read that aren't already inside (or sliced into) another collection being read. */
 export function activeRoots(lib: Library): string[] {
-  const reading = new Set([...lib.collections.keys()].filter((id) => collectionStatus(lib, id) === 'reading'));
+  return rootsWithStatus(lib, 'reading');
+}
+
+/** Lists with a status that aren't already inside (or sliced into) another list with that status: the ones to show on Home. */
+export function rootsWithStatus(lib: Library, status: CollectionStatus): string[] {
+  const reading = new Set([...lib.collections.keys()].filter((id) => collectionStatus(lib, id) === status));
   const covered = new Set<string>();
   for (const id of reading) {
     for (const s of walk(lib, id)) {
