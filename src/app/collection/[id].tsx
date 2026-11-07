@@ -85,11 +85,6 @@ export default function CollectionScreen() {
     { label: 'Edit order', go: () => setEditing(true) },
     ...(status === 'completed' ? [] : [{ label: status === 'on_hold' ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => (status === 'on_hold' ? startReading(db, l, c.id) : updateCollection(db, l, c.id, { on_hold: true, reading_now: false }))) }]),
     ...(status === 'reading' ? [{ label: 'Stop reading', go: () => act((db, l) => stopReading(db, l, c.id)) }] : []),
-    ...(c.planned && p.read > 0 && status === 'planned'
-      ? [{ label: 'Move to On hold', go: () => act((db, l) => updateCollection(db, l, c.id, { planned: false })) }]
-      : status === 'on_hold' && !c.on_hold
-        ? [{ label: 'Move to Plan to read', go: () => act((db, l) => updateCollection(db, l, c.id, { planned: true })) }]
-        : []),
     { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
     { label: 'Choose a cover…', go: () => router.push({ pathname: '/covers', params: { collection: c.id } }) },
     { label: 'Edit details, type or label', go: () => router.push(`/new?edit=${c.id}`) },

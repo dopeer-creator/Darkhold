@@ -196,9 +196,9 @@ export function collectionStatus(lib: Library, id: string): CollectionStatus {
   // Only lists you switched to "Reading now" are active. Issues read elsewhere (in an event, say) still
   // tick off here, but they don't start the list.
   if (c?.reading_now) return 'reading';
-  if (c?.planned) return 'planned';
-  // Nothing just lies around: a list you haven't started is on Plan to read, one you've read some of is on hold.
-  return p.read > 0 ? 'on_hold' : 'planned';
+  // You choose Reading and On hold yourself. Everything else waits on Plan to read, even if a few of its
+  // issues are read already because they were part of something else.
+  return 'planned';
 }
 
 

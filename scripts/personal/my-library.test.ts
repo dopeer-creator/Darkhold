@@ -30,7 +30,7 @@ describe('starting data', () => {
 
   it('marks finished events completed; part-read lists wait until you mark one currently reading', () => {
     expect(collectionStatus(lib, byTitle('Blood Hunt'))).toBe('completed');
-    expect(collectionStatus(lib, byTitle('Armageddon', 'crisis'))).toBe('on_hold');
+    expect(collectionStatus(lib, byTitle('Armageddon', 'crisis'))).toBe('planned');
     expect(collectionStatus(lib, byTitle('Batman: New 52'))).toBe('planned');
   });
 
