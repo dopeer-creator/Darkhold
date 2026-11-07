@@ -107,6 +107,22 @@ export default function Home() {
           </View>
         ) : null}
 
+        {recent.length ? (
+          <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+            <SectionTitle right={<Pressable onPress={() => router.push('/history')} hitSlop={10}><Text style={T.small}>See all</Text></Pressable>}>Recently read</SectionTitle>
+            {recent.map((r, i) => (
+              <Pressable key={r.id} onPress={() => r.parentId && router.push(`/collection/${r.parentId}`)} style={[s.row, i < recent.length - 1 ? s.rowLine : null]}>
+                <Cover title={r.seriesTitle} publisher={r.publisher} width={36} mark={r.number} uri={r.cover} />
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={1} style={T.bodyMedium}>{r.title}</Text>
+                  <Text numberOfLines={1} style={T.tiny}>{r.where}</Text>
+                </View>
+                <Text style={T.tiny}>{relativeDay(r.day)}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         {onHold.length ? (
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
             <SectionTitle right={<Text style={T.tiny}>{onHold.length}</Text>}>On hold</SectionTitle>
@@ -148,21 +164,6 @@ export default function Home() {
           </View>
         ) : null}
 
-        {recent.length ? (
-          <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
-            <SectionTitle right={<Pressable onPress={() => router.push('/history')} hitSlop={10}><Text style={T.small}>See all</Text></Pressable>}>Recently read</SectionTitle>
-            {recent.map((r, i) => (
-              <Pressable key={r.id} onPress={() => r.parentId && router.push(`/collection/${r.parentId}`)} style={[s.row, i < recent.length - 1 ? s.rowLine : null]}>
-                <Cover title={r.seriesTitle} publisher={r.publisher} width={36} mark={r.number} uri={r.cover} />
-                <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={T.bodyMedium}>{r.title}</Text>
-                  <Text numberOfLines={1} style={T.tiny}>{r.where}</Text>
-                </View>
-                <Text style={T.tiny}>{relativeDay(r.day)}</Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
