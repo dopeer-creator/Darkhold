@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { activeRoots, collectionStatus, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats } from '@/domain/library';
+import { activeRoots, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats } from '@/domain/library';
 import { startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
@@ -16,7 +16,7 @@ export default function Home() {
   const totals = useMemo(() => stats(lib), [lib]);
   const empty = ready && lib.collections.size === 0 && lib.issues.size === 0;
   const onHold = useMemo(() => rootsWithStatus(lib, 'on_hold').map((id) => lib.collections.get(id)!).sort((a, b) => a.title.localeCompare(b.title)), [lib]);
-  const planned = useMemo(() => [...lib.collections.values()].filter((c) => collectionStatus(lib, c.id) === 'planned').sort((a, b) => a.title.localeCompare(b.title)), [lib]);
+  const planned = useMemo(() => rootsWithStatus(lib, 'planned').map((id) => lib.collections.get(id)!).sort((a, b) => a.title.localeCompare(b.title)), [lib]);
 
   const recent = readLog.slice(0, 5).map((l) => {
     const issue = lib.issues.get(l.issue_id);

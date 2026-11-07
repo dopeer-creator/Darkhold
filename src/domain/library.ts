@@ -196,7 +196,9 @@ export function collectionStatus(lib: Library, id: string): CollectionStatus {
   // Only lists you switched to "Reading now" are active. Issues read elsewhere (in an event, say) still
   // tick off here, but they don't start the list.
   if (c?.reading_now) return 'reading';
-  return c?.planned ? 'planned' : 'not_started';
+  if (c?.planned) return 'planned';
+  // Nothing just lies around: a list you haven't started is on Plan to read, one you've read some of is on hold.
+  return p.read > 0 ? 'on_hold' : 'planned';
 }
 
 
@@ -237,7 +239,13 @@ export function rootsWithStatus(lib: Library, status: CollectionStatus): string[
       if (s.via) covered.add(s.via);
     }
   }
-  return [...reading].filter((id) => !covered.has(id));
+  // A list that only has its status because of what's in it (no switch, hold or Plan to read of its own)
+  // isn't shown on its own when it sits inside another list, like a run inside a reading order.
+  const own = (id: string) => {
+    const c = lib.collections.get(id)!;
+    return status === 'reading' ? !!c.reading_now : status === 'on_hold' ? !!c.on_hold : status === 'planned' ? !!c.planned : true;
+  };
+  return [...reading].filter((id) => !covered.has(id) && (own(id) || !isNested(lib, id)));
 }
 
 export interface Stats {

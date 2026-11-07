@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { activeRoots, canSlice, coverFor, entryUnits, moveUnit, isNested, buildLibrary, cannotNest, collectionStatus, issueTitle, lastRead, nextUp, progress, stats } from './library';
+import { activeRoots, rootsWithStatus, canSlice, coverFor, entryUnits, moveUnit, isNested, buildLibrary, cannotNest, collectionStatus, issueTitle, lastRead, nextUp, progress, stats } from './library';
 import { parseReadingList, parseStructuredList, resolveAgainstLibrary, titleCase } from './parser';
 import type { Collection, Entry, Issue, Kind, Series } from './types';
 import armageddon from '../../scripts/armageddon.txt?raw';
@@ -130,12 +130,12 @@ describe('continue reading', () => {
 describe('status and home totals', () => {
   it('works status out from issues; on hold is the only manual one', () => {
     const lib = fixture();
-    expect(collectionStatus(lib, 'run')).toBe('not_started');
+    expect(collectionStatus(lib, 'run')).toBe('on_hold');
     lib.issues.get('bn2')!.status = 'reading';
-    expect(collectionStatus(lib, 'run')).toBe('not_started');
+    expect(collectionStatus(lib, 'run')).toBe('on_hold');
     lib.collections.get('run')!.reading_now = true;
     expect(collectionStatus(lib, 'run')).toBe('reading');
-    expect(collectionStatus(lib, 'empty')).toBe('not_started');
+    expect(collectionStatus(lib, 'empty')).toBe('planned');
     lib.collections.get('run')!.on_hold = true;
     expect(collectionStatus(lib, 'run')).toBe('on_hold');
     lib.issues.get('bn2')!.status = 'read';
@@ -157,9 +157,9 @@ describe('status and home totals', () => {
 });
 
 describe('reading now', () => {
-  it('a list with issues read elsewhere is not started until you switch it on', () => {
+  it('a list with issues read elsewhere waits on hold until you switch it on', () => {
     const lib = fixture();
-    expect(collectionStatus(lib, 'event')).toBe('not_started');
+    expect(collectionStatus(lib, 'event')).toBe('on_hold');
     expect(activeRoots(lib)).toEqual([]);
   });
 
@@ -377,4 +377,15 @@ describe('edit order and covers', () => {
 it('names issues, including ones without a number', () => {
   const lib = fixture();
   expect(issueTitle(lib, 'bn0')).toBe('Blackest Night #0');
+});
+
+describe('nothing lies around', () => {
+  it('an untouched list is on Plan to read, a part-read one on hold, and a run inside a reading order stays out of the way', () => {
+    const lib = fixture();
+    expect(collectionStatus(lib, 'empty')).toBe('planned');
+    expect(collectionStatus(lib, 'crisis')).toBe('on_hold');
+    expect(rootsWithStatus(lib, 'on_hold')).toEqual(['crisis']);
+    lib.collections.get('run')!.on_hold = true;
+    expect(rootsWithStatus(lib, 'on_hold')).toEqual(['crisis']);
+  });
 });

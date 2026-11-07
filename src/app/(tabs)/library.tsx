@@ -32,7 +32,6 @@ const STATUSES = [
   { key: 'planned', label: 'Plan to read' },
   { key: 'on_hold', label: 'On hold' },
   { key: 'completed', label: 'Completed' },
-  { key: 'not_started', label: 'Not started' },
 ] as const;
 const ISSUE_STATUSES = [
   { key: 'issue_read', label: 'Read' },

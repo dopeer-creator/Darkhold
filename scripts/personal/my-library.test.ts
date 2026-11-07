@@ -30,8 +30,8 @@ describe('starting data', () => {
 
   it('marks finished events completed; part-read lists wait until you mark one currently reading', () => {
     expect(collectionStatus(lib, byTitle('Blood Hunt'))).toBe('completed');
-    expect(collectionStatus(lib, byTitle('Armageddon', 'crisis'))).toBe('not_started');
-    expect(collectionStatus(lib, byTitle('Batman: New 52'))).toBe('not_started');
+    expect(collectionStatus(lib, byTitle('Armageddon', 'crisis'))).toBe('on_hold');
+    expect(collectionStatus(lib, byTitle('Batman: New 52'))).toBe('planned');
   });
 
   it('imports into an empty library, and a second import changes nothing', () => {
