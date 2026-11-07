@@ -126,16 +126,6 @@ export default function CollectionScreen() {
           ))}
         </View>
       ) : null}
-      {fill.busy || fill.status ? (
-        <View style={s.fillBar}>
-          <Text style={[T.tiny, { flex: 1, color: C.muted }]} numberOfLines={2}>{fill.busy ? `Getting details · ${fill.status}` : fill.status}</Text>
-          {fill.busy ? (
-            <Pressable accessibilityRole="button" onPress={fill.stop} style={{ minHeight: 36, paddingHorizontal: 10, justifyContent: 'center' }}>
-              <Text style={[T.small, { color: C.text }]}>Stop</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
       <ScrollView
         ref={scrollRef}
         scrollEnabled={scrollOn}

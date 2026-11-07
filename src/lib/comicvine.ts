@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { Library } from '@/domain/library';
 import type { Issue, Series } from '@/domain/types';
-import { getMeta, putRow, setMeta } from '@/store/db';
+import { getMeta, patchRow, setMeta } from '@/store/db';
 
 /**
  * Covers from Comic Vine (comicvine.gamespot.com), using the reader's own free API key.
@@ -21,13 +21,41 @@ type CvImage = { medium_url?: string; small_url?: string; super_url?: string; or
 export type CvVolume = { id: number; name: string; start_year: string | null; count_of_issues: number; publisher?: { name?: string } | null };
 type CvIssue = { id: number; issue_number: string; image?: CvImage | null };
 
+/** Waits before each request while the app isn't in front (set by the store, so this file stays free of React Native). */
+let gate: () => Promise<void> = async () => {};
+export const setRequestGate = (fn: () => Promise<void>) => {
+  gate = fn;
+};
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const RETRIES = 4;
+
+/**
+ * One Comic Vine request. A dropped connection (common right after the app comes back from the
+ * background) or a busy/slow-down answer is tried again a few times, waiting a little longer each time.
+ */
 async function call<T>(key: string, path: string, params: Record<string, string>): Promise<{ results: T; number_of_total_results: number }> {
   const query = new URLSearchParams({ api_key: key, format: 'json', ...params }).toString();
-  const res = await fetch(`${BASE}/${path}/?${query}`, { headers: { 'User-Agent': 'Darkhold/1.0 (personal comic reading tracker)' } });
-  if (!res.ok) throw new Error(`Comic Vine answered ${res.status}`);
-  const json = await res.json();
-  if (json.status_code !== 1) throw new Error(json.error === 'Invalid API Key' ? 'That Comic Vine key was not accepted' : `Comic Vine: ${json.error}`);
-  return json;
+  for (let attempt = 0; ; attempt++) {
+    await gate();
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/${path}/?${query}`, { headers: { 'User-Agent': 'Darkhold/1.0 (personal comic reading tracker)' } });
+    } catch {
+      if (attempt < RETRIES) {
+        await sleep(2000 * 2 ** attempt);
+        continue;
+      }
+      throw new Error('Couldn’t reach Comic Vine. Check the connection and run it again.');
+    }
+    if ((res.status === 420 || res.status === 429 || res.status >= 500) && attempt < RETRIES) {
+      await sleep(5000 * 2 ** attempt);
+      continue;
+    }
+    if (!res.ok) throw new Error(`Comic Vine answered ${res.status}`);
+    const json = await res.json();
+    if (json.status_code !== 1) throw new Error(json.error === 'Invalid API Key' ? 'That Comic Vine key was not accepted' : `Comic Vine: ${json.error}`);
+    return json;
+  }
 }
 
 const pause = () => new Promise((r) => setTimeout(r, PAUSE_MS));
@@ -84,7 +112,7 @@ export async function rematchSeries(db: SQLiteDatabase, lib: Library, key: strin
   for (const issue of lib.issues.values()) {
     if (issue.series_id === seriesId && issue.cover_path?.includes('comicvine')) {
       issue.cover_path = null;
-      await putRow(db, 'issues', issue);
+      await patchRow(db, 'issues', issue.id, { cover_path: null });
     }
   }
   return fetchMissingCovers(db, lib, key, undefined, new Set([seriesId]));
@@ -115,6 +143,8 @@ export interface CoverRun {
   found: number;
   missing: number;
   seriesNotFound: string[];
+  /** Set when the run ended before the last series: "Stopped" or what went wrong. */
+  stoppedEarly?: string | null;
 }
 
 /** Fills in covers for issues that have none. Issues with a cover (found or pasted) are left alone. */
@@ -124,40 +154,50 @@ export async function fetchMissingCovers(
   key: string,
   onProgress?: (done: number, total: number, title: string) => void,
   onlySeries?: Set<string>,
+  shouldStop?: () => boolean,
 ): Promise<CoverRun> {
   const bySeries = new Map<string, Issue[]>();
   for (const i of lib.issues.values()) {
     if (i.cover_path || i.number == null || (onlySeries && !onlySeries.has(i.series_id))) continue;
     bySeries.set(i.series_id, [...(bySeries.get(i.series_id) ?? []), i]);
   }
-  const run: CoverRun = { found: 0, missing: 0, seriesNotFound: [] };
+  const run: CoverRun = { found: 0, missing: 0, seriesNotFound: [], stoppedEarly: null };
   let done = 0;
   for (const [seriesId, issues] of bySeries) {
+    if (shouldStop?.()) {
+      run.stoppedEarly = 'Stopped';
+      break;
+    }
     const series = lib.series.get(seriesId);
     done++;
     if (!series) continue;
     onProgress?.(done, bySeries.size, series.title);
-    let volumeId = await rememberedVolume(db, lib, seriesId);
-    if (!volumeId) {
-      volumeId = await findVolume(key, series);
-      await pause();
-      if (volumeId) await rememberVolume(db, lib, seriesId, volumeId);
-    }
-    if (!volumeId) {
-      run.seriesNotFound.push(series.volume_year ? `${series.title} (${series.volume_year})` : series.title);
-      run.missing += issues.length;
-      continue;
-    }
-    const covers = await volumeCovers(key, volumeId);
-    await pause();
-    for (const issue of issues) {
-      const url = covers.get(issue.number!);
-      if (url) {
-        await putRow(db, 'issues', { ...issue, cover_path: url, upcoming: false });
-        run.found++;
-      } else {
-        run.missing++;
+    try {
+      let volumeId = await rememberedVolume(db, lib, seriesId);
+      if (!volumeId) {
+        volumeId = await findVolume(key, series);
+        await pause();
+        if (volumeId) await rememberVolume(db, lib, seriesId, volumeId);
       }
+      if (!volumeId) {
+        run.seriesNotFound.push(series.volume_year ? `${series.title} (${series.volume_year})` : series.title);
+        run.missing += issues.length;
+        continue;
+      }
+      const covers = await volumeCovers(key, volumeId);
+      await pause();
+      for (const issue of issues) {
+        const url = covers.get(issue.number!);
+        if (url) {
+          await patchRow(db, 'issues', issue.id, { cover_path: url, upcoming: false });
+          run.found++;
+        } else {
+          run.missing++;
+        }
+      }
+    } catch (e) {
+      run.stoppedEarly = e instanceof Error ? e.message : String(e);
+      break;
     }
   }
   return run;
@@ -224,7 +264,7 @@ export async function applyVolumeToSeries(db: SQLiteDatabase, lib: Library, key:
     if (issue.cover_path && !issue.cover_path.includes('comicvine')) continue;
     const url = covers.get(issue.number) ?? null;
     if (url) found++;
-    if (url !== issue.cover_path || (url && issue.upcoming)) await putRow(db, 'issues', { ...issue, cover_path: url, upcoming: url ? false : issue.upcoming });
+    if (url !== issue.cover_path || (url && issue.upcoming)) await patchRow(db, 'issues', issue.id, { cover_path: url, upcoming: url ? false : !!issue.upcoming });
   }
   return found;
 }
@@ -307,7 +347,7 @@ export async function fillDetails(
         run.notFound++;
       } else {
         const details = await issueCredits(key, cvId);
-        await putRow(db, 'issues', { ...issue, ...details, cv_issue_id: cvId, writers: details.writers ?? issue.writers ?? null, upcoming: false });
+        await patchRow(db, 'issues', issue.id, { ...details, cv_issue_id: cvId, writers: details.writers ?? issue.writers ?? null, cover_path: issue.cover_path ?? null, upcoming: false });
         run.filled++;
         await pause();
       }
@@ -331,6 +371,6 @@ async function rememberVolume(db: SQLiteDatabase, lib: Library, seriesId: string
   const series = lib.series.get(seriesId);
   if (series && (series.cv_volume_id ?? null) !== volumeId) {
     series.cv_volume_id = volumeId;
-    await putRow(db, 'series', series);
+    await patchRow(db, 'series', series.id, { cv_volume_id: volumeId });
   }
 }

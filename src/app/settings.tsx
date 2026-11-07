@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { fetchMissingCovers, getComicVineKey, setComicVineKey, testComicVineKey } from '@/lib/comicvine';
+import { getComicVineKey, setComicVineKey, testComicVineKey } from '@/lib/comicvine';
 import { supabaseConfigured } from '@/lib/supabase';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
@@ -17,7 +17,7 @@ import { C, F } from '@/ui/theme';
 
 /** Profile and settings: who is signed in, sync, and signing out to switch accounts. */
 export default function Settings() {
-  const { session, sync, syncNow, signOut, lib, readLog, act } = useStore();
+  const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, stopJob } = useStore();
   const db = useSQLiteContext();
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState('');
@@ -29,7 +29,7 @@ export default function Settings() {
     const [disk] = await Promise.all([Image.clearDiskCache(), Image.clearMemoryCache()]);
     setCacheStatus(disk ? 'Cleared. Covers download again as you scroll.' : 'Couldn’t clear right now. Try again in a moment.');
   };
-  const [fetching, setFetching] = useState(false);
+  const fetching = job?.kind === 'covers' && job.busy;
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateReady, setUpdateReady] = useState(false);
   const checkUpdates = async () => {
@@ -68,18 +68,9 @@ export default function Settings() {
 
   const findCovers = async () => {
     if (!savedKey) return;
-    setFetching(true);
-    try {
-      const r = await act((d, l) => fetchMissingCovers(d, l, savedKey, (done, total, title) => setCoverStatus(`Series ${done} of ${total}: ${title}`)));
-      setCoverStatus(
-        `Found ${r.found} cover${r.found === 1 ? '' : 's'}.` +
-          (r.missing ? ` ${r.missing} not found${r.seriesNotFound.length ? ` (no match for: ${r.seriesNotFound.slice(0, 4).join(', ')}${r.seriesNotFound.length > 4 ? '…' : ''})` : ''} — paste links for those on the issue page.` : ''),
-      );
-    } catch (e) {
-      setCoverStatus(e instanceof Error ? e.message : String(e));
-    } finally {
-      setFetching(false);
-    }
+    setCoverStatus('');
+    const started = await startCovers();
+    if (!started && job?.busy) setCoverStatus('Another Comic Vine job is running. It finishes first.');
   };
   const email = session?.user.email ?? (supabaseConfigured ? 'Not signed in' : 'Offline preview');
   const lastSync = sync.at ? `${relativeDay(sync.at.slice(0, 10))}, ${new Date(sync.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not yet';
@@ -150,7 +141,9 @@ export default function Settings() {
                 <Text style={T.tiny}>{missing} issue{missing === 1 ? '' : 's'} without a cover</Text>
               </View>
               {fetching ? (
-                <ActivityIndicator color={C.dim} />
+                <Pressable accessibilityRole="button" onPress={stopJob} style={s.smallBtn}>
+                  <Text style={[T.small, { color: C.text }]}>Stop</Text>
+                </Pressable>
               ) : (
                 <Pressable accessibilityRole="button" onPress={findCovers} disabled={!missing} style={[s.smallBtn, !missing ? { opacity: 0.4 } : null]}>
                   <Text style={[T.small, { color: C.text }]}>Find covers</Text>
@@ -168,6 +161,7 @@ export default function Settings() {
               <Text style={[T.small, { color: C.text }]}>Save</Text>
             </Pressable>
           </View>
+          {job?.kind === 'covers' ? <Text style={T.tiny}>{job.busy ? `Finding covers · ${job.status}. You can leave this page; it keeps going.` : job.status}</Text> : null}
           {coverStatus ? <Text style={T.tiny}>{coverStatus}</Text> : null}
         </View>
 

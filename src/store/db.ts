@@ -125,6 +125,16 @@ export async function putRow(db: SQLiteDatabase, table: Table, data: object, opt
   );
 }
 
+/**
+ * Changes some columns of one row, starting from what is saved now. Long jobs (covers, details) use
+ * this so they never undo a change made meanwhile, like an issue ticked read while covers download.
+ */
+export async function patchRow(db: SQLiteDatabase, table: Table, id: string, patch: Record<string, unknown>) {
+  const current = await db.getFirstAsync<Record<string, unknown>>(`SELECT ${[...COLUMNS[table], 'deleted_at'].join(',')} FROM ${table} WHERE id = ?`, id);
+  if (!current || current.deleted_at) return;
+  await putRow(db, table, { ...current, ...patch });
+}
+
 export async function getMeta(db: SQLiteDatabase, key: string) {
   return (await db.getFirstAsync<{ value: string }>('SELECT value FROM meta WHERE key = ?', key))?.value ?? null;
 }

@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 
 import { migrate } from '@/store/db';
 import { StoreProvider } from '@/store/store';
+import { JobBanner } from '@/ui/job-banner';
 import { C } from '@/ui/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -46,6 +47,7 @@ export default function RootLayout() {
             <Stack.Screen name="connect" options={{ presentation: 'modal' }} />
             <Stack.Screen name="merge-series" options={{ presentation: 'modal' }} />
           </Stack>
+          <JobBanner />
         </StoreProvider>
       </SQLiteProvider>
     </ThemeProvider>
