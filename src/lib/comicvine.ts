@@ -322,8 +322,8 @@ export async function fillDetails(
   // Issues you've read first, so writer pages fill in for what you know before the rest.
   const todo = issueIds
     .map((id) => lib.issues.get(id))
-    // Not yet matched on Comic Vine: no credits, or credits typed in by hand that Comic Vine hasn't confirmed.
-    .filter((i): i is Issue => !!i && i.number != null && (force || !i.cv_issue_id || !i.writers))
+    // Still missing credits: no writer or no artist yet (issues with both came from Comic Vine or the Grand Comics Database).
+    .filter((i): i is Issue => !!i && i.number != null && (force || !i.writers || !i.artists))
     .sort((a, b) => Number(b.status === 'read') - Number(a.status === 'read'));
   const run: DetailsRun = { filled: 0, skipped: issueIds.length - todo.length, notFound: 0, stoppedEarly: null };
   const indexes = new Map<string, Map<string, { id: number; image: string | null }> | null>();

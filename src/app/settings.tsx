@@ -54,7 +54,7 @@ export default function Settings() {
     }
   };
   const missing = [...lib.issues.values()].filter((i) => !i.cover_path && i.number != null).length;
-  const unchecked = (i: { writers?: string | null; cv_issue_id?: number | null; number: string | null }) => i.number != null && (!i.writers || !i.cv_issue_id);
+  const unchecked = (i: { writers?: string | null; artists?: string | null; number: string | null }) => i.number != null && (!i.writers || !i.artists);
   const noCredits = [...lib.issues.values()].filter(unchecked).length;
   const findCredits = async () => {
     setCoverStatus('');
@@ -198,7 +198,7 @@ export default function Settings() {
             <View style={s.row}>
               <View style={{ flex: 1 }}>
                 <Text style={T.body}>Writer and artist credits</Text>
-                <Text style={T.tiny}>{noCredits} issue{noCredits === 1 ? '' : 's'} not checked on Comic Vine yet</Text>
+                <Text style={T.tiny}>{noCredits} issue{noCredits === 1 ? '' : 's'} still missing writer or artist</Text>
               </View>
               {job?.busy && job.kind === 'details' ? (
                 <Pressable accessibilityRole="button" onPress={stopJob} style={s.smallBtn}>
@@ -211,6 +211,7 @@ export default function Settings() {
               )}
             </View>
           ) : null}
+          <Text style={T.tiny}>Most credits come from the Grand Comics Database (comics.org), CC BY-SA 4.0.</Text>
           {savedKey && noCredits > 200 ? <Text style={T.tiny}>Comic Vine allows about 200 lookups an hour, so a big library fills over several runs. Each run carries on where the last stopped, issues you’ve read first.</Text> : null}
           {job?.kind === 'covers' ? <Text style={T.tiny}>{job.busy ? `Finding covers · ${job.status}. You can leave this page; it keeps going.` : job.status}</Text> : null}
           {job?.kind === 'details' && !job.collectionId ? <Text style={T.tiny}>{job.busy ? `Finding credits · ${job.status}. You can leave this page; it keeps going.` : job.status}</Text> : null}
