@@ -62,45 +62,81 @@ export function StoryCard({ width, target, review, showText, ref }: { width: num
   const accent = publisherColor(target.publisher);
   const tint = tintFor(target.title);
   const col = VERDICT_COLORS[review.verdict];
-  const body = review.body && review.body.length > 260 ? `${review.body.slice(0, 257).trimEnd()}…` : review.body;
+  const words = showText ? review.body?.trim() || '' : '';
+  // With words, the top gets compact (cover beside the title) and the words get the rest of the picture.
+  // Longer reviews use a smaller size; anything past the space ends in an ellipsis, never off the edge.
+  const size = words.length <= 140 ? 17 : words.length <= 320 ? 15 : 13.5;
+  const lineH = Math.round(size * 1.5);
+  const room = 196; // height left for the words, in card units (the card is 360 × 640)
+  const lines = Math.max(3, Math.floor(room / lineH));
+  // The line limit does the cutting (it ends in "…"); this only keeps a huge review from being laid out in full.
+  const shown = words.length > 900 ? `${words.slice(0, 899).trimEnd()}…` : words;
+
+  const cover = (w: number, h: number) => (
+    <View style={{ width: w * k, height: h * k, borderRadius: 8 * k, backgroundColor: tint.fg + '33', borderWidth: 1, borderColor: tint.fg, overflow: 'hidden', justifyContent: 'flex-end' }}>
+      {target.cover ? (
+        <Image source={{ uri: sizedCover(target.cover, 300) }} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} contentFit="cover" />
+      ) : (
+        <Text style={{ fontFamily: F.condBold, fontSize: (w / 7) * k, color: tint.fg, padding: 8 * k }} numberOfLines={3}>{target.title.toUpperCase()}</Text>
+      )}
+    </View>
+  );
+  const verdict = (
+    <View style={{ flexDirection: 'row' }}>
+      <View style={{ backgroundColor: col.bg, borderRadius: 999, paddingHorizontal: 16 * k, paddingVertical: 5 * k }}>
+        <Text style={{ fontFamily: F.condBold, fontSize: 20 * k, letterSpacing: 1.2 * k, color: col.fg }}>{verdictLabel(review.verdict).toUpperCase()}</Text>
+      </View>
+    </View>
+  );
+  const score =
+    review.score != null ? (
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 * k }}>
+        <Text style={{ fontFamily: F.condBold, fontSize: 64 * k, lineHeight: 64 * k, color: C.text }}>{formatScore(review.score)}</Text>
+        <Text style={{ fontFamily: F.sans, fontSize: 15 * k, color: C.dim, marginBottom: 10 * k }}>/ 10</Text>
+        <View style={{ marginBottom: 12 * k, marginLeft: 6 * k }}>
+          <Stars score={review.score} size={22 * k} />
+        </View>
+      </View>
+    ) : null;
+
   return (
     <View ref={ref} collapsable={false} style={{ width, height, backgroundColor: C.bg, overflow: 'hidden', borderRadius: 2 }}>
-      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: height * 0.42, backgroundColor: tint.bg }} />
+      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: height * (shown ? 0.34 : 0.42), backgroundColor: tint.bg }} />
       <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 8 * k, backgroundColor: accent }} />
       <View style={{ flex: 1, paddingHorizontal: 30 * k, paddingTop: 30 * k, paddingBottom: 26 * k }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <Text style={{ fontFamily: F.semibold, fontSize: 12 * k, letterSpacing: 2.4 * k, color: tint.fg }}>DARKHOLD</Text>
           <Text numberOfLines={1} style={{ fontFamily: F.semibold, fontSize: 11 * k, letterSpacing: 1.4 * k, color: tint.fg, maxWidth: 210 * k, textAlign: 'right' }}>{target.kind}</Text>
         </View>
-        <View style={{ width: 150 * k, height: 225 * k, marginTop: 30 * k, borderRadius: 8 * k, backgroundColor: tint.fg + '33', borderWidth: 1, borderColor: tint.fg, overflow: 'hidden', justifyContent: 'flex-end' }}>
-          {target.cover ? (
-            <Image source={{ uri: sizedCover(target.cover, 300) }} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} contentFit="cover" />
-          ) : (
-            <Text style={{ fontFamily: F.condBold, fontSize: 22 * k, color: tint.fg, padding: 10 * k }} numberOfLines={3}>{target.title.toUpperCase()}</Text>
-          )}
-        </View>
-        <Text numberOfLines={3} style={{ fontFamily: F.condBold, fontSize: 40 * k, lineHeight: 40 * k, color: C.text, marginTop: 24 * k }}>{target.title}</Text>
-        {target.creators ? <Text numberOfLines={1} style={{ fontFamily: F.sans, fontSize: 13 * k, color: C.muted, marginTop: 6 * k }}>{target.creators}</Text> : null}
-        <View style={{ flexDirection: 'row', marginTop: 20 * k }}>
-          <View style={{ backgroundColor: col.bg, borderRadius: 999, paddingHorizontal: 16 * k, paddingVertical: 5 * k }}>
-            <Text style={{ fontFamily: F.condBold, fontSize: 20 * k, letterSpacing: 1.2 * k, color: col.fg }}>{verdictLabel(review.verdict).toUpperCase()}</Text>
-          </View>
-        </View>
-        {review.score != null ? (
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 * k, marginTop: 12 * k }}>
-            <Text style={{ fontFamily: F.condBold, fontSize: 64 * k, lineHeight: 64 * k, color: C.text }}>{formatScore(review.score)}</Text>
-            <Text style={{ fontFamily: F.sans, fontSize: 15 * k, color: C.dim, marginBottom: 10 * k }}>/ 10</Text>
-            <View style={{ marginBottom: 12 * k, marginLeft: 6 * k }}>
-              <Stars score={review.score} size={22 * k} />
+
+        {shown ? (
+          <>
+            <View style={{ flexDirection: 'row', gap: 16 * k, marginTop: 26 * k, alignItems: 'flex-end' }}>
+              {cover(112, 168)}
+              <View style={{ flex: 1, gap: 6 * k }}>
+                <Text numberOfLines={4} style={{ fontFamily: F.condBold, fontSize: 30 * k, lineHeight: 31 * k, color: C.text }}>{target.title}</Text>
+                {target.creators ? <Text numberOfLines={2} style={{ fontFamily: F.sans, fontSize: 12 * k, lineHeight: 16 * k, color: C.muted }}>{target.creators}</Text> : null}
+              </View>
             </View>
-          </View>
-        ) : null}
-        {showText && body ? (
-          <Text style={{ fontFamily: F.sans, fontStyle: 'italic', fontSize: 15 * k, lineHeight: 23 * k, color: C.text, marginTop: 16 * k }} numberOfLines={7}>
-            “{body}”
-          </Text>
-        ) : null}
-        <View style={{ flex: 1 }} />
+            <View style={{ marginTop: 20 * k }}>{verdict}</View>
+            {score ? <View style={{ marginTop: 10 * k }}>{score}</View> : null}
+            <View style={{ flex: 1, marginTop: 14 * k, marginBottom: 12 * k, overflow: 'hidden' }}>
+              <Text numberOfLines={lines} style={{ fontFamily: F.sans, fontStyle: 'italic', fontSize: size * k, lineHeight: lineH * k, color: C.text }}>
+                “{shown}”
+              </Text>
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={{ marginTop: 30 * k }}>{cover(150, 225)}</View>
+            <Text numberOfLines={2} style={{ fontFamily: F.condBold, fontSize: 40 * k, lineHeight: 40 * k, color: C.text, marginTop: 24 * k }}>{target.title}</Text>
+            {target.creators ? <Text numberOfLines={1} style={{ fontFamily: F.sans, fontSize: 13 * k, color: C.muted, marginTop: 6 * k }}>{target.creators}</Text> : null}
+            <View style={{ marginTop: 20 * k }}>{verdict}</View>
+            {score ? <View style={{ marginTop: 12 * k }}>{score}</View> : null}
+            <View style={{ flex: 1 }} />
+          </>
+        )}
+
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <Text style={{ fontFamily: F.sans, fontSize: 12 * k, color: C.faint }}>{target.meta}</Text>
           <Text style={{ fontFamily: F.semibold, fontSize: 12 * k, color: C.faint, letterSpacing: 1 * k }}>darkhold</Text>
