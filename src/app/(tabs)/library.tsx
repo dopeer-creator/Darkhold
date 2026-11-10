@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { collectionStatus, coverFor, isNested, issueTitle, progress } from '@/domain/library';
@@ -65,7 +65,7 @@ export default function LibraryScreen() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const toggle = (set: (fn: (v: string[]) => string[]) => void, key: string) => set((v) => (v.includes(key) ? v.filter((k) => k !== key) : [...v, key]));
   const active = pubs.length + statuses.length + chars.length;
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const tile = Math.floor((Math.min(width, 600) - 32 - 24) / 3);
 
   const collections = useMemo(() => {
@@ -145,7 +145,7 @@ export default function LibraryScreen() {
         ))}
       </View>
       {filtersOpen ? (
-        <View style={s.panel}>
+        <ScrollView style={[s.panel, { maxHeight: Math.round(height * 0.62) }]} contentContainerStyle={{ padding: 12, gap: 8 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
           <Text style={T.label}>PUBLISHER</Text>
           <View style={s.chipRow}>
             {PUBLISHERS.map((p) => <Chip key={p.key} label={p.label} dot={p.color} active={pubs.includes(p.key)} onPress={() => toggle(setPubs, p.key)} />)}
@@ -170,7 +170,7 @@ export default function LibraryScreen() {
             <Pressable accessibilityRole="button" onPress={() => { setPubs([]); setStatuses([]); setChars([]); }} style={[s.panelBtn, { flex: 1 }]}><Text style={T.small}>Clear</Text></Pressable>
             <Pressable accessibilityRole="button" onPress={() => setFiltersOpen(false)} style={[s.panelBtn, { flex: 1, backgroundColor: C.text, borderColor: C.text }]}><Text style={[T.small, { color: C.onLight, fontFamily: F.semibold }]}>Done</Text></Pressable>
           </View>
-        </View>
+        </ScrollView>
       ) : active ? (
         <View style={s.activeRow}>
           <Text style={[T.small, { flex: 1 }]} numberOfLines={1}>
@@ -282,7 +282,7 @@ const s = StyleSheet.create({
   filterBtn: { height: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   badge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, backgroundColor: C.dc, alignItems: 'center', justifyContent: 'center' },
   badgeText: { fontFamily: F.semibold, fontSize: 11, color: '#fff' },
-  panel: { marginHorizontal: 16, marginVertical: 12, padding: 12, gap: 8, borderRadius: 14, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.borderStrong },
+  panel: { flexGrow: 0, marginHorizontal: 16, marginVertical: 12, borderRadius: 14, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.borderStrong },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   panelBtn: { height: 40, borderRadius: 10, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
   activeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginVertical: 10 },

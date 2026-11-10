@@ -21,7 +21,7 @@ import { C, F } from '@/ui/theme';
 
 /** Profile and settings: who is signed in, sync, and signing out to switch accounts. */
 export default function Settings() {
-  const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, stopJob } = useStore();
+  const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, fillDetailsFor, stopJob } = useStore();
   const [backupStatus, setBackupStatus] = useState('');
   const [igId, setIgId] = useState('');
   const [savedIgId, setSavedIgId] = useState<string | null>(null);
@@ -53,6 +53,13 @@ export default function Settings() {
     }
   };
   const missing = [...lib.issues.values()].filter((i) => !i.cover_path && i.number != null).length;
+  const noCredits = [...lib.issues.values()].filter((i) => !i.writers && i.number != null).length;
+  const findCredits = async () => {
+    setCoverStatus('');
+    const ids = [...lib.issues.values()].filter((i) => !i.writers && i.number != null).map((i) => i.id);
+    const started = await fillDetailsFor(ids);
+    if (!started && job?.busy) setCoverStatus('Another Comic Vine job is running. It finishes first.');
+  };
 
   useEffect(() => {
     getComicVineKey(db).then((k) => setSavedKey(k));
@@ -185,7 +192,26 @@ export default function Settings() {
               <Text style={[T.small, { color: C.text }]}>Save</Text>
             </Pressable>
           </View>
+          {savedKey ? (
+            <View style={s.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={T.body}>Writer and artist credits</Text>
+                <Text style={T.tiny}>{noCredits} issue{noCredits === 1 ? '' : 's'} without credits</Text>
+              </View>
+              {job?.busy && job.kind === 'details' ? (
+                <Pressable accessibilityRole="button" onPress={stopJob} style={s.smallBtn}>
+                  <Text style={[T.small, { color: C.text }]}>Stop</Text>
+                </Pressable>
+              ) : (
+                <Pressable accessibilityRole="button" onPress={findCredits} disabled={!noCredits || !!job?.busy} style={[s.smallBtn, !noCredits || job?.busy ? { opacity: 0.4 } : null]}>
+                  <Text style={[T.small, { color: C.text }]}>Find credits</Text>
+                </Pressable>
+              )}
+            </View>
+          ) : null}
+          {savedKey && noCredits > 200 ? <Text style={T.tiny}>Comic Vine allows about 200 lookups an hour, so a big library fills over several runs. Each run carries on where the last stopped, issues you’ve read first.</Text> : null}
           {job?.kind === 'covers' ? <Text style={T.tiny}>{job.busy ? `Finding covers · ${job.status}. You can leave this page; it keeps going.` : job.status}</Text> : null}
+          {job?.kind === 'details' && !job.collectionId ? <Text style={T.tiny}>{job.busy ? `Finding credits · ${job.status}. You can leave this page; it keeps going.` : job.status}</Text> : null}
           {coverStatus ? <Text style={T.tiny}>{coverStatus}</Text> : null}
         </View>
 

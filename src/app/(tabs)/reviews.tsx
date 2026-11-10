@@ -23,7 +23,8 @@ export default function ReviewsScreen() {
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [sort, setSort] = useState<Sort>('newest');
 
-  const all = useMemo(() => [...lib.reviews.values()], [lib]);
+  // Only reviews of lists and issues that still exist.
+  const all = useMemo(() => [...lib.reviews.values()].filter((r) => (r.collection_id ? lib.collections.has(r.collection_id) : !!r.issue_id && lib.issues.has(r.issue_id))), [lib]);
   const counts = useMemo(() => {
     const m = new Map<Verdict, number>();
     for (const r of all) m.set(r.verdict, (m.get(r.verdict) ?? 0) + 1);

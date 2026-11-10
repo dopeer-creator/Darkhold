@@ -81,6 +81,15 @@ async function applyStatus(db: SQLiteDatabase, issue: Issue, status: IssueStatus
   }
 }
 
+/** The tags most issues of a series carry ("X-Men" for Uncanny X-Men), so a new issue of it gets the same; null for a new series. */
+function seriesTags(lib: Library, seriesId: string): string | null {
+  const counts = new Map<string, number>();
+  for (const i of lib.issues.values()) if (i.series_id === seriesId && i.characters) counts.set(i.characters, (counts.get(i.characters) ?? 0) + 1);
+  let best: string | null = null;
+  for (const [tags, n] of counts) if (!best || n > counts.get(best)!) best = tags;
+  return best;
+}
+
 /** Ticks or unticks an issue. Ticking logs today unless a date (or null for "date unknown") is given. */
 export async function setIssueStatus(db: SQLiteDatabase, lib: Library, issueId: string, status: IssueStatus, date?: ReadDate) {
   const issue = lib.issues.get(issueId);
@@ -247,6 +256,7 @@ export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId:
               id: issueId, series_id: seriesId, number: line.numbers[k], label: null, status: line.checked ? 'read' : 'unread',
               completed_at: null, date_precision: 'unknown', rating: null, notes: release ? null : line.note, cover_path: null, pub_year: null,
               upcoming: !!release && !line.checked, release_on: release?.on ?? null,
+              characters: seriesTags(lib, seriesId) ?? lib.collections.get(via ?? parentId)?.characters ?? parent?.characters ?? null,
             });
             madeIssues.set(issueKey, issueId);
           } else if (line.checked) {
@@ -297,12 +307,18 @@ async function removeCollection(db: SQLiteDatabase, lib: Library, id: string, wi
     for (const e of lib.children.get(holder) ?? []) if (e.via_collection_id === id) await putRow(db, 'entries', { ...e, via_collection_id: null });
   }
   for (const l of lib.links) if (l.from_collection_id === id || l.to_collection_id === id) await softDelete(db, 'links', l.id);
+  const review = lib.reviews.get(id);
+  if (review) await softDelete(db, 'reviews', review.id);
   await softDelete(db, 'collections', id);
   if (!withContents) return;
   for (const e of children) {
     const child = e.child_issue_id ?? e.child_collection_id!;
     if ((lib.parents.get(child) ?? []).length > 1) continue;
-    if (e.child_issue_id) await softDelete(db, 'issues', e.child_issue_id);
+    if (e.child_issue_id) {
+      await softDelete(db, 'issues', e.child_issue_id);
+      const issueReview = lib.reviews.get(e.child_issue_id);
+      if (issueReview) await softDelete(db, 'reviews', issueReview.id);
+    }
     else await removeCollection(db, lib, child, true);
   }
 }

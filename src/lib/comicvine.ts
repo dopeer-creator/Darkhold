@@ -51,6 +51,7 @@ async function call<T>(key: string, path: string, params: Record<string, string>
       await sleep(5000 * 2 ** attempt);
       continue;
     }
+    if (res.status === 420 || res.status === 429) throw new Error('Comic Vine’s hourly limit is reached (about 200 lookups an hour)');
     if (!res.ok) throw new Error(`Comic Vine answered ${res.status}`);
     const json = await res.json();
     if (json.status_code !== 1) throw new Error(json.error === 'Invalid API Key' ? 'That Comic Vine key was not accepted' : `Comic Vine: ${json.error}`);
@@ -318,7 +319,11 @@ export async function fillDetails(
   shouldStop?: () => boolean,
   force = false,
 ): Promise<DetailsRun> {
-  const todo = issueIds.map((id) => lib.issues.get(id)).filter((i): i is Issue => !!i && i.number != null && (force || !i.writers));
+  // Issues you've read first, so writer pages fill in for what you know before the rest.
+  const todo = issueIds
+    .map((id) => lib.issues.get(id))
+    .filter((i): i is Issue => !!i && i.number != null && (force || !i.writers))
+    .sort((a, b) => Number(b.status === 'read') - Number(a.status === 'read'));
   const run: DetailsRun = { filled: 0, skipped: issueIds.length - todo.length, notFound: 0, stoppedEarly: null };
   const indexes = new Map<string, Map<string, { id: number; image: string | null }> | null>();
   let done = 0;

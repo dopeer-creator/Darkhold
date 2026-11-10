@@ -7,6 +7,7 @@ import { activeRoots, connections, coverFor, issueTitle, nextUp, progress, roots
 import { saveReview, startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { FinishedCard } from '@/ui/finished-card';
+import { ReleaseRadar } from '@/ui/release-radar';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { C, F, publisherColor, kindLabel } from '@/ui/theme';
@@ -126,6 +127,8 @@ export default function Home() {
             </ScrollView>
           </View>
         ) : null}
+
+        <ReleaseRadar />
 
         {recent.length ? (
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
