@@ -313,6 +313,7 @@ export async function importFile(db: SQLiteDatabase, lib: Library, file: ExportF
     for (const c of plan.collections) await putRow(db, 'collections', c);
     for (const e of plan.entries) await putRow(db, 'entries', e);
     for (const l of plan.read_log) await putRow(db, 'read_log', l);
+    for (const l of plan.links) await putRow(db, 'links', l);
   });
   return plan;
 }
@@ -322,7 +323,7 @@ export async function exportFile(db: SQLiteDatabase): Promise<ExportFile> {
   return {
     format: 'darkhold-export', version: 1,
     series: [...lib.series.values()], issues: [...lib.issues.values()], collections: [...lib.collections.values()],
-    entries: [...lib.children.values()].flat(), read_log: readLog,
+    entries: [...lib.children.values()].flat(), read_log: readLog, links: lib.links, exported_at: new Date().toISOString(),
   };
 }
 

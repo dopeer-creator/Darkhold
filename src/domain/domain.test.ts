@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { activeRoots, rootsWithStatus, canSlice, coverFor, entryUnits, moveUnit, isNested, buildLibrary, cannotNest, collectionStatus, issueTitle, lastRead, nextUp, progress, stats } from './library';
+import { moveUnits, activeRoots, rootsWithStatus, canSlice, coverFor, entryUnits, moveUnit, isNested, buildLibrary, cannotNest, collectionStatus, issueTitle, lastRead, nextUp, progress, stats } from './library';
 import { parseReadingList, parseStructuredList, resolveAgainstLibrary, titleCase } from './parser';
 import type { Collection, Entry, Issue, Kind, Series } from './types';
 import armageddon from '../../scripts/armageddon.txt?raw';
@@ -387,5 +387,15 @@ describe('nothing lies around', () => {
     expect(rootsWithStatus(lib, 'planned').sort()).toEqual(['crisis', 'empty']);
     lib.collections.get('run')!.on_hold = true;
     expect(rootsWithStatus(lib, 'on_hold')).toEqual(['run']);
+  });
+});
+
+describe('moving several pieces', () => {
+  const u = (k: string) => ({ key: k, entryIds: [k], kind: 'issue' as const, collectionId: null });
+  const units = ['a', 'b', 'c', 'd', 'e'].map(u);
+  it('keeps the selected pieces together, in their order, wherever they go', () => {
+    expect(moveUnits(units, [1, 3], 0)).toEqual(['b', 'd', 'a', 'c', 'e']);
+    expect(moveUnits(units, [0, 2], 5)).toEqual(['b', 'd', 'e', 'a', 'c']);
+    expect(moveUnits(units, [0, 4], 3)).toEqual(['b', 'c', 'a', 'e', 'd']);
   });
 });

@@ -4,7 +4,7 @@ import { Alert, Animated, Dimensions, PanResponder, Pressable, ScrollView, Style
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { creditsSummary, splitNames } from '@/domain/credits';
-import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, type Library, walk } from '@/domain/library';
+import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, type Library, walk, moveUnits } from '@/domain/library';
 import type { Collection, Entry } from '@/domain/types';
 import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, startReading, stopReading, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
@@ -519,12 +519,12 @@ const MAX_SPEED = 28;
 
 /**
  * "Edit order": hold a piece by its grip and drag it where it goes; near the top or bottom of the screen the
- * page scrolls along. Or tap a piece to pick it up, then send it to the top, the bottom, or tap "Place here".
- * A slice block moves as one piece.
+ * page scrolls along. Or tap pieces to select one or several, then send them to the top, the bottom, or tap
+ * "Place here": they move together, in their order. A slice block moves as one piece.
  */
 function ReorderList({ lib, parentId, scroller, onMove, onRemove, onOptional }: { lib: Library; parentId: string; scroller: Scroller; onMove: (ids: string[]) => void; onRemove: (ids: string[], label: string) => void; onOptional: (ids: string[], optional: boolean) => void }) {
   const canGroup = lib.collections.get(parentId)?.kind !== 'event';
-  const [picked, setPicked] = useState<number | null>(null);
+  const [picked, setPicked] = useState<number[]>([]);
   const [drag, setDrag] = useState<{ from: number; to: number; lineY: number | null } | null>(null);
   const [lift] = useState(() => new Animated.Value(0));
   const layouts = useRef<{ y: number; h: number }[]>([]);
@@ -554,14 +554,15 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove, onOptional }: 
     if (to < 0 || to >= units.length || from === to) return;
     onMove(moveUnit(units, from, to));
   };
-  /** Place the picked piece just before position `slot` (units.length = at the end). */
+  const toggle = (i: number) => setPicked((p) => (p.includes(i) ? p.filter((x) => x !== i) : [...p, i].sort((a, b) => a - b)));
+  /** Move the selected pieces together just before position `slot` (units.length = at the end). */
   const place = (slot: number) => {
-    if (picked == null) return;
-    move(picked, slot > picked ? slot - 1 : slot);
-    setPicked(null);
+    if (!picked.length) return;
+    onMove(moveUnits(units, picked, slot));
+    setPicked([]);
   };
   const target = (slot: number) =>
-    picked != null && slot !== picked && slot !== picked + 1 ? (
+    picked.length && !picked.includes(slot) && !picked.includes(slot - 1) ? (
       <Pressable key={`slot-${slot}`} accessibilityRole="button" onPress={() => place(slot)} style={s.placeHere}>
         <Text style={[T.small, { color: C.dc }]}>Place here</Text>
       </Pressable>
@@ -603,7 +604,7 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove, onOptional }: 
     d.frame = requestAnimationFrame(tick);
   };
   const dragStart = (i: number, pageY: number) => {
-    setPicked(null);
+    setPicked([]);
     live.current = { from: i, to: i, dy: 0, scrolled: 0, pageY, frame: 0 };
     lift.setValue(0);
     setDrag({ from: i, to: i, lineY: null });
@@ -630,17 +631,57 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove, onOptional }: 
     return () => cancelAnimationFrame(d.frame);
   }, []);
 
+  /** Actions for the selection, shown under its last piece. */
+  const pickedActions = () => {
+    const chosen = picked.map((i) => units[i]);
+    const lineIds = chosen.filter((u) => u.kind !== 'heading').flatMap((u) => u.entryIds);
+    const lines = (lib.children.get(parentId) ?? []).filter((e) => lineIds.includes(e.id));
+    const allOptional = lines.length > 0 && lines.every((e) => e.optional);
+    const canPart = canGroup && chosen.every((u) => u.kind === 'issue' || u.kind === 'slice');
+    const what = picked.length === 1 ? labelOf(picked[0]).title : `${picked.length} pieces`;
+    const done = (fn: () => void) => () => {
+      fn();
+      setPicked([]);
+    };
+    return (
+      <View style={s.pickedActions}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Move ${what} to the top`} onPress={() => place(0)} style={s.pickBtn}>
+          <Text style={[T.tiny, { color: C.text }]}>Top</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Move ${what} to the bottom`} onPress={() => place(units.length)} style={s.pickBtn}>
+          <Text style={[T.tiny, { color: C.text }]}>Bottom</Text>
+        </Pressable>
+        {lineIds.length ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={allOptional ? `Count ${what} again` : `Make ${what} optional`} onPress={done(() => onOptional(lineIds, !allOptional))} style={s.pickBtn}>
+            <Text style={[T.tiny, { color: C.text }]}>{allOptional ? 'Count it' : 'Optional'}</Text>
+          </Pressable>
+        ) : null}
+        {canPart ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${what} as part of a run or event`} onPress={done(() => router.push({ pathname: '/part-of', params: { parent: parentId, entries: lineIds.join(',') } }))} style={s.pickBtn}>
+            <Text style={[T.tiny, { color: C.text }]}>Part of…</Text>
+          </Pressable>
+        ) : null}
+        <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${what} from this list`} onPress={done(() => onRemove(chosen.flatMap((u) => u.entryIds), what))} style={s.pickBtn}>
+          <Text style={[T.tiny, { color: C.text }]}>Remove</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Clear the selection" onPress={() => setPicked([])} style={s.pickBtn}>
+          <Text style={[T.tiny, { color: C.dim }]}>Clear</Text>
+        </Pressable>
+      </View>
+    );
+  };
+
   return (
     <View style={{ gap: 8 }}>
       <Text style={T.tiny}>
-        {picked == null
-          ? `Hold the dots and drag a piece where it goes. Near the top or bottom of the screen the list scrolls with you. Or tap a piece to send it to the top or bottom.${canGroup ? ' “Part of…” labels issues as a run’s or event’s part.' : ''}`
-          : 'Send it to the top or bottom, make it optional (shown but not counted), or tap “Place here” where it should go. Tap it again to cancel.'}
+        {!picked.length
+          ? `Hold the dots and drag a piece where it goes. Near the top or bottom of the screen the list scrolls with you. Or tap pieces to select one or several and move them together.${canGroup ? ' “Part of…” labels issues as a run’s or event’s part.' : ''}`
+          : `${picked.length} selected. Tap more to add them, then send them to the top or bottom, or tap “Place here” where they should go. They stay together, in their order.`}
       </Text>
       <View style={{ gap: 8 }}>
         {units.map((u, i) => {
           const l = labelOf(i);
-          const isPicked = picked === i;
+          const isPicked = picked.includes(i);
           const isDragged = drag?.from === i;
           const lines = (lib.children.get(parentId) ?? []).filter((e) => u.entryIds.includes(e.id));
           const isOptional = u.kind !== 'heading' && lines.length > 0 && lines.every((e) => e.optional);
@@ -651,7 +692,7 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove, onOptional }: 
               style={[{ gap: 8 }, isDragged ? { zIndex: 10, elevation: 10, transform: [{ translateY: lift }] } : null]}>
               {target(i)}
               <View style={[s.reorderRow, isPicked || isDragged ? { borderColor: C.dc, backgroundColor: '#16223A' } : null]}>
-                <Pressable accessibilityRole="button" accessibilityState={{ selected: isPicked }} onPress={() => setPicked(isPicked ? null : i)} style={{ flex: 1, paddingVertical: 10 }}>
+                <Pressable accessibilityRole="button" accessibilityState={{ selected: isPicked }} onPress={() => toggle(i)} style={{ flex: 1, paddingVertical: 10 }}>
                   <Text style={[T.label, { fontSize: 10, color: l.color }]}>{l.tag}{isOptional ? ' · OPTIONAL' : ''}</Text>
                   <Text style={T.bodyMedium} numberOfLines={1}>{l.title}</Text>
                   {l.sub ? <Text style={T.tiny} numberOfLines={1}>{l.sub}</Text> : null}
@@ -670,21 +711,7 @@ function ReorderList({ lib, parentId, scroller, onMove, onRemove, onOptional }: 
                 </Pressable>
                 <DragHandle label={`Drag ${l.title}`} onStart={(y) => dragStart(i, y)} onMove={dragMove} onEnd={dragEnd} />
               </View>
-              {isPicked ? (
-                <View style={s.pickedActions}>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} to the top`} disabled={i === 0} onPress={() => { move(i, 0); setPicked(null); }} style={[s.pickBtn, i === 0 ? { opacity: 0.3 } : null]}>
-                      <Text style={[T.tiny, { color: C.text }]}>Top</Text>
-                    </Pressable>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`Move ${l.title} to the bottom`} disabled={i === units.length - 1} onPress={() => { move(i, units.length - 1); setPicked(null); }} style={[s.pickBtn, i === units.length - 1 ? { opacity: 0.3 } : null]}>
-                      <Text style={[T.tiny, { color: C.text }]}>Bottom</Text>
-                    </Pressable>
-                    {u.kind !== 'heading' ? (
-                      <Pressable accessibilityRole="button" accessibilityLabel={isOptional ? `Count ${l.title} again` : `Make ${l.title} optional`} onPress={() => { onOptional(u.entryIds, !isOptional); setPicked(null); }} style={s.pickBtn}>
-                        <Text style={[T.tiny, { color: C.text }]}>{isOptional ? 'Count it' : 'Optional'}</Text>
-                      </Pressable>
-                    ) : null}
-                </View>
-              ) : null}
+              {picked.length && i === picked[picked.length - 1] ? pickedActions() : null}
             </Animated.View>
           );
         })}
@@ -738,8 +765,8 @@ const s = StyleSheet.create({
   headingText: { flex: 1, fontFamily: F.condBold, fontSize: 18, letterSpacing: 0.6, textTransform: 'uppercase', color: C.text },
   partBtn: { height: 32, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center', marginRight: 2 },
   arrow: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
-  pickedActions: { flexDirection: 'row', gap: 8, marginTop: -2 },
-  pickBtn: { flex: 1, height: 40, borderRadius: 10, borderWidth: 1, borderColor: C.dc, backgroundColor: '#16223A', alignItems: 'center', justifyContent: 'center' },
+  pickedActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: -2 },
+  pickBtn: { flexGrow: 1, flexBasis: '30%', height: 40, borderRadius: 10, borderWidth: 1, borderColor: C.dc, backgroundColor: '#16223A', alignItems: 'center', justifyContent: 'center' },
   grip: { width: 48, height: 56, alignItems: 'center', justifyContent: 'center' },
   dropLine: { position: 'absolute', left: 0, right: 0, height: 3, borderRadius: 2, backgroundColor: C.dc },
   showAll: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },

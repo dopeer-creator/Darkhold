@@ -6,12 +6,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { activeRoots, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats } from '@/domain/library';
 import { startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
+import { FinishedCard } from '@/ui/finished-card';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { C, F, publisherColor, kindLabel } from '@/ui/theme';
 
 export default function Home() {
-  const { lib, readLog, sync, ready, session, act } = useStore();
+  const { lib, readLog, sync, ready, session, act, finished, dismissFinished } = useStore();
   const roots = useMemo(() => activeRoots(lib), [lib]);
   const totals = useMemo(() => stats(lib), [lib]);
   const empty = ready && lib.collections.size === 0 && lib.issues.size === 0;
@@ -69,6 +70,12 @@ export default function Home() {
             ))}
           </View>
         ) : null}
+
+        {finished.map((id) => {
+          const c = lib.collections.get(id);
+          if (!c) return null;
+          return <FinishedCard key={id} title={c.title} publisher={c.publisher} issues={progress(lib, id).total} onOpen={() => router.push(`/collection/${id}`)} onClose={() => dismissFinished(id)} />;
+        })}
 
         {roots.length ? (
           <View style={{ marginTop: 8 }}>

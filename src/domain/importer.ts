@@ -1,5 +1,5 @@
 import type { Library } from './library';
-import type { Collection, Entry, Issue, ReadLog, Series } from './types';
+import type { Collection, Entry, Issue, Link, ReadLog, Series } from './types';
 
 /** The JSON file format Darkhold exports and imports. Ids inside it are only used to connect rows. */
 export interface ExportFile {
@@ -10,6 +10,10 @@ export interface ExportFile {
   collections: Collection[];
   entries: Entry[];
   read_log: ReadLog[];
+  /** Connections between lists and issues (files from before connections existed have none). */
+  links?: Link[];
+  /** When the backup was made. */
+  exported_at?: string;
 }
 
 export interface ImportPlan {
@@ -20,6 +24,7 @@ export interface ImportPlan {
   collections: Collection[];
   entries: Entry[];
   read_log: ReadLog[];
+  links: Link[];
   reused: { series: number; issues: number; collections: number };
 }
 
@@ -29,7 +34,7 @@ export interface ImportPlan {
  * Importing the same file twice changes nothing the second time.
  */
 export function planImport(lib: Library, file: ExportFile, newId: () => string): ImportPlan {
-  const plan: ImportPlan = { series: [], issues: [], markRead: [], collections: [], entries: [], read_log: [], reused: { series: 0, issues: 0, collections: 0 } };
+  const plan: ImportPlan = { series: [], issues: [], markRead: [], collections: [], entries: [], read_log: [], links: [], reused: { series: 0, issues: 0, collections: 0 } };
   const seriesKey = (s: Pick<Series, 'title' | 'volume_year'>) => `${s.title.trim().toLowerCase()}|${s.volume_year ?? ''}`;
 
   const seriesByKey = new Map([...lib.series.values()].map((s) => [seriesKey(s), s.id]));
@@ -101,6 +106,24 @@ export function planImport(lib: Library, file: ExportFile, newId: () => string):
     lastPos.set(parent_id, position);
     const via_collection_id = e.via_collection_id ? (collMap.get(e.via_collection_id) ?? null) : null;
     plan.entries.push({ ...e, id: newId(), parent_id, position, child_issue_id: child_issue_id ?? null, child_collection_id: child_collection_id ?? null, via_collection_id });
+  }
+
+  // Connections, skipping any that already exist.
+  const linkKey = (l: Link) => `${l.kind}|${l.from_collection_id ?? l.from_issue_id}|${l.to_collection_id ?? l.to_issue_id}`;
+  const haveLinks = new Set(lib.links.map(linkKey));
+  for (const l of file.links ?? []) {
+    const mapped: Link = {
+      ...l,
+      id: newId(),
+      from_collection_id: l.from_collection_id ? (collMap.get(l.from_collection_id) ?? null) : null,
+      from_issue_id: l.from_issue_id ? (issueMap.get(l.from_issue_id) ?? null) : null,
+      to_collection_id: l.to_collection_id ? (collMap.get(l.to_collection_id) ?? null) : null,
+      to_issue_id: l.to_issue_id ? (issueMap.get(l.to_issue_id) ?? null) : null,
+    };
+    if (!(mapped.from_collection_id || mapped.from_issue_id) || !(mapped.to_collection_id || mapped.to_issue_id)) continue;
+    if (haveLinks.has(linkKey(mapped))) continue;
+    haveLinks.add(linkKey(mapped));
+    plan.links.push(mapped);
   }
 
   // History rows only for issues this import adds or newly marks read, so a re-import adds none.

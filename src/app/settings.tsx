@@ -7,7 +7,10 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import type { ExportFile } from '@/domain/importer';
+import { pickTextFile, saveTextFile } from '@/lib/backup';
 import { getComicVineKey, setComicVineKey, testComicVineKey } from '@/lib/comicvine';
+import { exportFile, importFile, today } from '@/store/repo';
 import { supabaseConfigured } from '@/lib/supabase';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
@@ -17,7 +20,8 @@ import { C, F } from '@/ui/theme';
 
 /** Profile and settings: who is signed in, sync, and signing out to switch accounts. */
 export default function Settings() {
-  const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, stopJob } = useStore();
+  const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, stopJob, act } = useStore();
+  const [backupStatus, setBackupStatus] = useState('');
   const db = useSQLiteContext();
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState('');
@@ -72,6 +76,50 @@ export default function Settings() {
     const started = await startCovers();
     if (!started && job?.busy) setCoverStatus('Another Comic Vine job is running. It finishes first.');
   };
+  /** Saves everything (lists, issues, read dates, connections) as one readable JSON file. */
+  const exportBackup = async () => {
+    setBackupStatus('Preparing the backup…');
+    try {
+      const data = await exportFile(db);
+      const name = `darkhold-backup-${today()}.json`;
+      const saved = await saveTextFile(name, JSON.stringify(data, null, 2));
+      setBackupStatus(saved ? `Saved ${name}: ${data.collections.length} lists, ${data.issues.length} issues, ${data.read_log.length} dated reads.` : '');
+    } catch (e) {
+      setBackupStatus(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** Loads a backup back in. Nothing already here is duplicated or removed. */
+  const importBackup = async () => {
+    try {
+      const text = await pickTextFile();
+      if (!text) return;
+      const file = JSON.parse(text) as ExportFile;
+      if (file?.format !== 'darkhold-export' || !Array.isArray(file.issues)) throw new Error('That file isn’t a Darkhold backup.');
+      Alert.alert(
+        'Import this backup?',
+        `${file.collections.length} lists and ${file.issues.length} issues${file.exported_at ? ` from ${file.exported_at.slice(0, 10)}` : ''}. Anything you already have is kept and not duplicated; anything missing comes back.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Import',
+            onPress: async () => {
+              setBackupStatus('Importing…');
+              try {
+                const plan = await act((d, l) => importFile(d, l, file));
+                setBackupStatus(`Imported: ${plan.collections.length} lists and ${plan.issues.length} issues added, ${plan.markRead.length} marked read. Everything else was already here.`);
+              } catch (e) {
+                setBackupStatus(e instanceof Error ? e.message : String(e));
+              }
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      setBackupStatus(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const email = session?.user.email ?? (supabaseConfigured ? 'Not signed in' : 'Offline preview');
   const lastSync = sync.at ? `${relativeDay(sync.at.slice(0, 10))}, ${new Date(sync.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not yet';
 
@@ -180,6 +228,29 @@ export default function Settings() {
             {cacheStatus ||
               'Only the cover links are kept in your library (and synced), so clearing is safe: pictures download again as you scroll. Android caps this at about 250 MB on its own.'}
           </Text>
+        </View>
+
+        <View style={{ gap: 8 }}>
+          <SectionTitle>Backup</SectionTitle>
+          <View style={s.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={T.body}>Export everything</Text>
+              <Text style={T.tiny}>One readable file with every list, issue, read date and connection</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={exportBackup} style={s.smallBtn}>
+              <Text style={[T.small, { color: C.text }]}>Export</Text>
+            </Pressable>
+          </View>
+          <View style={s.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={T.body}>Import a backup</Text>
+              <Text style={T.tiny}>Brings back anything missing; never duplicates or deletes</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={importBackup} style={s.smallBtn}>
+              <Text style={[T.small, { color: C.text }]}>Import</Text>
+            </Pressable>
+          </View>
+          <Text style={T.tiny}>{backupStatus || 'Your library is already saved to your account. A backup file is an extra copy you keep yourself, in Downloads or Drive.'}</Text>
         </View>
 
         <View style={{ gap: 8 }}>

@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { AppState } from 'react-native';
 
 import { creditsSummary } from '@/domain/credits';
-import type { Library } from '@/domain/library';
+import { collectionStatus, type Library } from '@/domain/library';
 import type { ReadLog } from '@/domain/types';
 import { fetchMissingCovers, fillDetails, getComicVineKey, setRequestGate } from '@/lib/comicvine';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
@@ -36,6 +36,9 @@ interface Store {
   fillDetailsFor: (issueIds: string[], collectionId?: string, force?: boolean) => Promise<boolean>;
   stopJob: () => void;
   clearJob: () => void;
+  /** Lists you were reading that just got finished, for Home to celebrate. */
+  finished: string[];
+  dismissFinished: (id: string) => void;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -50,6 +53,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapRef = useRef<Snapshot | null>(null);
   const [job, setJob] = useState<Job | null>(null);
+  const [finished, setFinished] = useState<string[]>([]);
   const jobRunning = useRef(false);
   const jobStop = useRef(false);
   const lastRefresh = useRef(0);
@@ -71,9 +75,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
+    const prev = snapRef.current;
     const next = await loadSnapshot(db);
     snapRef.current = next;
     setSnap(next);
+    // A list switched to Reading now that this change finished: Home shows a little celebration.
+    if (prev) {
+      const done = [...prev.lib.collections.values()]
+        .filter((c) => c.reading_now && !c.on_hold && collectionStatus(prev.lib, c.id) === 'reading' && collectionStatus(next.lib, c.id) === 'completed')
+        .map((c) => c.id);
+      if (done.length) setFinished((f) => [...f, ...done.filter((id) => !f.includes(id))]);
+    }
   }, [db]);
 
   useEffect(() => {
@@ -216,6 +228,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const stopJob = useCallback(() => {
     jobStop.current = true;
   }, []);
+  const dismissFinished = useCallback((id: string) => setFinished((f) => f.filter((x) => x !== id)), []);
   const clearJob = useCallback(() => {
     if (!jobRunning.current) setJob(null);
   }, []);
@@ -240,6 +253,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     fillDetailsFor,
     stopJob,
     clearJob,
+    finished,
+    dismissFinished,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

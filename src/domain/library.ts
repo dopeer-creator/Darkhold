@@ -330,6 +330,19 @@ export function moveUnit(units: Unit[], from: number, to: number): string[] {
   return next.flatMap((u) => u.entryIds);
 }
 
+/**
+ * The entry ids in order after moving several pieces (by index) so they sit together, in their
+ * current order, just before position `slot` (units.length = at the end).
+ */
+export function moveUnits(units: Unit[], picked: number[], slot: number): string[] {
+  const chosen = new Set(picked);
+  const moving = units.filter((_, i) => chosen.has(i));
+  const rest = units.filter((_, i) => !chosen.has(i));
+  const before = picked.filter((i) => i < slot).length;
+  const at = Math.max(0, Math.min(slot - before, rest.length));
+  return [...rest.slice(0, at), ...moving, ...rest.slice(at)].flatMap((u) => u.entryIds);
+}
+
 /** A collection's cover: its own, else the first issue in reading order that has one. */
 export function coverFor(lib: Library, collectionId: string): string | null {
   const c = lib.collections.get(collectionId);
