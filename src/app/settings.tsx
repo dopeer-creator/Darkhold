@@ -53,10 +53,11 @@ export default function Settings() {
     }
   };
   const missing = [...lib.issues.values()].filter((i) => !i.cover_path && i.number != null).length;
-  const noCredits = [...lib.issues.values()].filter((i) => !i.writers && i.number != null).length;
+  const unchecked = (i: { writers?: string | null; cv_issue_id?: number | null; number: string | null }) => i.number != null && (!i.writers || !i.cv_issue_id);
+  const noCredits = [...lib.issues.values()].filter(unchecked).length;
   const findCredits = async () => {
     setCoverStatus('');
-    const ids = [...lib.issues.values()].filter((i) => !i.writers && i.number != null).map((i) => i.id);
+    const ids = [...lib.issues.values()].filter(unchecked).map((i) => i.id);
     const started = await fillDetailsFor(ids);
     if (!started && job?.busy) setCoverStatus('Another Comic Vine job is running. It finishes first.');
   };
@@ -196,7 +197,7 @@ export default function Settings() {
             <View style={s.row}>
               <View style={{ flex: 1 }}>
                 <Text style={T.body}>Writer and artist credits</Text>
-                <Text style={T.tiny}>{noCredits} issue{noCredits === 1 ? '' : 's'} without credits</Text>
+                <Text style={T.tiny}>{noCredits} issue{noCredits === 1 ? '' : 's'} not checked on Comic Vine yet</Text>
               </View>
               {job?.busy && job.kind === 'details' ? (
                 <Pressable accessibilityRole="button" onPress={stopJob} style={s.smallBtn}>
@@ -297,13 +298,17 @@ export default function Settings() {
           <SectionTitle>App</SectionTitle>
           <View style={s.row}>
             <View style={{ flex: 1 }}>
-              <Text style={T.body}>Darkhold {Constants.expoConfig?.version ?? ''}</Text>
+              <Text style={T.body}>
+                Darkhold {Constants.expoConfig?.version ?? ''}
+                {process.env.EXPO_PUBLIC_BUILD ? <Text style={T.small}> · update {process.env.EXPO_PUBLIC_BUILD.slice(0, 7)}</Text> : null}
+              </Text>
               <Text style={T.tiny}>
                 {Updates.isEnabled
                   ? Updates.createdAt && !Updates.isEmbeddedLaunch
-                    ? `Updated ${relativeDay(Updates.createdAt.toISOString().slice(0, 10))}`
-                    : 'As installed'
+                    ? `Published ${relativeDay(Updates.createdAt.toISOString().slice(0, 10))}, ${Updates.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                    : 'As installed, no update yet'
                   : 'Updates arrive in the installed app, not in Expo Go'}
+                {Updates.runtimeVersion ? ` · app install ${Updates.runtimeVersion.slice(0, 7)}` : ''}
               </Text>
             </View>
             {Updates.isEnabled ? (

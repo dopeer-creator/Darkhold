@@ -10,6 +10,7 @@ import { useStore } from '@/store/store';
 import { relativeDay } from '@/ui/format';
 import { Chip, Cover, T } from '@/ui/parts';
 import { Stars, VERDICT_COLORS, VerdictBadge } from '@/ui/review';
+import { RecapView } from '@/ui/recap';
 import { reviewTarget } from '@/ui/story-card';
 import { C, F } from '@/ui/theme';
 
@@ -22,6 +23,7 @@ export default function ReviewsScreen() {
   const [kind, setKind] = useState<Kind>('all');
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [sort, setSort] = useState<Sort>('newest');
+  const [view, setView] = useState<'log' | 'recap'>('log');
 
   // Only reviews of lists and issues that still exist.
   const all = useMemo(() => [...lib.reviews.values()].filter((r) => (r.collection_id ? lib.collections.has(r.collection_id) : !!r.issue_id && lib.issues.has(r.issue_id))), [lib]);
@@ -62,10 +64,6 @@ export default function ReviewsScreen() {
 
   const header = (
     <View style={{ gap: 14, paddingBottom: 8 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <Text style={T.h1}>Reviews</Text>
-        <Text style={[T.small, T.num]}>{all.length} written</Text>
-      </View>
 
       {waiting.length ? (
         <View style={{ gap: 8 }}>
@@ -102,11 +100,25 @@ export default function ReviewsScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 12, paddingBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <Text style={T.h1}>Reviews</Text>
+          {view === 'log' ? <Text style={[T.small, T.num]}>{all.length} written</Text> : null}
+        </View>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {(['log', 'recap'] as const).map((v) => (
+            <Pressable key={v} accessibilityRole="tab" accessibilityState={{ selected: view === v }} onPress={() => setView(v)} style={[s.seg, view === v ? s.segOn : null]}>
+              <Text style={[s.segText, view === v ? { color: C.onLight, fontFamily: F.semibold } : null]}>{v === 'log' ? 'Log' : 'Recap'}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+      {view === 'recap' ? <RecapView /> : (
       <FlatList
         data={rows}
         keyExtractor={(r) => r.id}
         ListHeaderComponent={header}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
         ListEmptyComponent={
           <View style={{ paddingTop: 24, gap: 6 }}>
             <Text style={T.bodyMedium}>{all.length ? 'No reviews match' : 'Your reviews live here'}</Text>
@@ -134,6 +146,7 @@ export default function ReviewsScreen() {
           );
         }}
       />
+      )}
     </SafeAreaView>
   );
 }

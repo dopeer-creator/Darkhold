@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { issueTitle, notOutYet } from '@/domain/library';
 import type { Issue, IssueStatus } from '@/domain/types';
 import { findVolume, getComicVineKey, volumeCovers } from '@/lib/comicvine';
-import { daysAgo, saveReview, mergeSeries, moveIssue, removeEntry, setIssueStatus, setOptional, setReadDate, setRelease, today, updateIssue, updateSeries } from '@/store/repo';
+import { daysAgo, logReread, removeReread, saveReview, mergeSeries, moveIssue, removeEntry, setIssueStatus, setOptional, setReadDate, setRelease, today, updateIssue, updateSeries } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
 import { Chip, Cover, GhostButton, SectionTitle, T } from '@/ui/parts';
@@ -15,6 +15,8 @@ import { relativeDay, releaseLabel } from '@/ui/format';
 import { useFillDetails } from '@/ui/use-fill-details';
 import { pickDay } from '@/ui/pick-day';
 import { ConnectionsBlock } from '@/ui/connections';
+import { NameLinks } from '@/ui/name-links';
+import { splitNames } from '@/domain/credits';
 import { ButtonRow, ReviewForm, ReviewSummary } from '@/ui/review';
 import { TagEditor } from '@/ui/tag-editor';
 import { C, F, KIND_COLOR, kindLabel } from '@/ui/theme';
@@ -42,6 +44,7 @@ export default function IssueScreen() {
   const fill = useFillDetails();
   const [reviewing, setReviewing] = useState(false);
   const review = issue ? lib.reviews.get(issue.id) : undefined;
+  const rereads = issue ? (lib.rereads.get(issue.id) ?? []) : [];
 
   useEffect(() => {
     getComicVineKey(db).then((k) => setHasKey(!!k));
@@ -219,6 +222,37 @@ export default function IssueScreen() {
           ) : null}
 
           {issue.status === 'read' ? (
+            <View style={{ gap: 8 }}>
+              <SectionTitle>{rereads.length ? `Read ${rereads.length + 1} times` : 'Rereads'}</SectionTitle>
+              {rereads.length ? (
+                [...rereads].reverse().map((r) => (
+                  <View key={r.id} style={s.rereadRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={T.body}>{relativeDay(r.day)}</Text>
+                      <Text style={[T.tiny, { color: '#E8C48A' }]}>Reread</Text>
+                    </View>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Remove the reread on ${r.day}`} onPress={() => act((d) => removeReread(d, r.id))} hitSlop={8} style={{ padding: 8 }}>
+                      <Text style={[T.body, { color: C.dim }]}>×</Text>
+                    </Pressable>
+                  </View>
+                ))
+              ) : (
+                <Text style={T.tiny}>Read it again? Log it here; your first read stays as it is.</Text>
+              )}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                <Chip label="+ Reread today" onPress={() => act((d) => logReread(d, issue.id))} />
+                <Chip
+                  label="Reread on…"
+                  onPress={async () => {
+                    const day = await pickDay(null);
+                    if (day) await act((d) => logReread(d, issue.id, day));
+                  }}
+                />
+              </View>
+            </View>
+          ) : null}
+
+          {issue.status === 'read' ? (
             <View style={{ gap: 10 }}>
               <SectionTitle>Your review</SectionTitle>
               {review && !reviewing ? (
@@ -288,6 +322,13 @@ export default function IssueScreen() {
               }>
               Credits
             </SectionTitle>
+            {issue.writers || issue.artists ? (
+              <Text style={T.small}>
+                {issue.writers ? <>Writer: <NameLinks names={splitNames(issue.writers)} role="writer" /></> : null}
+                {issue.writers && issue.artists ? '   ' : ''}
+                {issue.artists ? <>Art: <NameLinks names={splitNames(issue.artists)} role="artist" /></> : null}
+              </Text>
+            ) : null}
             <CreditFields key={[issue.writers, issue.artists, issue.story_title].join('|')} issue={issue} />
             {issue.cover_date ? <Text style={T.tiny}>Cover date {issue.cover_date}</Text> : null}
             {fill.status ? <Text style={T.tiny}>{fill.status}</Text> : null}
@@ -391,6 +432,7 @@ function CreditFields({ issue }: { issue: Issue }) {
 }
 
 const s = StyleSheet.create({
+  rereadRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.divider, paddingVertical: 4 },
   top: { flexDirection: 'row', paddingHorizontal: 6, paddingTop: 4 },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   title: { fontFamily: F.condBold, fontSize: 28, lineHeight: 30, color: C.text },

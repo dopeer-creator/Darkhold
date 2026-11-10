@@ -61,6 +61,8 @@ export interface Collection {
   planned?: boolean;
   /** Switched on when you're actively reading this list: only these show in Continue reading. */
   reading_now?: boolean;
+  /** Set while you read a finished list again: the day the reread started. */
+  reread_since?: string | null;
   /** Your own word for the type, shown instead of it ("Saga", "Omnibus"). */
   label?: string | null;
   rating: number | null;
@@ -111,6 +113,8 @@ export interface ReadLog {
   date_precision: DatePrecision;
   rating: number | null;
   note: string | null;
+  /** A reread: the issue had been read before this day. */
+  reread?: boolean;
 }
 
 export type Verdict = 'bad' | 'forgettable' | 'good_enough' | 'generational' | 'peak';

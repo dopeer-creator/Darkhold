@@ -8,17 +8,17 @@ export type Table = (typeof TABLES)[number];
 export const COLUMNS: Record<Table, string[]> = {
   series: ['id', 'title', 'volume_year', 'publisher', 'cv_volume_id'],
   issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id', 'upcoming', 'release_on', 'characters'],
-  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes', 'label', 'planned', 'reading_now'],
+  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes', 'label', 'planned', 'reading_now', 'reread_since'],
   entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'heading', 'note', 'optional'],
-  read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note'],
+  read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note', 'reread'],
   links: ['id', 'kind', 'from_collection_id', 'from_issue_id', 'to_collection_id', 'to_issue_id', 'note'],
   reviews: ['id', 'collection_id', 'issue_id', 'verdict', 'score', 'body', 'reviewed_on'],
 };
 
 /** Yes/no columns: stored as 0/1 here, true/false in Supabase. */
-export const BOOLEAN_COLUMNS = new Set(['on_hold', 'ongoing', 'planned', 'reading_now', 'optional', 'upcoming']);
+export const BOOLEAN_COLUMNS = new Set(['on_hold', 'ongoing', 'planned', 'reading_now', 'optional', 'upcoming', 'reread']);
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 /** Columns added after the first version, by schema version. */
 const ADDED: Record<number, [Table, string, string][]> = {
@@ -52,6 +52,11 @@ const ADDED: Record<number, [Table, string, string][]> = {
   8: [['collections', 'reading_now', 'INTEGER NOT NULL DEFAULT 0']],
   // 9: character tags on issues (the reviews table is below).
   9: [['issues', 'characters', 'TEXT']],
+  // 10: rereads (a history line that's a reread, and a finished list being read again).
+  10: [
+    ['read_log', 'reread', 'INTEGER NOT NULL DEFAULT 0'],
+    ['collections', 'reread_since', 'TEXT'],
+  ],
 };
 
 /** Extra one-off work for a version, run inside the same transaction. */

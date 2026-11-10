@@ -4,14 +4,15 @@ import { Alert, Animated, Dimensions, PanResponder, Pressable, ScrollView, Style
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { creditsSummary, splitNames } from '@/domain/credits';
-import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, type Library, walk, moveUnits } from '@/domain/library';
+import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, rereadNumber, rereadSince, shownProgress, timesRead, type Library, walk, moveUnits } from '@/domain/library';
 import type { Collection, Entry, Review } from '@/domain/types';
-import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, startReading, stopReading, updateCollection } from '@/store/repo';
+import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, startReading, startReread, stopReading, stopReread, toggleRereadInList, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight, CloseIcon, GripIcon, MoreIcon, PlusIcon } from '@/ui/icons';
 import { Bar, Checkbox, Chip, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay, releaseLabel } from '@/ui/format';
 import { ConnectionsBlock } from '@/ui/connections';
+import { NameLinks } from '@/ui/name-links';
 import { exportList, shareFileName } from '@/domain/share';
 import { shareTextFile } from '@/lib/backup';
 import { splitTags } from '@/domain/characters';
@@ -26,7 +27,8 @@ export default function CollectionScreen() {
   const { id, focus } = useLocalSearchParams<{ id: string; focus?: string }>();
   const { lib, act } = useStore();
   const c = lib.collections.get(id);
-  const p = progress(lib, id);
+  const p = shownProgress(lib, id);
+  const rereading = !!c?.reread_since;
   const next = nextUp(lib, id);
   const last = lastRead(lib, id);
   const status = collectionStatus(lib, id);
@@ -79,17 +81,20 @@ export default function CollectionScreen() {
   }
 
   const color = publisherColor(c.publisher);
-  const creators = [c.writer, c.artist].filter(Boolean).join(' & ');
   const years = c.start_year ? `${c.start_year}${c.ongoing ? '–present' : c.end_year && c.end_year !== c.start_year ? `–${c.end_year}` : ''}` : c.ongoing ? 'Ongoing' : '';
 
   const allIssues = [...new Set(walk(lib, c.id).map((st) => st.issueId))];
   const credits = creditsSummary(lib, c.id);
+  const writerNames = c.writer ? splitNames(c.writer) : credits.mainWriters;
+  const artistNames = c.artist ? splitNames(c.artist) : credits.mainArtists;
   const optionItems: { label: string; go: () => void; danger?: boolean }[] = [
     { label: 'Fill writer & artist details', go: () => fill.run(allIssues, c.id) },
     { label: 'Mark as read…', go: () => router.push({ pathname: '/mark/[id]', params: { id: c.id } }) },
     { label: 'Edit order', go: () => setEditing(true) },
     ...(status === 'completed' ? [] : [{ label: status === 'on_hold' ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => (status === 'on_hold' ? startReading(db, l, c.id) : updateCollection(db, l, c.id, { on_hold: true, reading_now: false }))) }]),
-    ...(status === 'reading' ? [{ label: 'Stop reading', go: () => act((db, l) => stopReading(db, l, c.id)) }] : []),
+    ...(status === 'reading' && !c.reread_since ? [{ label: 'Stop reading', go: () => act((db, l) => stopReading(db, l, c.id)) }] : []),
+    ...(status === 'completed' ? [{ label: 'Start a reread', go: () => act((db, l) => startReread(db, l, c.id)) }] : []),
+    ...(c.reread_since ? [{ label: 'Stop the reread', go: () => act((db, l) => stopReread(db, l, c.id)) }] : []),
     { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
     { label: 'Choose a cover…', go: () => router.push({ pathname: '/covers', params: { collection: c.id } }) },
     { label: 'Export to share…', go: () => shareList(c.id) },
@@ -161,15 +166,31 @@ export default function CollectionScreen() {
             <View style={{ flex: 1, gap: 6, paddingTop: 4 }}>
               <Text style={[T.label, { color }]}>{kindLabel(c)}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
               <Text style={s.title}>{c.title}</Text>
-              {creators || years ? <Text style={T.small}>{[creators, years].filter(Boolean).join(' · ')}</Text> : null}
-              {!creators && credits.mainWriters.length ? <Text style={T.small}>{credits.mainWriters.join(', ')}</Text> : null}
+              {writerNames.length || years ? (
+                <Text style={T.small}>
+                  <NameLinks names={writerNames} role="writer" />
+                  {writerNames.length && years ? ' · ' : ''}
+                  {years}
+                </Text>
+              ) : null}
+              {artistNames.length ? (
+                <Text style={T.tiny}>
+                  Art: <NameLinks names={artistNames} role="artist" />
+                </Text>
+              ) : null}
               {credits.fillIns.length ? (
                 <Text style={T.tiny} numberOfLines={2}>
-                  Fill-ins: {credits.fillIns.slice(0, 3).map((f) => `${f.writers.join(', ')} (#${lib.issues.get(f.issueId)?.number ?? '?'})`).join(' · ')}
+                  Fill-ins:{' '}
+                  {credits.fillIns.slice(0, 3).map((f, i) => (
+                    <Text key={f.issueId}>
+                      {i ? ' · ' : ''}
+                      <NameLinks names={f.writers} role="writer" /> (#{lib.issues.get(f.issueId)?.number ?? '?'})
+                    </Text>
+                  ))}
                   {credits.fillIns.length > 3 ? ` · +${credits.fillIns.length - 3} more` : ''}
                 </Text>
               ) : null}
-              <View style={s.pill}><Text style={[T.tiny, { color: C.text }]}>{STATUS_LABEL[status]}</Text></View>
+              <View style={[s.pill, rereading ? { borderColor: '#E8C48A' } : null]}><Text style={[T.tiny, { color: rereading ? '#E8C48A' : C.text }]}>{rereading ? `Rereading · ${ordinal(rereadNumber(lib, c.id))} time` : STATUS_LABEL[status]}</Text></View>
             </View>
           </View>
           {c.description ? <Text style={[T.small, { paddingHorizontal: 16, paddingTop: 12, lineHeight: 20 }]}>{c.description}</Text> : null}
@@ -268,7 +289,8 @@ export default function CollectionScreen() {
                   setOpen={setOpen}
                   nextRowRef={nextRowRef}
                   onNextRowLayout={onNextRowLayout}
-                  onToggle={(issueId, read) => act((db, l) => setIssueStatus(db, l, issueId, read ? 'unread' : 'read'))}
+                  rereadSince={c.reread_since ?? null}
+                  onToggle={(issueId, read) => act((db, l) => (c.reread_since ? toggleRereadInList(db, l, c.id, issueId) : setIssueStatus(db, l, issueId, read ? 'unread' : 'read')))}
                   onIssueMenu={(entry) => router.push({ pathname: '/issue/[id]', params: { id: entry.child_issue_id!, entry: entry.id, parent: entry.parent_id } })}
                 />
               )}
@@ -289,6 +311,8 @@ type ListProps = {
   nextRowRef: MutableRefObject<ComponentRef<typeof View> | null>;
   onNextRowLayout: () => void;
   onToggle: (issueId: string, read: boolean) => void;
+  /** Set while the list is being reread: ticks show and log rereads since this day. */
+  rereadSince?: string | null;
   onIssueMenu: (entry: Entry) => void;
   /** The run's regular writers; issues by someone else show who wrote them. */
   mainWriters?: string[];
@@ -381,6 +405,8 @@ function EntryList(props: ListProps) {
     const issue = lib.issues.get(entry.child_issue_id!);
     if (!issue) return null;
     const read = issue.status === 'read';
+    const ticked = props.rereadSince ? rereadSince(lib, issue.id, props.rereadSince) : read;
+    const times = timesRead(lib, issue.id);
     const isNext = issue.id === nextIssueId;
     return (
       <Pressable
@@ -395,9 +421,10 @@ function EntryList(props: ListProps) {
           {isNext ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>{issue.status === 'reading' ? 'READING NOW' : 'NEXT UP'}</Text> : null}
           {notOutYet(issue) ? <Text style={[T.label, { color: C.indie, marginTop: 2, fontSize: 10 }]}>NOT OUT YET{issue.release_on ? ` · ${releaseLabel(issue.release_on).toUpperCase()}` : ''}</Text> : null}
           {entry.optional ? <Text style={[T.label, { color: C.dim, marginTop: 2, fontSize: 10 }]}>OPTIONAL · NOT COUNTED</Text> : null}
-          {read && (issue.completed_at || lib.reviews.has(issue.id)) ? (
+          {read && (issue.completed_at || lib.reviews.has(issue.id) || times > 1) ? (
             <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>
               {issue.completed_at ? `Read ${relativeDay(issue.completed_at)}` : ''}
+              {times > 1 ? `${issue.completed_at ? ' · ' : ''}read ${times}×` : ''}
               {issue.completed_at && lib.reviews.has(issue.id) ? ' · ' : ''}
               {lib.reviews.has(issue.id) ? <Text style={{ color: VERDICT_COLORS[lib.reviews.get(issue.id)!.verdict].fg }}>{reviewLine(lib.reviews.get(issue.id)!)}</Text> : null}
             </Text>
@@ -407,7 +434,7 @@ function EntryList(props: ListProps) {
             <Text style={[T.tiny, { fontSize: 11, marginTop: 2, color: C.indie }]}>Written by {issue.writers}</Text>
           ) : null}
         </View>
-        <Checkbox checked={read} label={`${read ? 'Mark unread' : 'Mark read'}: ${issueTitle(lib, issue.id)}`} onPress={() => props.onToggle(issue.id, read)} />
+        <Checkbox checked={ticked} label={`${props.rereadSince ? (ticked ? 'Undo reread' : 'Reread') : read ? 'Mark unread' : 'Mark read'}: ${issueTitle(lib, issue.id)}`} onPress={() => props.onToggle(issue.id, read)} />
       </Pressable>
     );
   };
@@ -837,3 +864,5 @@ function ReviewStrip({ review, kind, onView, onWrite, onAdd }: { review?: Review
     </View>
   );
 }
+
+const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;

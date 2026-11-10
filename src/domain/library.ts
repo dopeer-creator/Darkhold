@@ -1,4 +1,4 @@
-import type { Collection, CollectionStatus, Entry, Issue, Kind, Link, LinkKind, Review, Series } from './types';
+import type { Collection, CollectionStatus, Entry, Issue, Kind, Link, LinkKind, ReadLog, Review, Series } from './types';
 
 /** Types whose lines show which run or event each issue belongs to, worked out automatically. */
 export const READING_KINDS: Kind[] = ['crisis', 'era'];
@@ -20,6 +20,8 @@ export interface Library {
   links: Link[];
   /** Your review of each list or issue, by the list's or issue's id. */
   reviews: Map<string, Review>;
+  /** Each issue's rereads (history lines after the first read), oldest first. */
+  rereads: Map<string, { id: string; day: string }[]>;
 }
 
 export function buildLibrary(rows: {
@@ -29,7 +31,16 @@ export function buildLibrary(rows: {
   entries: Entry[];
   links?: Link[];
   reviews?: Review[];
+  readLog?: ReadLog[];
 }): Library {
+  const rereads = new Map<string, { id: string; day: string }[]>();
+  for (const l of rows.readLog ?? []) {
+    if (!l.reread || !l.read_on) continue;
+    const list = rereads.get(l.issue_id) ?? [];
+    list.push({ id: l.id, day: l.read_on });
+    rereads.set(l.issue_id, list);
+  }
+  for (const list of rereads.values()) list.sort((a, b) => a.day.localeCompare(b.day));
   const reviews = new Map<string, Review>();
   // One review per list or issue; if two ever exist, the later day wins.
   for (const r of rows.reviews ?? []) {
@@ -72,6 +83,7 @@ export function buildLibrary(rows: {
     slicedInto,
     links: rows.links ?? [],
     reviews,
+    rereads,
   };
 }
 
@@ -170,6 +182,9 @@ export function progress(lib: Library, rootId: string): Progress {
 /** Where to pick up: an issue marked "currently reading" wins, else the first unread one in order. Optional lines are skipped. */
 export function nextUp(lib: Library, rootId: string): Step | null {
   const steps = walk(lib, rootId).filter((s) => !s.optional && !s.upcoming);
+  // Rereading a finished list: the first issue not read again since the reread started.
+  const since = lib.collections.get(rootId)?.reread_since;
+  if (since) return steps.find((s) => !rereadSince(lib, s.issueId, since)) ?? null;
   return (
     steps.find((s) => lib.issues.get(s.issueId)!.status === 'reading') ??
     steps.find((s) => lib.issues.get(s.issueId)!.status === 'unread') ??
@@ -202,6 +217,8 @@ export function hasEmptyPart(lib: Library, id: string): boolean {
 
 export function collectionStatus(lib: Library, id: string): CollectionStatus {
   const c = lib.collections.get(id);
+  // A finished list you're reading again counts as Reading until the reread is done.
+  if (c?.reread_since && !c.on_hold) return 'reading';
   const p = progress(lib, id);
   if (p.total > 0 && p.read === p.total && p.upcoming === 0 && !hasEmptyPart(lib, id)) return 'completed';
   if (c?.on_hold) return 'on_hold';
@@ -437,4 +454,33 @@ export function connections(lib: Library, end: { collectionId?: string; issueId?
     if (isTo && exists(link.from_collection_id, link.from_issue_id)) push(theirs, { link, collectionId: link.from_collection_id, issueId: link.from_issue_id });
   }
   return out;
+}
+
+/** True when the issue was reread on or after this day. */
+export const rereadSince = (lib: Library, issueId: string, since: string) => (lib.rereads.get(issueId) ?? []).some((r) => r.day >= since);
+
+/** How many times an issue has been read: the first read plus every reread. */
+export const timesRead = (lib: Library, issueId: string) => (lib.issues.get(issueId)?.status === 'read' ? 1 : 0) + (lib.rereads.get(issueId)?.length ?? 0);
+
+/**
+ * The progress to show for a list: normally its read count, but while you're rereading it, how many of
+ * its issues you've read again since the reread started.
+ */
+export function shownProgress(lib: Library, id: string): Progress {
+  const p = progress(lib, id);
+  const since = lib.collections.get(id)?.reread_since;
+  if (!since) return p;
+  const counted = [...new Set(walk(lib, id).filter((s) => !s.optional).map((s) => s.issueId))];
+  const read = counted.filter((iid) => rereadSince(lib, iid, since)).length;
+  return { ...p, read, left: counted.length - read, total: counted.length };
+}
+
+/** Which reread of a list this is: 2 for the second time through. */
+export function rereadNumber(lib: Library, id: string): number {
+  const since = lib.collections.get(id)?.reread_since;
+  if (!since) return 0;
+  const counted = [...new Set(walk(lib, id).filter((s) => !s.optional).map((s) => s.issueId))];
+  // Times through before this one = the fewest earlier rereads of any issue, plus the first read.
+  const before = Math.min(...counted.map((iid) => (lib.rereads.get(iid) ?? []).filter((r) => r.day < since).length));
+  return (Number.isFinite(before) ? before : 0) + 2;
 }

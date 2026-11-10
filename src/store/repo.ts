@@ -34,7 +34,7 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
     live<Link>(db, 'links'),
     live<Review>(db, 'reviews'),
     // With updated_at: the moment it was ticked, so same-day reads come out newest first.
-    db.getAllAsync<ReadLog & { updated_at: string | null }>(`SELECT ${COLUMNS.read_log.join(',')}, updated_at FROM read_log WHERE deleted_at IS NULL`),
+    db.getAllAsync<ReadLog & { updated_at: string | null; reread?: number | boolean }>(`SELECT ${COLUMNS.read_log.join(',')}, updated_at FROM read_log WHERE deleted_at IS NULL`),
   ]);
   return {
     lib: buildLibrary({
@@ -44,10 +44,11 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
       entries: entries.map((e) => ({ ...e, optional: !!e.optional })),
       links,
       reviews,
+      readLog: readLog.map((l) => ({ ...l, reread: !!l.reread })),
     }),
     readLog: readLog
       .sort((a, b) => (b.read_on ?? '').localeCompare(a.read_on ?? '') || (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
-      .map(({ updated_at: _ignored, ...l }) => l),
+      .map(({ updated_at: _ignored, ...l }) => ({ ...l, reread: !!l.reread })),
   };
 }
 
@@ -63,7 +64,7 @@ export type ReadDate = string | null | undefined;
 
 /** Sets one issue's status (and read date) without opening a transaction. */
 async function applyStatus(db: SQLiteDatabase, issue: Issue, status: IssueStatus, date: ReadDate) {
-  const logs = await db.getAllAsync<{ id: string }>('SELECT id FROM read_log WHERE issue_id = ? AND deleted_at IS NULL ORDER BY read_on DESC', issue.id);
+  const logs = await db.getAllAsync<{ id: string; reread: number }>('SELECT id, reread FROM read_log WHERE issue_id = ? AND deleted_at IS NULL ORDER BY reread, read_on DESC', issue.id);
   if (status !== 'read') {
     await putRow(db, 'issues', { ...issue, status, completed_at: null, date_precision: 'unknown', upcoming: status === 'reading' ? false : issue.upcoming });
     for (const l of logs) await softDelete(db, 'read_log', l.id);
@@ -71,13 +72,14 @@ async function applyStatus(db: SQLiteDatabase, issue: Issue, status: IssueStatus
   }
   const day = date === undefined ? today() : date;
   await putRow(db, 'issues', { ...issue, status, completed_at: day, date_precision: day ? 'day' : 'unknown', upcoming: false });
-  // One history line per issue: move it to the new day, or drop it when the date is unknown.
-  const [keep, ...extra] = logs;
+  // One first-read history line per issue: move it to the new day, or drop it when the date is unknown. Rereads stay.
+  const firsts = logs.filter((l) => !l.reread);
+  const [keep, ...extra] = firsts;
   for (const l of extra) await softDelete(db, 'read_log', l.id);
   if (!day) {
     if (keep) await softDelete(db, 'read_log', keep.id);
   } else {
-    await putRow(db, 'read_log', { id: keep?.id ?? newId(), issue_id: issue.id, read_on: day, date_precision: 'day', rating: null, note: null });
+    await putRow(db, 'read_log', { id: keep?.id ?? newId(), issue_id: issue.id, read_on: day, date_precision: 'day', rating: null, note: null, reread: false });
   }
 }
 
@@ -551,4 +553,42 @@ export async function saveReview(
 export async function deleteReview(db: SQLiteDatabase, lib: Library, key: string) {
   const had = lib.reviews.get(key);
   if (had) await softDelete(db, 'reviews', had.id);
+}
+
+/** Logs reading an issue again on a day (today by default). The first read stays as it is. */
+export async function logReread(db: SQLiteDatabase, issueId: string, day = today()) {
+  await putRow(db, 'read_log', { id: newId(), issue_id: issueId, read_on: day, date_precision: 'day', rating: null, note: null, reread: true });
+}
+
+export async function removeReread(db: SQLiteDatabase, logId: string) {
+  await softDelete(db, 'read_log', logId);
+}
+
+/** Starts reading a finished list again: it goes back to Continue reading with its own progress from today. */
+export async function startReread(db: SQLiteDatabase, lib: Library, id: string) {
+  await updateCollection(db, lib, id, { reread_since: today(), reading_now: true, on_hold: false });
+}
+
+export async function stopReread(db: SQLiteDatabase, lib: Library, id: string) {
+  await updateCollection(db, lib, id, { reread_since: null, reading_now: false });
+}
+
+/**
+ * Ticks an issue in a list you're rereading: logs (or takes back) today's reread. When the last issue
+ * is read again, the reread is done and the list is finished once more.
+ */
+export async function toggleRereadInList(db: SQLiteDatabase, lib: Library, collectionId: string, issueId: string) {
+  const since = lib.collections.get(collectionId)?.reread_since;
+  if (!since) return;
+  const done = (lib.rereads.get(issueId) ?? []).filter((r) => r.day >= since);
+  await db.withTransactionAsync(async () => {
+    if (done.length) {
+      for (const r of done) await softDelete(db, 'read_log', r.id);
+      return;
+    }
+    await logReread(db, issueId);
+    const counted = [...new Set(walk(lib, collectionId).filter((s) => !s.optional).map((s) => s.issueId))];
+    const left = counted.filter((iid) => iid !== issueId && !(lib.rereads.get(iid) ?? []).some((r) => r.day >= since));
+    if (!left.length) await updateCollection(db, lib, collectionId, { reread_since: null, reading_now: false });
+  });
 }

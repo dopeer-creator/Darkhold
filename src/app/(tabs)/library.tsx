@@ -1,10 +1,12 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { collectionStatus, coverFor, isNested, issueTitle, progress } from '@/domain/library';
 import { allCharacters, splitTags } from '@/domain/characters';
+import { splitNames } from '@/domain/credits';
+import { peopleIndex, personLists } from '@/domain/people';
 import { seriesLabel } from '@/domain/series';
 import type { Kind } from '@/domain/types';
 import { setIssueStatus } from '@/store/repo';
@@ -58,13 +60,35 @@ export default function LibraryScreen() {
   const [pubs, setPubs] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
   const [chars, setChars] = useState<string[]>([]);
-  const [allChars, setAllChars] = useState(false);
+  const [writers, setWriters] = useState<string[]>([]);
   const characters = useMemo(() => allCharacters(lib), [lib]);
+  const writerIndex = useMemo(() => peopleIndex(lib, 'writer'), [lib]);
+  // Lists that belong to a ticked writer (their name on the list, or most of its issues).
+  const writerLists = useMemo(() => new Set(writers.flatMap((w) => personLists(lib, w, 'writer').map((c) => c.id))), [lib, writers]);
+  const writerOk = (text: string | null | undefined) => !writers.length || splitNames(text).some((n) => writers.includes(n.toLowerCase()));
+  // Opened from a character or writer page ("Filter"): show just them.
+  const params = useLocalSearchParams<{ character?: string; writer?: string }>();
+  const paramKey = `${params.character ?? ''}|${params.writer ?? ''}`;
+  const [appliedKey, setAppliedKey] = useState('|');
+  if (paramKey !== appliedKey) {
+    setAppliedKey(paramKey);
+    if (params.character) setChars([params.character.toLowerCase()]);
+    if (params.writer) setWriters([params.writer.toLowerCase()]);
+    if (params.character || params.writer) setTab('all');
+  }
+  const clearAll = () => {
+    setPubs([]);
+    setStatuses([]);
+    setChars([]);
+    setWriters([]);
+  };
+  /** The five most-read, plus any you've ticked from the full page. */
+  const quick = <T extends { name: string }>(rows: T[], picked: string[]) => [...rows.slice(0, 5), ...rows.slice(5).filter((r) => picked.includes(r.name.toLowerCase()))];
   /** Tagged with any ticked character (or none ticked). */
   const charOk = (text: string | null | undefined) => !chars.length || splitTags(text).some((t) => chars.includes(t.toLowerCase()));
   const [filtersOpen, setFiltersOpen] = useState(false);
   const toggle = (set: (fn: (v: string[]) => string[]) => void, key: string) => set((v) => (v.includes(key) ? v.filter((k) => k !== key) : [...v, key]));
-  const active = pubs.length + statuses.length + chars.length;
+  const active = pubs.length + statuses.length + chars.length + writers.length;
   const { width, height } = useWindowDimensions();
   const tile = Math.floor((Math.min(width, 600) - 32 - 24) / 3);
 
@@ -76,11 +100,12 @@ export default function LibraryScreen() {
       .filter((c) => pubOk(pubs, c.publisher))
       .filter((c) => !statuses.length || statuses.includes(collectionStatus(lib, c.id)))
       .filter((c) => charOk(c.characters))
+      .filter((c) => !writers.length || writerLists.has(c.id))
       .filter((c) => !ws.length || hasAll(ws, [c.title, c.writer, c.artist, c.characters, c.publisher, kindLabel(c)].join(' ').toLowerCase()))
       .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id) }))
       .sort((a, b) => rank(a.st) - rank(b.st) || a.c.title.localeCompare(b.c.title));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lib, tab, query, pubs, statuses, chars]);
+  }, [lib, tab, query, pubs, statuses, chars, writers, writerLists]);
 
   const seriesRows = useMemo(() => {
     if (tab !== 'series' && !(tab === 'all' && query.trim())) return [];
@@ -108,9 +133,10 @@ export default function LibraryScreen() {
       .filter((x) => pubOk(pubs, x.series?.publisher ?? null))
       .filter((x) => !statuses.length || statuses.some((st) => ISSUE_STATUS[st]?.(x.i.status)))
       .filter((x) => charOk(x.i.characters))
+      .filter((x) => writerOk(x.i.writers))
       .sort((a, b) => (a.series?.title ?? '').localeCompare(b.series?.title ?? '') || (a.series?.volume_year ?? 0) - (b.series?.volume_year ?? 0) || num(a.i.number) - num(b.i.number));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lib, tab, query, pubs, statuses, chars]);
+  }, [lib, tab, query, pubs, statuses, chars, writers]);
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
@@ -158,30 +184,46 @@ export default function LibraryScreen() {
             <>
               <Text style={[T.label, { marginTop: 6 }]}>CHARACTER OR TEAM</Text>
               <View style={s.chipRow}>
-                {(allChars ? characters : characters.slice(0, 12)).map((ch) => (
+                {quick(characters, chars).map((ch) => (
                   <Chip key={ch.name} label={ch.name} active={chars.includes(ch.name.toLowerCase())} onPress={() => toggle(setChars, ch.name.toLowerCase())} />
                 ))}
-                {characters.length > 12 ? <Chip label={allChars ? 'Fewer' : `All ${characters.length}…`} onPress={() => setAllChars((v) => !v)} /> : null}
+                {characters.length > 5 ? <Chip label={`All ${characters.length} ›`} onPress={() => router.push({ pathname: '/people', params: { kind: 'character' } })} /> : null}
+              </View>
+            </>
+          ) : null}
+          {writerIndex.length ? (
+            <>
+              <Text style={[T.label, { marginTop: 6 }]}>WRITER</Text>
+              <View style={s.chipRow}>
+                {quick(writerIndex, writers).map((w) => (
+                  <Chip key={w.name} label={w.name} active={writers.includes(w.name.toLowerCase())} onPress={() => toggle(setWriters, w.name.toLowerCase())} />
+                ))}
+                {writerIndex.length > 5 ? <Chip label={`All ${writerIndex.length} ›`} onPress={() => router.push({ pathname: '/people', params: { kind: 'writer' } })} /> : null}
               </View>
             </>
           ) : null}
           <Text style={T.tiny}>Pick as many as you like: DC + On hold shows DC lists that are on hold.</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-            <Pressable accessibilityRole="button" onPress={() => { setPubs([]); setStatuses([]); setChars([]); }} style={[s.panelBtn, { flex: 1 }]}><Text style={T.small}>Clear</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={clearAll} style={[s.panelBtn, { flex: 1 }]}><Text style={T.small}>Clear</Text></Pressable>
             <Pressable accessibilityRole="button" onPress={() => setFiltersOpen(false)} style={[s.panelBtn, { flex: 1, backgroundColor: C.text, borderColor: C.text }]}><Text style={[T.small, { color: C.onLight, fontFamily: F.semibold }]}>Done</Text></Pressable>
           </View>
         </ScrollView>
       ) : active ? (
         <View style={s.activeRow}>
           <Text style={[T.small, { flex: 1 }]} numberOfLines={1}>
-            {[...PUBLISHERS.filter((p) => pubs.includes(p.key)).map((p) => p.label), ...[...STATUSES, ...ISSUE_STATUSES].filter((st) => statuses.includes(st.key)).map((st) => st.label), ...characters.filter((ch) => chars.includes(ch.name.toLowerCase())).map((ch) => ch.name)].filter((v, i, all) => all.indexOf(v) === i).join(' · ')}
+            {[...PUBLISHERS.filter((p) => pubs.includes(p.key)).map((p) => p.label), ...[...STATUSES, ...ISSUE_STATUSES].filter((st) => statuses.includes(st.key)).map((st) => st.label), ...characters.filter((ch) => chars.includes(ch.name.toLowerCase())).map((ch) => ch.name), ...writerIndex.filter((w) => writers.includes(w.name.toLowerCase())).map((w) => w.name)].filter((v, i, all) => all.indexOf(v) === i).join(' · ')}
           </Text>
-          {chars.length === 1 ? (
+          {chars.length === 1 && !writers.length ? (
             <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/character/[name]', params: { name: characters.find((ch) => ch.name.toLowerCase() === chars[0])?.name ?? chars[0] } })} hitSlop={8}>
               <Text style={[T.small, { color: C.dc }]}>Page ›</Text>
             </Pressable>
           ) : null}
-          <Pressable accessibilityRole="button" onPress={() => { setPubs([]); setStatuses([]); setChars([]); }} hitSlop={8}><Text style={[T.small, { color: C.dc }]}>Clear</Text></Pressable>
+          {writers.length === 1 && !chars.length ? (
+            <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/person/[name]', params: { name: writerIndex.find((w) => w.name.toLowerCase() === writers[0])?.name ?? writers[0], role: 'writer' } })} hitSlop={8}>
+              <Text style={[T.small, { color: C.dc }]}>Page ›</Text>
+            </Pressable>
+          ) : null}
+          <Pressable accessibilityRole="button" onPress={clearAll} hitSlop={8}><Text style={[T.small, { color: C.dc }]}>Clear</Text></Pressable>
         </View>
       ) : (
         <View style={{ height: 12 }} />

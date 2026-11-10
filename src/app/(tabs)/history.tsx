@@ -117,7 +117,10 @@ export default function History() {
                     <Cover title={series?.title ?? ''} publisher={series?.publisher ?? null} width={32} mark={issue.number ?? '?'} uri={issue.cover_path} />
                     <View style={{ flex: 1 }}>
                       <Text style={T.bodyMedium}>{issueTitle(lib, issue.id)}</Text>
-                      <Text numberOfLines={1} style={T.tiny}>{[series?.publisher, parent ? lib.collections.get(parent)?.title : null].filter(Boolean).join(' · ')}</Text>
+                      <Text numberOfLines={1} style={T.tiny}>
+                        {l.reread ? <Text style={{ color: '#E8C48A' }}>Reread · </Text> : null}
+                        {[series?.publisher, parent ? lib.collections.get(parent)?.title : null].filter(Boolean).join(' · ')}
+                      </Text>
                     </View>
                   </Pressable>
                 );

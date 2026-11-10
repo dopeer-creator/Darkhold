@@ -1,18 +1,16 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef, useState, type ComponentRef } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
-
 import type { Review } from '@/domain/types';
-import { addToStory, canShareImages, captureStory, shareImage } from '@/lib/share-review';
 import { deleteReview, saveReview } from '@/store/repo';
 import { useStore } from '@/store/store';
-import { BackIcon, CloseIcon } from '@/ui/icons';
-import { Cover, PrimaryButton, T } from '@/ui/parts';
+import { BackIcon } from '@/ui/icons';
+import { Cover, T } from '@/ui/parts';
 import { ButtonRow, ReviewForm, ReviewSummary } from '@/ui/review';
 import { reviewTarget, StoryCard, type ReviewTarget } from '@/ui/story-card';
+import { StoryShareSheet } from '@/ui/story-share';
 import { C, F } from '@/ui/theme';
 
 /**
@@ -22,7 +20,6 @@ import { C, F } from '@/ui/theme';
 export default function ReviewScreen() {
   const params = useLocalSearchParams<{ collection?: string; issue?: string; edit?: string; share?: string }>();
   const { lib, act } = useStore();
-  const db = useSQLiteContext();
   const key = params.collection ?? params.issue ?? '';
   const target = reviewTarget(lib, key);
   const review = lib.reviews.get(key);
@@ -87,64 +84,21 @@ export default function ReviewScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {review && sharing ? <ShareSheet mode={sharing} onClose={() => setSharing(null)} target={target} review={review} db={db} /> : null}
+      {review && sharing ? <ShareSheet mode={sharing} onClose={() => setSharing(null)} target={target} review={review} /> : null}
     </SafeAreaView>
   );
 }
 
 /** The story picture as it will be saved, with "with review / score only", and the button that sends it. */
-function ShareSheet({ mode, onClose, target, review, db }: { mode: 'story' | 'menu'; onClose: () => void; target: ReviewTarget; review: Review; db: SQLiteDatabase }) {
-  const { width, height } = useWindowDimensions();
-  const cardW = Math.floor(Math.min(width - 48, ((height - 240) * 9) / 16));
+function ShareSheet({ mode, onClose, target, review }: { mode: 'story' | 'menu'; onClose: () => void; target: ReviewTarget; review: Review }) {
   const [showText, setShowText] = useState(!!review.body);
-  const [busy, setBusy] = useState(false);
-  const card = useRef<ComponentRef<typeof View>>(null);
-
-  const send = async (how: 'story' | 'menu') => {
-    if (!canShareImages) return Alert.alert('On your phone', 'Sharing pictures works in the phone app, not in the browser preview.');
-    setBusy(true);
-    try {
-      const uri = await captureStory(card);
-      if (how === 'story') await addToStory(db, uri);
-      else await shareImage(uri);
-      onClose();
-    } catch (e) {
-      Alert.alert('Couldn’t share', e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <SafeAreaView style={{ flex: 1, backgroundColor: C.sunken }}>
-        <View style={[s.top, { justifyContent: 'space-between' }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} style={s.iconBtn}>
-            <CloseIcon />
-          </Pressable>
-          {review.body ? (
-            <View style={s.toggle}>
-              {[true, false].map((on) => (
-                <Pressable key={String(on)} accessibilityRole="button" accessibilityState={{ selected: showText === on }} onPress={() => setShowText(on)} style={[s.toggleItem, showText === on ? { backgroundColor: C.text } : null]}>
-                  <Text style={[T.small, { color: showText === on ? C.onLight : C.muted, fontFamily: showText === on ? F.semibold : F.sans }]}>{on ? 'With review' : 'Score only'}</Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-          <View style={{ width: 44 }} />
-        </View>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <StoryCard ref={card} width={cardW} target={target} review={review} showText={showText} />
-        </View>
-        <View style={{ padding: 16, gap: 10 }}>
-          {busy ? <ActivityIndicator color={C.text} /> : null}
-          <PrimaryButton label={mode === 'story' ? 'Add to Instagram story' : 'Share picture…'} onPress={() => send(mode)} disabled={busy} />
-          <Pressable accessibilityRole="button" onPress={() => send(mode === 'story' ? 'menu' : 'story')} disabled={busy} style={{ minHeight: 40, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={T.small}>{mode === 'story' ? 'Or share it somewhere else…' : 'Or add it to your Instagram story'}</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    </Modal>
+    <StoryShareSheet
+      mode={mode}
+      onClose={onClose}
+      toggle={review.body ? { labels: ['With review', 'Score only'], value: showText, onChange: setShowText } : undefined}
+      render={(ref, width) => <StoryCard ref={ref} width={width} target={target} review={review} showText={showText} />}
+    />
   );
 }
 

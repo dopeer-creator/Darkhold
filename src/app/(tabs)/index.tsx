@@ -1,9 +1,9 @@
 import { router } from 'expo-router';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { activeRoots, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats } from '@/domain/library';
+import { activeRoots, connections, coverFor, issueTitle, nextUp, progress, shownProgress, rootsWithStatus, stats } from '@/domain/library';
 import { saveReview, startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { FinishedCard } from '@/ui/finished-card';
@@ -16,11 +16,14 @@ export default function Home() {
   const { lib, readLog, sync, ready, session, act, finished, dismissFinished } = useStore();
   const roots = useMemo(() => activeRoots(lib), [lib]);
   const totals = useMemo(() => stats(lib), [lib]);
+  const [recentAll, setRecentAll] = useState(false);
+  const [holdAll, setHoldAll] = useState(false);
+  const [planAll, setPlanAll] = useState(false);
   const empty = ready && lib.collections.size === 0 && lib.issues.size === 0;
   const onHold = useMemo(() => rootsWithStatus(lib, 'on_hold').map((id) => lib.collections.get(id)!).sort((a, b) => a.title.localeCompare(b.title)), [lib]);
   const planned = useMemo(() => rootsWithStatus(lib, 'planned').map((id) => lib.collections.get(id)!).sort((a, b) => a.title.localeCompare(b.title)), [lib]);
 
-  const recent = readLog.slice(0, 5).map((l) => {
+  const recent = readLog.slice(0, recentAll ? 12 : 3).map((l) => {
     const issue = lib.issues.get(l.issue_id);
     const parent = lib.parents.get(l.issue_id)?.[0];
     const coll = parent ? lib.collections.get(parent) : undefined;
@@ -99,7 +102,7 @@ export default function Home() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 16, paddingTop: 8 }} snapToInterval={312} decelerationRate="fast">
               {roots.map((id) => {
                 const c = lib.collections.get(id)!;
-                const p = progress(lib, id);
+                const p = shownProgress(lib, id);
                 const next = nextUp(lib, id);
                 const nextIn = next ? lib.collections.get(next.via ?? next.path[next.path.length - 1]) : undefined;
                 const color = publisherColor(c.publisher);
@@ -108,7 +111,7 @@ export default function Home() {
                     <View style={{ flexDirection: 'row', gap: 12 }}>
                       <Cover title={c.title} publisher={c.publisher} width={72} uri={coverFor(lib, id)} />
                       <View style={{ flex: 1, gap: 4 }}>
-                        <Text style={[T.label, { color }]}>{kindLabel(c)}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
+                        <Text style={[T.label, { color: c.reread_since ? '#E8C48A' : color }]}>{c.reread_since ? 'REREADING · ' : ''}{kindLabel(c)}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
                         <Text numberOfLines={2} style={s.cardTitle}>{c.title}</Text>
                         <Text style={[T.small, T.num]}>{p.read} / {p.total} issues</Text>
                         <View style={{ marginTop: 4 }}><Bar read={p.read} total={p.total} color={color} /></View>
@@ -128,11 +131,9 @@ export default function Home() {
           </View>
         ) : null}
 
-        <ReleaseRadar />
-
         {recent.length ? (
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
-            <SectionTitle right={<Pressable onPress={() => router.push('/history')} hitSlop={10}><Text style={T.small}>See all</Text></Pressable>}>Recently read</SectionTitle>
+            <SectionTitle right={<Pressable onPress={() => router.push('/history')} hitSlop={10}><Text style={T.small}>History</Text></Pressable>}>Recently read</SectionTitle>
             {recent.map((r, i) => (
               <Pressable key={r.id} onPress={() => r.parentId && router.push(`/collection/${r.parentId}`)} style={[s.row, i < recent.length - 1 ? s.rowLine : null]}>
                 <Cover title={r.seriesTitle} publisher={r.publisher} width={36} mark={r.number} uri={r.cover} />
@@ -143,13 +144,16 @@ export default function Home() {
                 <Text style={T.tiny}>{relativeDay(r.day)}</Text>
               </Pressable>
             ))}
+            {readLog.length > 3 ? <MoreToggle all={recentAll} count={Math.min(readLog.length, 12)} label={recentAll ? 'Show less' : 'Show more'} onPress={() => setRecentAll((v) => !v)} /> : null}
           </View>
         ) : null}
+
+        <ReleaseRadar />
 
         {onHold.length ? (
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
             <SectionTitle right={<Text style={T.tiny}>{onHold.length}</Text>}>On hold</SectionTitle>
-            {onHold.map((c, i) => {
+            {(holdAll ? onHold : onHold.slice(0, SHOWN)).map((c, i) => {
               const p = progress(lib, c.id);
               return (
                 <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={[s.row, i < onHold.length - 1 ? s.rowLine : null]}>
@@ -164,13 +168,14 @@ export default function Home() {
                 </Pressable>
               );
             })}
+            <MoreToggle all={holdAll} count={onHold.length} onPress={() => setHoldAll((v) => !v)} />
           </View>
         ) : null}
 
         {planned.length ? (
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
             <SectionTitle right={<Text style={T.tiny}>{planned.length}</Text>}>Plan to read</SectionTitle>
-            {planned.map((c, i) => {
+            {(planAll ? planned : planned.slice(0, SHOWN)).map((c, i) => {
               const before = connections(lib, { collectionId: c.id }).get('before')?.[0];
               const after = before?.collectionId ? lib.collections.get(before.collectionId)?.title : before?.issueId ? issueTitle(lib, before.issueId) : null;
               return (
@@ -184,6 +189,7 @@ export default function Home() {
                 </Pressable>
               );
             })}
+            <MoreToggle all={planAll} count={planned.length} onPress={() => setPlanAll((v) => !v)} />
           </View>
         ) : null}
 
@@ -208,3 +214,15 @@ const s = StyleSheet.create({
   resume: { height: 34, paddingHorizontal: 12, borderRadius: 17, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center' },
   rowLine: { borderBottomWidth: 1, borderBottomColor: C.divider },
 });
+
+const SHOWN = 4;
+
+/** "Show all 12" under a long Home section, "Show less" once open. */
+function MoreToggle({ all, count, onPress, label }: { all: boolean; count: number; onPress: () => void; label?: string }) {
+  if (count <= SHOWN && !label) return null;
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={{ minHeight: 40, justifyContent: 'center' }}>
+      <Text style={[T.small, { color: C.dc }]}>{label ?? (all ? 'Show less' : `Show all ${count}`)}</Text>
+    </Pressable>
+  );
+}

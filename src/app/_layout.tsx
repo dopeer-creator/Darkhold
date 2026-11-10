@@ -48,6 +48,8 @@ export default function RootLayout() {
             <Stack.Screen name="merge-series" options={{ presentation: 'modal' }} />
             <Stack.Screen name="review" />
             <Stack.Screen name="character/[name]" />
+            <Stack.Screen name="person/[name]" />
+            <Stack.Screen name="people" />
           </Stack>
           <JobBanner />
         </StoreProvider>
