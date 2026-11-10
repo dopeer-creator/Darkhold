@@ -100,3 +100,23 @@ describe('people', () => {
     expect(peopleIndex(lib, 'artist').map((p) => p.name)).toEqual(['Mikel Janín', 'David Finch']);
   });
 });
+
+describe('review dates follow read dates', () => {
+  it('a review of something read on an unknown date is in no week, month or year, only All time', () => {
+    const lib = buildLibrary({
+      series: [{ id: 's', title: 'Batman', volume_year: 1986, publisher: 'DC' }],
+      issues: [issue('old', true, { completed_at: null, date_precision: 'unknown' }), issue('new', true, { completed_at: '2026-11-04' })],
+      collections: [],
+      entries: [],
+      reviews: [
+        { id: 'r1', collection_id: null, issue_id: 'old', verdict: 'peak', score: 9.8, body: null, reviewed_on: '2026-11-10' },
+        { id: 'r2', collection_id: null, issue_id: 'new', verdict: 'good_enough', score: 7, body: null, reviewed_on: '2026-11-10' },
+      ],
+    });
+    const month = recapFor(lib, [], periodFor('month', 0, [], '2026-11-10'));
+    expect(month.reviews.map((r) => r.id)).toEqual(['r2']);
+    expect(month.best?.id).toBe('r2');
+    const all = recapFor(lib, [], periodFor('all', 0, [], '2026-11-10'));
+    expect(all.reviews.map((r) => r.id).sort()).toEqual(['r1', 'r2']);
+  });
+});

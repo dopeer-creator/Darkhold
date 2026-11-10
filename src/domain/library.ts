@@ -484,3 +484,24 @@ export function rereadNumber(lib: Library, id: string): number {
   const before = Math.min(...counted.map((iid) => (lib.rereads.get(iid) ?? []).filter((r) => r.day < since).length));
   return (Number.isFinite(before) ? before : 0) + 2;
 }
+
+/** When a list was finished: the latest read day among its counted issues (null if any has no date, or none are read). */
+export function finishedOn(lib: Library, id: string): string | null {
+  let last = '';
+  for (const s of walk(lib, id)) {
+    if (s.optional) continue;
+    const issue = lib.issues.get(s.issueId);
+    if (!issue || issue.status !== 'read' || !issue.completed_at) return null;
+    if (issue.completed_at > last) last = issue.completed_at;
+  }
+  return last || null;
+}
+
+/**
+ * The day a review belongs to: when you read what it's about (the issue's read day, or the day you
+ * finished the list). A review of something read on an unknown date has no date either.
+ */
+export function reviewDay(lib: Library, r: Review): string | null {
+  if (r.collection_id) return lib.collections.has(r.collection_id) ? finishedOn(lib, r.collection_id) : null;
+  return r.issue_id ? (lib.issues.get(r.issue_id)?.completed_at ?? null) : null;
+}

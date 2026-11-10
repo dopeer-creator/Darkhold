@@ -1,6 +1,6 @@
 import { splitTags } from './characters';
 import { splitNames } from './credits';
-import { collectionStatus, isNested, todayKey, walk, type Library } from './library';
+import { collectionStatus, finishedOn, isNested, reviewDay, todayKey, type Library } from './library';
 import type { ReadLog, Review, Verdict } from './types';
 
 export type PeriodKind = 'week' | 'month' | 'year' | 'all';
@@ -80,18 +80,6 @@ export interface Recap {
   best: Review | null;
 }
 
-/** When a list was finished: the latest read day among its counted issues (null if any has no date). */
-function finishedOn(lib: Library, id: string): string | null {
-  let last = '';
-  for (const s of walk(lib, id)) {
-    if (s.optional) continue;
-    const day = lib.issues.get(s.issueId)?.completed_at;
-    if (!day) return null;
-    if (day > last) last = day;
-  }
-  return last || null;
-}
-
 const top = (counts: Map<string, number>, n = 5) =>
   [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, n).map(([name, count]) => ({ name, count }));
 
@@ -107,7 +95,7 @@ export function recapFor(lib: Library, readLog: ReadLog[], period: Period): Reca
     for (const w of splitNames(issue.writers)) writers.set(w, (writers.get(w) ?? 0) + 1);
   }
   const reviews = [...lib.reviews.values()].filter(
-    (r) => inside(r.reviewed_on) && (r.collection_id ? lib.collections.has(r.collection_id) : !!r.issue_id && lib.issues.has(r.issue_id)),
+    (r) => (r.collection_id ? lib.collections.has(r.collection_id) : !!r.issue_id && lib.issues.has(r.issue_id)) && (period.kind === 'all' || inside(reviewDay(lib, r))),
   );
   const verdicts: Record<Verdict, number> = { bad: 0, forgettable: 0, good_enough: 0, generational: 0, peak: 0 };
   for (const r of reviews) verdicts[r.verdict]++;

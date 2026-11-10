@@ -3,7 +3,7 @@ import type { ComponentRef, Ref } from 'react';
 import { Text, View } from 'react-native';
 
 import { creditsSummary } from '@/domain/credits';
-import { coverFor, issueTitle, progress, type Library } from '@/domain/library';
+import { coverFor, finishedOn, issueTitle, progress, type Library } from '@/domain/library';
 import { formatScore, verdictLabel } from '@/domain/reviews';
 import type { Review } from '@/domain/types';
 import { sizedCover } from '@/ui/parts';
@@ -29,13 +29,13 @@ export function reviewTarget(lib: Library, key: string): ReviewTarget | null {
     const p = progress(lib, c.id);
     const writers = c.writer ?? creditsSummary(lib, c.id).mainWriters.join(', ');
     const years = c.start_year ? `${c.start_year}${c.ongoing ? '–present' : c.end_year && c.end_year !== c.start_year ? `–${c.end_year}` : ''}` : '';
-    const finished = monthYear(lib.reviews.get(key)?.reviewed_on);
+    const finished = monthYear(finishedOn(lib, c.id));
     return {
       title: c.title,
       kind: `${kindLabel(c)}${c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}`,
       publisher: c.publisher,
       creators: [writers, years].filter(Boolean).join(' · '),
-      meta: [`${p.total} issue${p.total === 1 ? '' : 's'}`, finished ? `reviewed ${finished}` : ''].filter(Boolean).join(' · '),
+      meta: [`${p.total} issue${p.total === 1 ? '' : 's'}`, finished ? `finished ${finished}` : ''].filter(Boolean).join(' · '),
       cover: coverFor(lib, c.id),
     };
   }

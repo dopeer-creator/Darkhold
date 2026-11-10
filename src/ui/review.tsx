@@ -3,6 +3,8 @@ import { PanResponder, Pressable, StyleSheet, Text, TextInput, View, type Layout
 
 import { clampScore, formatScore, parseScore, suggestedVerdict, VERDICTS, verdictLabel } from '@/domain/reviews';
 import type { Review, Verdict } from '@/domain/types';
+import { reviewDay } from '@/domain/library';
+import { useStore } from '@/store/store';
 import { relativeDay } from '@/ui/format';
 import { PrimaryButton, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
@@ -187,6 +189,8 @@ export function ReviewForm({ initial, onSave, onCancel, onDelete, saveLabel = 'S
 
 /** A saved review: verdict, score, stars and (optionally cut short) your words. */
 export function ReviewSummary({ review, lines, big }: { review: Review; lines?: number; big?: boolean }) {
+  const { lib } = useStore();
+  const readDay = reviewDay(lib, review);
   return (
     <View style={{ gap: 6 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -204,7 +208,7 @@ export function ReviewSummary({ review, lines, big }: { review: Review; lines?: 
           {review.body}
         </Text>
       ) : null}
-      {review.reviewed_on && big ? <Text style={[T.tiny, { color: C.faint }]}>Reviewed {relativeDay(review.reviewed_on)}</Text> : null}
+      {big ? <Text style={[T.tiny, { color: C.faint }]}>{readDay ? `Read ${relativeDay(readDay)}` : 'Read, date unknown'}</Text> : null}
     </View>
   );
 }

@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { collectionStatus, coverFor, isNested, lastRead } from '@/domain/library';
+import { collectionStatus, coverFor, isNested, lastRead, reviewDay } from '@/domain/library';
 import { VERDICTS } from '@/domain/reviews';
 import type { Review, Verdict } from '@/domain/types';
 import { useStore } from '@/store/store';
@@ -40,10 +40,10 @@ export default function ReviewsScreen() {
         .filter((r) => !verdict || r.verdict === verdict)
         .sort((a, b) =>
           sort === 'best'
-            ? (b.score ?? -1) - (a.score ?? -1) || (b.reviewed_on ?? '').localeCompare(a.reviewed_on ?? '')
-            : (b.reviewed_on ?? '').localeCompare(a.reviewed_on ?? '') || (b.score ?? -1) - (a.score ?? -1),
+            ? (b.score ?? -1) - (a.score ?? -1) || (reviewDay(lib, b) ?? '').localeCompare(reviewDay(lib, a) ?? '')
+            : (reviewDay(lib, b) ?? '').localeCompare(reviewDay(lib, a) ?? '') || (b.score ?? -1) - (a.score ?? -1),
         ),
-    [all, kind, verdict, sort],
+    [all, kind, verdict, sort, lib],
   );
 
   // Finished top-level lists with no review yet, most recently finished first.
@@ -140,7 +140,7 @@ export default function ReviewsScreen() {
                   <Stars score={r.score} size={12} />
                 </View>
                 {r.body ? <Text style={[T.small, { lineHeight: 18 }]} numberOfLines={2}>{r.body}</Text> : null}
-                {r.reviewed_on ? <Text style={[T.tiny, { color: C.faint }]}>{relativeDay(r.reviewed_on)}</Text> : null}
+                <Text style={[T.tiny, { color: C.faint }]}>{reviewDay(lib, r) ? `Read ${relativeDay(reviewDay(lib, r))}` : 'Read, date unknown'}</Text>
               </View>
             </Pressable>
           );
