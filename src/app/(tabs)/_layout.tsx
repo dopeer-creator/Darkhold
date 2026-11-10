@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabaseConfigured } from '@/lib/supabase';
 import { useStore } from '@/store/store';
-import { ClockIcon, HomeIcon, LibraryIcon, PlusIcon, SearchIcon } from '@/ui/icons';
+import { ClockIcon, HomeIcon, LibraryIcon, PlusIcon, StarIcon } from '@/ui/icons';
 import { C, F } from '@/ui/theme';
 
 type IconType = ComponentType<{ color?: string }>;
@@ -37,7 +37,7 @@ export default function TabsLayout() {
         <TabTrigger name="index" href="/" />
         <TabTrigger name="library" href="/library" />
         <TabTrigger name="history" href="/history" />
-        <TabTrigger name="search" href="/search" />
+        <TabTrigger name="reviews" href="/reviews" />
       </TabList>
       <View style={[s.bar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <TabTrigger name="index" asChild>
@@ -54,8 +54,8 @@ export default function TabsLayout() {
         <TabTrigger name="history" asChild>
           <TabButton icon={ClockIcon} label="History" />
         </TabTrigger>
-        <TabTrigger name="search" asChild>
-          <TabButton icon={SearchIcon} label="Search" />
+        <TabTrigger name="reviews" asChild>
+          <TabButton icon={StarIcon} label="Reviews" />
         </TabTrigger>
       </View>
     </Tabs>

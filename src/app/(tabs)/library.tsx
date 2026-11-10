@@ -40,6 +40,9 @@ const ISSUE_STATUSES = [
 ] as const;
 /** True when a publisher matches any ticked one (or none is ticked). */
 const pubOk = (pubs: string[], publisher: string | null) => !pubs.length || PUBLISHERS.some((p) => pubs.includes(p.key) && p.test(publisher));
+/** Every word of the search appears somewhere: "green lantern 63" finds Green Lantern #63. */
+const words = (q: string) => q.trim().toLowerCase().replace(/#/g, ' ').split(/\s+/).filter(Boolean);
+const hasAll = (ws: string[], text: string) => ws.every((w) => text.includes(w));
 const ISSUE_STATUS: Record<string, (s: string) => boolean> = { issue_read: (s) => s === 'read', issue_unread: (s) => s !== 'read' };
 
 export default function LibraryScreen() {
@@ -66,22 +69,22 @@ export default function LibraryScreen() {
   const tile = Math.floor((Math.min(width, 600) - 32 - 24) / 3);
 
   const collections = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const ws = words(query);
     return [...lib.collections.values()]
       // "All" shows what sits at the top; events inside a run are under that run (and on the Events tab).
       .filter((c) => (tab === 'all' ? !isNested(lib, c.id) || !!query.trim() : tab === c.kind))
       .filter((c) => pubOk(pubs, c.publisher))
       .filter((c) => !statuses.length || statuses.includes(collectionStatus(lib, c.id)))
       .filter((c) => charOk(c.characters))
-      .filter((c) => !q || [c.title, c.writer, c.artist, c.characters, c.publisher].some((v) => v?.toLowerCase().includes(q)))
+      .filter((c) => !ws.length || hasAll(ws, [c.title, c.writer, c.artist, c.characters, c.publisher, kindLabel(c)].join(' ').toLowerCase()))
       .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id) }))
       .sort((a, b) => rank(a.st) - rank(b.st) || a.c.title.localeCompare(b.c.title));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lib, tab, query, pubs, statuses, chars]);
 
   const seriesRows = useMemo(() => {
-    if (tab !== 'series') return [];
-    const q = query.trim().toLowerCase();
+    if (tab !== 'series' && !(tab === 'all' && query.trim())) return [];
+    const ws = words(query);
     const stats = new Map<string, { read: number; total: number; cover: string | null }>();
     for (const i of lib.issues.values()) {
       const st = stats.get(i.series_id) ?? { read: 0, total: 0, cover: null };
@@ -91,17 +94,17 @@ export default function LibraryScreen() {
       stats.set(i.series_id, st);
     }
     return [...lib.series.values()]
-      .filter((x) => stats.has(x.id) && (!q || seriesLabel(x).toLowerCase().includes(q)) && pubOk(pubs, x.publisher))
+      .filter((x) => stats.has(x.id) && (!ws.length || hasAll(ws, `${seriesLabel(x)} ${x.publisher ?? ''}`.toLowerCase())) && pubOk(pubs, x.publisher))
       .map((x) => ({ s: x, ...stats.get(x.id)! }))
       .sort((a, b) => a.s.title.localeCompare(b.s.title) || (a.s.volume_year ?? 0) - (b.s.volume_year ?? 0));
   }, [lib, tab, query, pubs]);
 
   const issues = useMemo(() => {
-    if (tab !== 'issues') return [];
-    const q = query.trim().toLowerCase();
+    if (tab !== 'issues' && !(tab === 'all' && query.trim())) return [];
+    const ws = words(query);
     return [...lib.issues.values()]
       .map((i) => ({ i, title: issueTitle(lib, i.id), series: lib.series.get(i.series_id) }))
-      .filter((x) => !q || x.title.toLowerCase().includes(q))
+      .filter((x) => !ws.length || hasAll(ws, `${x.series?.title ?? ''} ${x.series?.volume_year ?? ''} ${x.i.number ?? ''} ${x.i.label ?? ''} ${x.i.story_title ?? ''} ${x.i.characters ?? ''}`.toLowerCase()))
       .filter((x) => pubOk(pubs, x.series?.publisher ?? null))
       .filter((x) => !statuses.length || statuses.some((st) => ISSUE_STATUS[st]?.(x.i.status)))
       .filter((x) => charOk(x.i.characters))
@@ -116,7 +119,7 @@ export default function LibraryScreen() {
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
           <View style={[s.search, { flex: 1, marginTop: 0 }]}>
             <SearchIcon size={18} />
-            <TextInput value={query} onChangeText={setQuery} placeholder="Search runs, events, characters…" placeholderTextColor={C.dim} style={s.searchInput} accessibilityLabel="Search library" />
+            <TextInput value={query} onChangeText={setQuery} placeholder="Search lists, “green lantern 63”, writers…" placeholderTextColor={C.dim} style={s.searchInput} accessibilityLabel="Search library" />
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel={`Filter${active ? `, ${active} on` : ''}`} accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((o) => !o)} style={[s.filterBtn, active || filtersOpen ? { borderColor: C.text } : null]}>
             <FilterIcon size={18} color={active ? C.text : C.muted} />
@@ -231,6 +234,15 @@ export default function LibraryScreen() {
           keyExtractor={(x) => x?.c.id ?? 'new'}
           columnWrapperStyle={{ gap: 12 }}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, gap: 18 }}
+          ListFooterComponent={
+            tab === 'all' && query.trim() && (issues.length || seriesRows.length) ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                <Text style={T.small}>Also matching:</Text>
+                {issues.length ? <Chip label={`${issues.length} issue${issues.length === 1 ? '' : 's'}`} onPress={() => setTab('issues')} /> : null}
+                {seriesRows.length ? <Chip label={`${seriesRows.length} series`} onPress={() => setTab('series')} /> : null}
+              </View>
+            ) : undefined
+          }
           renderItem={({ item }) =>
             item ? (
               <Pressable onPress={() => router.push(`/collection/${item.c.id}`)} style={{ width: tile, gap: 6 }}>

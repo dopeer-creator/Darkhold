@@ -28,7 +28,10 @@ export const PlusIcon = ({ size = 22, color = C.text, width = 2.2 }: P) => (
 export const ClockIcon = ({ size = 22, color = C.dim, width = 1.8 }: P) => (
   <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="12" cy="12" r="9" {...stroke(color, width)} /><Path d="M12 7v5l3 2" {...stroke(color, width)} /></Svg>
 );
-export const SearchIcon = ({ size = 22, color = C.dim, width = 1.8 }: P) => (
+export const StarIcon = ({ size = 22, color = C.dim, width = 1.8 }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z" {...stroke(color, width)} /></Svg>
+);
+export const SearchIcon =({ size = 22, color = C.dim, width = 1.8 }: P) => (
   <Svg width={size} height={size} viewBox="0 0 24 24"><Circle cx="11" cy="11" r="7" {...stroke(color, width)} /><Path d="m20 20-3.5-3.5" {...stroke(color, width)} /></Svg>
 );
 export const BackIcon = ({ size = 22, color = C.muted, width = 1.8 }: P) => (
