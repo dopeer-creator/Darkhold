@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { canSlice, issueTitle } from '@/domain/library';
@@ -8,6 +8,7 @@ import type { Kind } from '@/domain/types';
 import { createCollection, setPartOf } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { CloseIcon } from '@/ui/icons';
+import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { Checkbox, Chip, SectionTitle, T } from '@/ui/parts';
 import { C, F, KIND_COLOR, kindLabel } from '@/ui/theme';
 
@@ -70,7 +71,7 @@ export default function PartOf() {
         </Pressable>
         <Text style={s.title}>Part of…</Text>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 20, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+      <KeyboardScroll contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 20, paddingBottom: 40 }}>
         <Text style={T.small}>Tick the lines, then pick the run or event they belong to. {parent.title} shows them as one labelled block.</Text>
 
         <View>
@@ -128,7 +129,7 @@ export default function PartOf() {
             <Text style={[T.body, { color: C.muted }]}>Not part of anything — plain lines</Text>
           </Pressable>
         </View>
-      </ScrollView>
+      </KeyboardScroll>
     </SafeAreaView>
   );
 }

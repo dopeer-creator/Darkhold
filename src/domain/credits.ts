@@ -10,6 +10,10 @@ export interface CreditsSummary {
   /** The writers who carry the run: anyone on at least 40% of its credited issues. */
   mainWriters: string[];
   mainArtists: string[];
+  /** No artist draws at least 40% of the credited issues: show "Various artists". */
+  variedArtists: boolean;
+  /** Every credited artist, most issues first. */
+  allArtists: string[];
   /** Issues written by none of the main writers — fill-ins, annuals, guest writers. */
   fillIns: { issueId: string; writers: string[] }[];
   /** How many issues have credits filled in, out of all. */
@@ -31,9 +35,14 @@ export function creditsSummary(lib: Library, collectionId: string): CreditsSumma
   const credited = ids.map((id) => lib.issues.get(id)!).filter((i) => i.writers);
   const mainWriters = credited.length ? regulars(credited.map((i) => splitNames(i.writers))) : [];
   const withArt = credited.filter((i) => i.artists);
-  const mainArtists = withArt.length ? regulars(withArt.map((i) => splitNames(i.artists))) : [];
+  const artistLists = withArt.map((i) => splitNames(i.artists));
+  const mainArtists = withArt.length ? regulars(artistLists) : [];
+  const artistCounts = new Map<string, number>();
+  for (const names of artistLists) for (const n of new Set(names)) artistCounts.set(n, (artistCounts.get(n) ?? 0) + 1);
+  const allArtists = [...artistCounts.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+  const variedArtists = allArtists.length > 1 && (artistCounts.get(allArtists[0]) ?? 0) < withArt.length * 0.4;
   const fillIns = credited
     .map((i) => ({ issueId: i.id, writers: splitNames(i.writers) }))
     .filter((f) => !f.writers.some((w) => mainWriters.includes(w)));
-  return { mainWriters, mainArtists, fillIns, credited: credited.length, total: ids.length };
+  return { mainWriters, mainArtists, variedArtists, allArtists, fillIns, credited: credited.length, total: ids.length };
 }

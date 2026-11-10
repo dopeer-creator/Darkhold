@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { issueTitle } from '@/domain/library';
@@ -62,7 +62,7 @@ export default function ConnectScreen() {
         </Pressable>
         <Text style={s.title}>Connect</Text>
       </View>
-      <KeyboardAvoidingView style={{ flex: 1, paddingHorizontal: 16, gap: 12 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1, paddingHorizontal: 16, gap: 12 }} behavior="padding">
         <Text style={T.small} numberOfLines={2}>{hereTitle}</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {CHOICES.map((c) => <Chip key={c.key} label={c.label} active={choice.key === c.key} onPress={() => setChoice(c)} />)}

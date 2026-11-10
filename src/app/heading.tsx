@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { addHeading, removeEntry, updateHeading } from '@/store/repo';
@@ -37,7 +37,7 @@ export default function HeadingScreen() {
         </Pressable>
         <Text style={s.title}>{existing ? 'Rename chapter' : 'New chapter heading'}</Text>
       </View>
-      <KeyboardAvoidingView style={{ flex: 1, padding: 16, gap: 14 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1, padding: 16, gap: 14 }} behavior="padding">
         <Text style={T.small}>
           A heading names a section of {collection?.title ?? 'this list'}, like “Phase 2 · The Incursions”. It holds no issues — it shows that section’s progress and folds it away.
           {existing ? '' : ' It goes at the end; move it into place with Edit order.'}

@@ -52,7 +52,7 @@ export default function AddIssues() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
       <Header title="Add issues" />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <View style={{ paddingHorizontal: 16, gap: 12 }}>
           <Pressable onPress={() => !params.parent && setParentId(null)} style={s.target}>
             <View style={{ flex: 1 }}>

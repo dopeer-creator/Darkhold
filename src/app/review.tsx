@@ -1,12 +1,13 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Review } from '@/domain/types';
 import { deleteReview, saveReview } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
+import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { Cover, T } from '@/ui/parts';
 import { ButtonRow, ReviewForm, ReviewSummary } from '@/ui/review';
 import { reviewTarget, StoryCard, type ReviewTarget } from '@/ui/story-card';
@@ -48,8 +49,7 @@ export default function ReviewScreen() {
           <BackIcon />
         </Pressable>
       </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 18, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
+      <KeyboardScroll contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 18, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
           <Pressable accessibilityRole="link" onPress={open} style={{ flexDirection: 'row', gap: 14 }}>
             <Cover title={target.title} publisher={target.publisher} width={84} uri={target.cover} />
             <View style={{ flex: 1, gap: 4, paddingTop: 2 }}>
@@ -81,8 +81,7 @@ export default function ReviewScreen() {
               />
             </>
           )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardScroll>
 
       {review && sharing ? <ShareSheet mode={sharing} onClose={() => setSharing(null)} target={target} review={review} /> : null}
     </SafeAreaView>

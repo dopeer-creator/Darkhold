@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { periodFor, recapFor, type PeriodKind, type Recap } from '@/domain/recap';
 import { formatScore, VERDICTS, verdictLabel } from '@/domain/reviews';
@@ -62,11 +62,7 @@ export function RecapView() {
 
       <View style={{ gap: 6 }}>
         <Text style={T.label}>{kind === 'week' || kind === 'month' ? 'ISSUES PER DAY' : kind === 'year' ? 'ISSUES PER MONTH' : 'ISSUES PER YEAR'}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: kind === 'month' ? 2 : 6, height: 90 }}>
-          {r.perBucket.map((n, i) => (
-            <View key={i} style={{ flex: 1, height: Math.max(2, (n / max) * 86), borderRadius: 2, backgroundColor: n ? STAR : C.border }} />
-          ))}
-        </View>
+        <BarChart recap={r} max={max} gap={kind === 'month' ? 2 : 6} />
         <View style={{ flexDirection: 'row', gap: kind === 'month' ? 2 : 6 }}>
           {r.period.buckets.map((b, i) => (
             <Text key={i} style={[T.tiny, { flex: 1, fontSize: 10, textAlign: 'center' }]} numberOfLines={1}>{b.label}</Text>
@@ -126,6 +122,70 @@ export function RecapView() {
 
       {sharing ? <StoryShareSheet mode={sharing} onClose={() => setSharing(null)} render={(ref, width) => <RecapCard cardRef={ref} width={width} recap={r} />} /> : null}
     </ScrollView>
+  );
+}
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** What one bar stands for: "Tue 10 Nov", "10 Nov", "November", "2026". */
+function bucketName(kind: PeriodKind, start: string) {
+  const d = new Date(`${start}T12:00:00`);
+  const short = `${d.getDate()} ${MONTHS_LONG[d.getMonth()].slice(0, 3)}`;
+  if (kind === 'week') return `${DAYS[d.getDay()]} ${short}`;
+  if (kind === 'month') return `${DAYS[d.getDay()]} ${short}`;
+  if (kind === 'year') return MONTHS_LONG[d.getMonth()];
+  return String(d.getFullYear());
+}
+
+/**
+ * The chart. Press and hold (or slide along it) to see how many issues you read on that day, in that
+ * month or that year; let go and the label disappears.
+ */
+function BarChart({ recap: r, max, gap }: { recap: Recap; max: number; gap: number }) {
+  const [active, setActive] = useState<number | null>(null);
+  const width = useRef(0);
+  const count = useRef(r.perBucket.length);
+  useEffect(() => {
+    count.current = r.perBucket.length;
+  }, [r.perBucket.length]);
+  // The handlers read the refs only while a finger is down, never during render.
+  // eslint-disable-next-line react-hooks/refs
+  const [pan] = useState(() => {
+    const pick = (x: number) => setActive(width.current ? Math.max(0, Math.min(count.current - 1, Math.floor((x / width.current) * count.current))) : null);
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (e) => pick(e.nativeEvent.locationX),
+      onPanResponderMove: (e) => pick(e.nativeEvent.locationX),
+      onPanResponderRelease: () => setActive(null),
+      onPanResponderTerminate: () => setActive(null),
+    });
+  });
+  const n = r.perBucket.length;
+  const shown = active != null && active < n ? active : null;
+  return (
+    <View>
+      <View style={{ height: 26, justifyContent: 'flex-end' }}>
+        {shown != null ? (
+          <View style={[s.tip, { left: `${Math.min(78, Math.max(0, ((shown + 0.5) / n) * 100 - 11))}%` }]}>
+            <Text style={[T.tiny, { color: C.onLight, fontFamily: F.semibold }]} numberOfLines={1}>
+              {r.perBucket[shown]} issue{r.perBucket[shown] === 1 ? '' : 's'} · {bucketName(r.period.kind, r.period.buckets[shown].start)}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      <View
+        {...pan.panHandlers}
+        onLayout={(e) => (width.current = e.nativeEvent.layout.width)}
+        accessibilityLabel="Issues read chart. Press and hold a bar to see its count."
+        style={{ flexDirection: 'row', alignItems: 'flex-end', gap, height: 90 }}>
+        {r.perBucket.map((v, i) => (
+          <View key={i} pointerEvents="none" style={{ flex: 1, height: Math.max(2, (v / max) * 86), borderRadius: 2, backgroundColor: i === shown ? C.text : v ? STAR : C.border }} />
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -231,6 +291,7 @@ const s = StyleSheet.create({
   arrow: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   arrowText: { fontFamily: F.sans, fontSize: 26, color: C.text },
   period: { fontFamily: F.condBold, fontSize: 24, color: C.text },
+  tip: { position: 'absolute', bottom: 2, minWidth: 96, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: C.text, alignItems: 'center' },
   tile: { flex: 1, padding: 8, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, gap: 2 },
   num: { fontFamily: F.cond, fontSize: 24, color: C.text },
   card: { padding: 12, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },

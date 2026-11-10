@@ -7,6 +7,7 @@ import { activeRoots, connections, coverFor, issueTitle, nextUp, progress, shown
 import { saveReview, startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { FinishedCard } from '@/ui/finished-card';
+import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { ReleaseRadar } from '@/ui/release-radar';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
@@ -32,7 +33,7 @@ export default function Home() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+      <KeyboardScroll contentContainerStyle={{ paddingBottom: 32 }}>
         <View style={s.header}>
           <Text style={s.brand}>Darkhold</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -193,7 +194,7 @@ export default function Home() {
           </View>
         ) : null}
 
-      </ScrollView>
+      </KeyboardScroll>
     </SafeAreaView>
   );
 }

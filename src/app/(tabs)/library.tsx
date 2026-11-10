@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { collectionStatus, coverFor, isNested, issueTitle, progress } from '@/domain/library';
+import { collectionStatus, coverFor, isNested, issueTitle, progress, walk } from '@/domain/library';
 import { allCharacters, splitTags } from '@/domain/characters';
 import { splitNames } from '@/domain/credits';
 import { peopleIndex, personLists } from '@/domain/people';
@@ -63,6 +63,7 @@ export default function LibraryScreen() {
   const [writers, setWriters] = useState<string[]>([]);
   const characters = useMemo(() => allCharacters(lib), [lib]);
   const writerIndex = useMemo(() => peopleIndex(lib, 'writer'), [lib]);
+  const artistIndex = useMemo(() => peopleIndex(lib, 'artist'), [lib]);
   // Lists that belong to a ticked writer (their name on the list, or most of its issues).
   const writerLists = useMemo(() => new Set(writers.flatMap((w) => personLists(lib, w, 'writer').map((c) => c.id))), [lib, writers]);
   const writerOk = (text: string | null | undefined) => !writers.length || splitNames(text).some((n) => writers.includes(n.toLowerCase()));
@@ -94,6 +95,18 @@ export default function LibraryScreen() {
 
   const collections = useMemo(() => {
     const ws = words(query);
+    // Searching a writer or artist also finds every list holding their issues, with how many are theirs.
+    const people = ws.length && query.trim().length >= 3 ? [...writerIndex, ...artistIndex].map((x) => x.name).filter((n, i, all) => all.indexOf(n) === i && hasAll(ws, n.toLowerCase())) : [];
+    const byPerson = new Map<string, { n: number; read: number }>();
+    if (people.length) {
+      const theirs = new Set(people.map((n) => n.toLowerCase()));
+      const isTheirs = (i: { writers?: string | null; artists?: string | null } | undefined) => !!i && [...splitNames(i.writers), ...splitNames(i.artists)].some((n) => theirs.has(n.toLowerCase()));
+      for (const c of lib.collections.values()) {
+        const ids = [...new Set(walk(lib, c.id).map((st) => st.issueId))].filter((id) => isTheirs(lib.issues.get(id)));
+        if (ids.length) byPerson.set(c.id, { n: ids.length, read: ids.filter((id) => lib.issues.get(id)?.status === 'read').length });
+      }
+    }
+    const who = people.length === 1 ? people[0] : people.length ? `${people[0]} +${people.length - 1}` : '';
     return [...lib.collections.values()]
       // "All" shows what sits at the top; events inside a run are under that run (and on the Events tab).
       .filter((c) => (tab === 'all' ? !isNested(lib, c.id) || !!query.trim() : tab === c.kind))
@@ -101,11 +114,11 @@ export default function LibraryScreen() {
       .filter((c) => !statuses.length || statuses.includes(collectionStatus(lib, c.id)))
       .filter((c) => charOk(c.characters))
       .filter((c) => !writers.length || writerLists.has(c.id))
-      .filter((c) => !ws.length || hasAll(ws, [c.title, c.writer, c.artist, c.characters, c.publisher, kindLabel(c)].join(' ').toLowerCase()))
-      .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id) }))
-      .sort((a, b) => rank(a.st) - rank(b.st) || a.c.title.localeCompare(b.c.title));
+      .filter((c) => !ws.length || byPerson.has(c.id) || hasAll(ws, [c.title, c.writer, c.artist, c.characters, c.publisher, kindLabel(c)].join(' ').toLowerCase()))
+      .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id), by: byPerson.get(c.id) ? { ...byPerson.get(c.id)!, who } : null }))
+      .sort((a, b) => (b.by?.n ?? 0) - (a.by?.n ?? 0) || rank(a.st) - rank(b.st) || a.c.title.localeCompare(b.c.title));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lib, tab, query, pubs, statuses, chars, writers, writerLists]);
+  }, [lib, tab, query, pubs, statuses, chars, writers, writerLists, writerIndex, artistIndex]);
 
   const seriesRows = useMemo(() => {
     if (tab !== 'series' && !(tab === 'all' && query.trim())) return [];
@@ -292,6 +305,11 @@ export default function LibraryScreen() {
                 <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[item.c.kind] }]}>{kindLabel(item.c)}</Text>
                 <Text numberOfLines={2} style={[T.bodyMedium, { fontSize: 13, lineHeight: 16 }]}>{item.c.title}</Text>
                 <Bar read={item.p.read} total={item.p.total} color={publisherColor(item.c.publisher)} height={3} />
+                {item.by ? (
+                  <Text style={[T.tiny, T.num, { fontSize: 11, color: C.dc }]} numberOfLines={2}>
+                    {item.by.n} by {item.by.who} · {item.by.read} read
+                  </Text>
+                ) : null}
                 <Text style={[T.tiny, T.num, { fontSize: 11 }]}>
                   {item.st === 'completed' ? 'Completed' : item.st === 'on_hold' ? `On hold · ${item.p.read} / ${item.p.total}` : item.p.total ? `${item.p.read} / ${item.p.total}` : 'No issues yet'}
                 </Text>

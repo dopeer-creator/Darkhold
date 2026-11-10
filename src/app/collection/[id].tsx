@@ -38,6 +38,7 @@ export default function CollectionScreen() {
   const [open, setOpen] = useState<Record<string, boolean>>(() => (focus === 'next' ? pathOpen(next) : {}));
   const [menu, setMenu] = useState(false);
   const [options, setOptions] = useState(false);
+  const [showArtists, setShowArtists] = useState(false);
   const [editing, setEditing] = useState(false);
   const fill = useFillDetails();
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -173,10 +174,16 @@ export default function CollectionScreen() {
                   {years}
                 </Text>
               ) : null}
-              {artistNames.length ? (
-                <Text style={T.tiny}>
-                  Art: <NameLinks names={artistNames} role="artist" />
-                </Text>
+              {artistNames.length || credits.variedArtists ? (
+                c.artist || !credits.variedArtists || showArtists ? (
+                  <Text style={T.tiny}>
+                    Art: <NameLinks names={c.artist || !credits.variedArtists ? artistNames : credits.allArtists} role="artist" />
+                  </Text>
+                ) : (
+                  <Text style={T.tiny} onPress={() => setShowArtists(true)} accessibilityRole="button">
+                    Art: <Text style={{ color: C.dc }}>Various artists ({credits.allArtists.length}) ›</Text>
+                  </Text>
+                )
               ) : null}
               {credits.fillIns.length ? (
                 <Text style={T.tiny} numberOfLines={2}>

@@ -4,11 +4,12 @@ import { router } from 'expo-router';
 import * as Updates from 'expo-updates';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { saveTextFile } from '@/lib/backup';
 import { useImportFile } from '@/ui/use-import';
+import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { getComicVineKey, setComicVineKey, testComicVineKey } from '@/lib/comicvine';
 import { getInstagramAppId, setInstagramAppId } from '@/lib/share-review';
 import { exportFile, today } from '@/store/repo';
@@ -132,7 +133,7 @@ export default function Settings() {
         </Pressable>
         <Text style={s.title}>Profile</Text>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 24, paddingBottom: 40 }}>
+      <KeyboardScroll contentContainerStyle={{ padding: 16, gap: 24, paddingBottom: 40 }}>
         <View style={s.card}>
           <View style={s.avatar}>
             <Text style={s.avatarText}>{(session?.user.email ?? 'D')[0].toUpperCase()}</Text>
@@ -319,7 +320,7 @@ export default function Settings() {
           </View>
           <Text style={T.tiny}>{updateStatus || 'New versions download by themselves when you open the app and apply the next time you open it.'}</Text>
         </View>
-      </ScrollView>
+      </KeyboardScroll>
     </SafeAreaView>
   );
 }

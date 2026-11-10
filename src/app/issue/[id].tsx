@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { issueTitle, notOutYet } from '@/domain/library';
@@ -10,6 +10,7 @@ import { findVolume, getComicVineKey, volumeCovers } from '@/lib/comicvine';
 import { daysAgo, logReread, removeReread, saveReview, mergeSeries, moveIssue, removeEntry, setIssueStatus, setOptional, setReadDate, setRelease, today, updateIssue, updateSeries } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
+import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { Chip, Cover, GhostButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay, releaseLabel } from '@/ui/format';
 import { useFillDetails } from '@/ui/use-fill-details';
@@ -139,8 +140,7 @@ export default function IssueScreen() {
           <BackIcon />
         </Pressable>
       </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 22, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
+      <KeyboardScroll contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 22, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
           <View style={{ flexDirection: 'row', gap: 16 }}>
             <Pressable accessibilityRole="button" accessibilityLabel="Change cover" onPress={changeCover}>
               <Cover title={series?.title ?? title} publisher={series?.publisher ?? null} width={108} mark={issue.number ?? '?'} uri={issue.cover_path} />
@@ -394,8 +394,7 @@ export default function IssueScreen() {
               }
             />
           ) : null}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardScroll>
     </SafeAreaView>
   );
 }

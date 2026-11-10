@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { supabase } from '@/lib/supabase';
@@ -34,7 +34,7 @@ export default function Login() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 14 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 14 }} behavior="padding">
         <Text style={s.brand}>Darkhold</Text>
         <Text style={[T.small, { marginBottom: 12 }]}>Your comic library. {mode === 'in' ? 'Sign in to pick up where you left off.' : 'Create your account.'}</Text>
         <TextInput value={email} onChangeText={setEmail} placeholder="Email" placeholderTextColor={C.faint} autoCapitalize="none" autoComplete="email" keyboardType="email-address" style={s.input} accessibilityLabel="Email" />

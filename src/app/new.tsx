@@ -1,12 +1,13 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Collection, Kind } from '@/domain/types';
 import { changeKind, createCollection, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { CloseIcon } from '@/ui/icons';
+import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { TagEditor } from '@/ui/tag-editor';
 import { Checkbox, Chip, PrimaryButton, T } from '@/ui/parts';
 import { C, F, KIND_HINT, KIND_LABEL, KIND_NAME, KINDS } from '@/ui/theme';
@@ -58,8 +59,7 @@ function CollectionForm() {
         </Pressable>
         <Text style={s.title}>{editing ? `Edit ${KIND_NAME[kind]}` : `New ${KIND_NAME[kind]}`}</Text>
       </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+      <KeyboardScroll contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           {parent ? <Text style={T.small}>Goes inside {parent.title}</Text> : null}
           <View style={{ gap: 8 }}>
             <Text style={T.label}>TYPE</Text>
@@ -107,8 +107,7 @@ function CollectionForm() {
           <Field label="Notes" value={f.notes} onChange={set('notes')} multiline />
           {error ? <Text style={[T.small, { color: C.indie }]}>{error}</Text> : null}
           <PrimaryButton label={editing ? 'Save' : `Create ${KIND_NAME[kind]}`} onPress={save} />
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardScroll>
     </SafeAreaView>
   );
 }
