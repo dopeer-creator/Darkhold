@@ -7,11 +7,11 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { ExportFile } from '@/domain/importer';
-import { pickTextFile, saveTextFile } from '@/lib/backup';
+import { saveTextFile } from '@/lib/backup';
+import { useImportFile } from '@/ui/use-import';
 import { getComicVineKey, setComicVineKey, testComicVineKey } from '@/lib/comicvine';
 import { getInstagramAppId, setInstagramAppId } from '@/lib/share-review';
-import { exportFile, importFile, today } from '@/store/repo';
+import { exportFile, today } from '@/store/repo';
 import { supabaseConfigured } from '@/lib/supabase';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
@@ -21,7 +21,7 @@ import { C, F } from '@/ui/theme';
 
 /** Profile and settings: who is signed in, sync, and signing out to switch accounts. */
 export default function Settings() {
-  const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, stopJob, act } = useStore();
+  const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, stopJob } = useStore();
   const [backupStatus, setBackupStatus] = useState('');
   const [igId, setIgId] = useState('');
   const [savedIgId, setSavedIgId] = useState<string | null>(null);
@@ -93,36 +93,8 @@ export default function Settings() {
     }
   };
 
-  /** Loads a backup back in. Nothing already here is duplicated or removed. */
-  const importBackup = async () => {
-    try {
-      const text = await pickTextFile();
-      if (!text) return;
-      const file = JSON.parse(text) as ExportFile;
-      if (file?.format !== 'darkhold-export' || !Array.isArray(file.issues)) throw new Error('That file isn’t a Darkhold backup.');
-      Alert.alert(
-        'Import this backup?',
-        `${file.collections.length} lists and ${file.issues.length} issues${file.exported_at ? ` from ${file.exported_at.slice(0, 10)}` : ''}. Anything you already have is kept and not duplicated; anything missing comes back.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Import',
-            onPress: async () => {
-              setBackupStatus('Importing…');
-              try {
-                const plan = await act((d, l) => importFile(d, l, file));
-                setBackupStatus(`Imported: ${plan.collections.length} lists and ${plan.issues.length} issues added, ${plan.markRead.length} marked read. Everything else was already here.`);
-              } catch (e) {
-                setBackupStatus(e instanceof Error ? e.message : String(e));
-              }
-            },
-          },
-        ],
-      );
-    } catch (e) {
-      setBackupStatus(e instanceof Error ? e.message : String(e));
-    }
-  };
+  /** Loads a backup (or a shared list) back in. Nothing already here is duplicated or removed. */
+  const importBackup = useImportFile({ onStatus: setBackupStatus });
 
   const email = session?.user.email ?? (supabaseConfigured ? 'Not signed in' : 'Offline preview');
   const lastSync = sync.at ? `${relativeDay(sync.at.slice(0, 10))}, ${new Date(sync.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not yet';
@@ -276,7 +248,7 @@ export default function Settings() {
           </View>
           <View style={s.row}>
             <View style={{ flex: 1 }}>
-              <Text style={T.body}>Import a backup</Text>
+              <Text style={T.body}>Import a backup or shared list</Text>
               <Text style={T.tiny}>Brings back anything missing; never duplicates or deletes</Text>
             </View>
             <Pressable accessibilityRole="button" onPress={importBackup} style={s.smallBtn}>

@@ -1,4 +1,5 @@
-import { Directory, File } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 
 /**
@@ -24,6 +25,21 @@ export async function saveTextFile(name: string, text: string, mimeType = 'appli
   if (!folder) return false;
   const file = folder.createFile(name, mimeType);
   await file.write(text);
+  return true;
+}
+
+/**
+ * Hands a text file to the phone's share menu (WhatsApp, Drive, email…). On the web it downloads.
+ * Returns false if sharing isn't possible.
+ */
+export async function shareTextFile(name: string, text: string, mimeType = 'application/json'): Promise<boolean> {
+  if (Platform.OS === 'web') return saveTextFile(name, text, mimeType);
+  if (!(await Sharing.isAvailableAsync())) return false;
+  const file = new File(Paths.cache, name);
+  if (file.exists) file.delete();
+  file.create();
+  file.write(text);
+  await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: name });
   return true;
 }
 

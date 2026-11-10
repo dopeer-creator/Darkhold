@@ -1,11 +1,12 @@
 import { router, type Href } from 'expo-router';
-import type { ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CrisisIcon, EditionIcon, EraIcon, EventIcon, IssueIcon, RunIcon } from '@/ui/icons';
 import { GhostButton, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
+import { useImportFile } from '@/ui/use-import';
 
 type Option = { label: string; hint: string; href: Href; Icon: ComponentType<{ color?: string }>; bg: string; fg: string };
 
@@ -21,6 +22,8 @@ const OPTIONS: Option[] = [
 
 export default function AddSheet() {
   const insets = useSafeAreaInsets();
+  const [status, setStatus] = useState('');
+  const importShared = useImportFile({ onStatus: setStatus, replace: true });
   return (
     <View style={{ flex: 1 }}>
       <Pressable accessibilityLabel="Close" onPress={() => router.back()} style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,5,7,0.72)' }]} />
@@ -39,6 +42,13 @@ export default function AddSheet() {
           ))}
         </View>
         <Text style={[T.tiny, { marginTop: 10 }]}>Not sure? Pick the closest one. You can change the type any time. A story inside a run is a chapter heading in that run.</Text>
+        <Pressable accessibilityRole="button" onPress={importShared} style={({ pressed }) => [s.importRow, pressed ? { opacity: 0.7 } : null]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[T.body, { fontFamily: F.medium }]}>Import a shared list</Text>
+            <Text style={T.tiny}>{status || 'A .darkhold.json file someone sent you'}</Text>
+          </View>
+          <Text style={[T.small, { color: C.dc }]}>Pick file</Text>
+        </Pressable>
         <GhostButton label="Cancel" onPress={() => router.back()} style={{ marginTop: 10 }} />
       </View>
     </View>
@@ -52,5 +62,6 @@ const s = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flexBasis: '48%', flexGrow: 1, gap: 8, padding: 12, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   tileLabel: { fontFamily: F.semibold, fontSize: 15, color: C.text },
+  importRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12, padding: 12, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: C.borderStrong },
   icon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
 });

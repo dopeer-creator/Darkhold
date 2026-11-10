@@ -1,5 +1,5 @@
 import type { Library } from './library';
-import type { Collection, Entry, Issue, Link, ReadLog, Review, Series } from './types';
+import type { Collection, Entry, Issue, Kind, Link, ReadLog, Review, Series } from './types';
 
 /** The JSON file format Darkhold exports and imports. Ids inside it are only used to connect rows. */
 export interface ExportFile {
@@ -16,6 +16,8 @@ export interface ExportFile {
   reviews?: Review[];
   /** When the backup was made. */
   exported_at?: string;
+  /** Set when the file is one list shared by someone (not a full backup): that list's id, name and type in the file. */
+  shared?: { id: string; title: string; kind: Kind };
 }
 
 export interface ImportPlan {

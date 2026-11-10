@@ -12,6 +12,8 @@ import { BackIcon, ChevronDown, ChevronRight, CloseIcon, GripIcon, MoreIcon, Plu
 import { Bar, Checkbox, Chip, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay, releaseLabel } from '@/ui/format';
 import { ConnectionsBlock } from '@/ui/connections';
+import { exportList, shareFileName } from '@/domain/share';
+import { shareTextFile } from '@/lib/backup';
 import { splitTags } from '@/domain/characters';
 import { reviewLine } from '@/domain/reviews';
 import { Stars, VERDICT_COLORS, VerdictBadge } from '@/ui/review';
@@ -90,9 +92,22 @@ export default function CollectionScreen() {
     ...(status === 'reading' ? [{ label: 'Stop reading', go: () => act((db, l) => stopReading(db, l, c.id)) }] : []),
     { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
     { label: 'Choose a cover…', go: () => router.push({ pathname: '/covers', params: { collection: c.id } }) },
+    { label: 'Export to share…', go: () => shareList(c.id) },
     { label: 'Edit details, type or label', go: () => router.push(`/new?edit=${c.id}`) },
     { label: 'Delete…', go: () => confirmDelete(c), danger: true },
   ];
+
+  /** Sends this list (with everything inside it, but none of your reading) as a file someone can import. */
+  const shareList = async (id: string) => {
+    const file = exportList(lib, id);
+    if (!file) return;
+    try {
+      const ok = await shareTextFile(shareFileName(file.shared!.title), JSON.stringify(file, null, 2));
+      if (!ok) Alert.alert('Sharing isn’t available', 'This phone can’t open the share menu right now.');
+    } catch (e) {
+      Alert.alert('Couldn’t export', e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const confirmDelete = (col: Collection) => {
     Alert.alert(`Delete ${col.title}?`, 'Issues you read stay in your history unless you also delete the contents.', [
