@@ -5,13 +5,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { creditsSummary, splitNames } from '@/domain/credits';
 import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, type Library, walk, moveUnits } from '@/domain/library';
-import type { Collection, Entry } from '@/domain/types';
+import type { Collection, Entry, Review } from '@/domain/types';
 import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, startReading, stopReading, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight, CloseIcon, GripIcon, MoreIcon, PlusIcon } from '@/ui/icons';
-import { Bar, Checkbox, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
+import { Bar, Checkbox, Chip, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay, releaseLabel } from '@/ui/format';
 import { ConnectionsBlock } from '@/ui/connections';
+import { splitTags } from '@/domain/characters';
+import { reviewLine } from '@/domain/reviews';
+import { Stars, VERDICT_COLORS, VerdictBadge } from '@/ui/review';
 import { useFillDetails } from '@/ui/use-fill-details';
 import { C, F, KIND_COLOR, KIND_LABEL, KIND_NAME, kindLabel, publisherColor, STATUS_LABEL } from '@/ui/theme';
 
@@ -155,6 +158,13 @@ export default function CollectionScreen() {
             </View>
           </View>
           {c.description ? <Text style={[T.small, { paddingHorizontal: 16, paddingTop: 12, lineHeight: 20 }]}>{c.description}</Text> : null}
+          {splitTags(c.characters).length ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, paddingTop: 12 }}>
+              {splitTags(c.characters).map((t) => (
+                <Chip key={t} label={t} onPress={() => router.push({ pathname: '/character/[name]', params: { name: t } })} />
+              ))}
+            </View>
+          ) : null}
           <View style={{ paddingHorizontal: 16, paddingTop: 18 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Text style={T.num}>
@@ -173,6 +183,8 @@ export default function CollectionScreen() {
               />
             ) : next ? (
               <PrimaryButton label={`Continue · ${issueTitle(lib, next.issueId)}`} icon="play" onPress={goToNext} style={{ marginTop: 14 }} />
+            ) : status === 'completed' ? (
+              <ReviewStrip review={lib.reviews.get(c.id)} kind={KIND_NAME[c.kind]} onView={() => router.push({ pathname: '/review', params: { collection: c.id } })} onWrite={() => router.push({ pathname: '/review', params: { collection: c.id, edit: '1' } })} onAdd={() => setMenu(true)} />
             ) : (
               <PrimaryButton label={p.total ? 'All read — add more issues' : 'Add issues to start'} onPress={() => setMenu(true)} style={{ marginTop: 14 }} />
             )}
@@ -368,7 +380,13 @@ function EntryList(props: ListProps) {
           {isNext ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>{issue.status === 'reading' ? 'READING NOW' : 'NEXT UP'}</Text> : null}
           {notOutYet(issue) ? <Text style={[T.label, { color: C.indie, marginTop: 2, fontSize: 10 }]}>NOT OUT YET{issue.release_on ? ` · ${releaseLabel(issue.release_on).toUpperCase()}` : ''}</Text> : null}
           {entry.optional ? <Text style={[T.label, { color: C.dim, marginTop: 2, fontSize: 10 }]}>OPTIONAL · NOT COUNTED</Text> : null}
-          {read && issue.completed_at ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>Read {relativeDay(issue.completed_at)}</Text> : null}
+          {read && (issue.completed_at || lib.reviews.has(issue.id)) ? (
+            <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>
+              {issue.completed_at ? `Read ${relativeDay(issue.completed_at)}` : ''}
+              {issue.completed_at && lib.reviews.has(issue.id) ? ' · ' : ''}
+              {lib.reviews.has(issue.id) ? <Text style={{ color: VERDICT_COLORS[lib.reviews.get(issue.id)!.verdict].fg }}>{reviewLine(lib.reviews.get(issue.id)!)}</Text> : null}
+            </Text>
+          ) : null}
           {issue.notes && !read && !/^optional$/i.test(issue.notes.trim()) ? <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>{issue.notes}</Text> : null}
           {issue.writers && props.mainWriters?.length && !splitNames(issue.writers).some((w) => props.mainWriters!.includes(w)) ? (
             <Text style={[T.tiny, { fontSize: 11, marginTop: 2, color: C.indie }]}>Written by {issue.writers}</Text>
@@ -750,6 +768,8 @@ function DragHandle({ label, onStart, onMove, onEnd }: { label: string; onStart:
 }
 
 const s = StyleSheet.create({
+  reviewStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.borderStrong },
+  viewBtn: { minHeight: 36, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center' },
   topbar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 6, paddingTop: 4 },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   hero: { flexDirection: 'row', gap: 16, paddingHorizontal: 16, paddingTop: 4 },
@@ -776,3 +796,29 @@ const s = StyleSheet.create({
   group: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 14, borderBottomWidth: 1, borderBottomColor: C.divider },
   issueRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 50, borderBottomWidth: 1, borderBottomColor: C.divider },
 });
+
+/** On a finished list, where the Continue button was: your review in one line with View, or a button to write one. */
+function ReviewStrip({ review, kind, onView, onWrite, onAdd }: { review?: Review; kind: string; onView: () => void; onWrite: () => void; onAdd: () => void }) {
+  return (
+    <View style={{ marginTop: 14, gap: 8 }}>
+      {review ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="View your review" onPress={onView} style={s.reviewStrip}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <VerdictBadge verdict={review.verdict} small />
+              {review.score != null ? <Text style={{ fontFamily: F.cond, fontSize: 20, color: C.text }}>{review.score.toFixed(2)}</Text> : null}
+              <Stars score={review.score} size={13} />
+            </View>
+            <Text style={T.tiny}>Your review</Text>
+          </View>
+          <View style={s.viewBtn}><Text style={[T.small, { color: C.text }]}>View</Text></View>
+        </Pressable>
+      ) : (
+        <PrimaryButton label={"Review this " + kind} onPress={onWrite} />
+      )}
+      <Pressable accessibilityRole="button" onPress={onAdd} style={{ alignSelf: 'center', minHeight: 32, justifyContent: 'center' }}>
+        <Text style={T.tiny}>All read · add more issues</Text>
+      </Pressable>
+    </View>
+  );
+}

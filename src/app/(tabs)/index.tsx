@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { activeRoots, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats } from '@/domain/library';
-import { startReading } from '@/store/repo';
+import { saveReview, startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { FinishedCard } from '@/ui/finished-card';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
@@ -74,7 +74,20 @@ export default function Home() {
         {finished.map((id) => {
           const c = lib.collections.get(id);
           if (!c) return null;
-          return <FinishedCard key={id} title={c.title} publisher={c.publisher} issues={progress(lib, id).total} onOpen={() => router.push(`/collection/${id}`)} onClose={() => dismissFinished(id)} />;
+          return (
+            <FinishedCard
+              key={id}
+              title={c.title}
+              publisher={c.publisher}
+              issues={progress(lib, id).total}
+              review={lib.reviews.get(id)}
+              onOpen={() => router.push(`/collection/${id}`)}
+              onClose={() => dismissFinished(id)}
+              onSave={(f) => act((d, l) => saveReview(d, l, { collection_id: id }, f))}
+              onView={() => router.push({ pathname: '/review', params: { collection: id } })}
+              onStory={() => router.push({ pathname: '/review', params: { collection: id, share: '1' } })}
+            />
+          );
         })}
 
         {roots.length ? (

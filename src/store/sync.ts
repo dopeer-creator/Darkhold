@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { BOOLEAN_COLUMNS, COLUMNS, getMeta, putRow, setMeta, TABLES, type Table } from './db';
 
 // Parents before children, so foreign keys exist when rows arrive.
-const ORDER: Table[] = ['series', 'collections', 'issues', 'entries', 'read_log', 'links'];
+const ORDER: Table[] = ['series', 'collections', 'issues', 'entries', 'read_log', 'links', 'reviews'];
 
 /**
  * Two-way sync with Supabase. Phone changes upload first (Supabase stamps the time),

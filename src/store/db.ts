@@ -1,23 +1,24 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 /** Tables mirrored from Supabase. `dirty` = changed on this phone and not yet uploaded. */
-export const TABLES = ['series', 'issues', 'collections', 'entries', 'read_log', 'links'] as const;
+export const TABLES = ['series', 'issues', 'collections', 'entries', 'read_log', 'links', 'reviews'] as const;
 export type Table = (typeof TABLES)[number];
 
 /** Columns synced for each table (everything except user_id, which Supabase fills in). */
 export const COLUMNS: Record<Table, string[]> = {
   series: ['id', 'title', 'volume_year', 'publisher', 'cv_volume_id'],
-  issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id', 'upcoming', 'release_on'],
+  issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id', 'upcoming', 'release_on', 'characters'],
   collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes', 'label', 'planned', 'reading_now'],
   entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'heading', 'note', 'optional'],
   read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note'],
   links: ['id', 'kind', 'from_collection_id', 'from_issue_id', 'to_collection_id', 'to_issue_id', 'note'],
+  reviews: ['id', 'collection_id', 'issue_id', 'verdict', 'score', 'body', 'reviewed_on'],
 };
 
 /** Yes/no columns: stored as 0/1 here, true/false in Supabase. */
 export const BOOLEAN_COLUMNS = new Set(['on_hold', 'ongoing', 'planned', 'reading_now', 'optional', 'upcoming']);
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 /** Columns added after the first version, by schema version. */
 const ADDED: Record<number, [Table, string, string][]> = {
@@ -49,6 +50,8 @@ const ADDED: Record<number, [Table, string, string][]> = {
   ],
   // 8: the Reading now switch on a list.
   8: [['collections', 'reading_now', 'INTEGER NOT NULL DEFAULT 0']],
+  // 9: character tags on issues (the reviews table is below).
+  9: [['issues', 'characters', 'TEXT']],
 };
 
 /** Extra one-off work for a version, run inside the same transaction. */
@@ -61,6 +64,12 @@ const AFTER: Record<number, string[]> = {
   ],
   // Lists downloaded before the Reading now column existed here lost that switch: fetch them again.
   8: ["DELETE FROM meta WHERE key = 'pulled:collections'"],
+  // Reviews, and issues fetched again so their character tags arrive.
+  9: [
+    `CREATE TABLE IF NOT EXISTS reviews (id TEXT PRIMARY KEY NOT NULL, collection_id TEXT, issue_id TEXT, verdict TEXT NOT NULL, score REAL,
+      body TEXT, reviewed_on TEXT, updated_at TEXT, deleted_at TEXT, dirty INTEGER NOT NULL DEFAULT 0)`,
+    "DELETE FROM meta WHERE key = 'pulled:issues'",
+  ],
 };
 
 /**

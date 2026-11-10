@@ -1,4 +1,4 @@
-import type { Collection, CollectionStatus, Entry, Issue, Kind, Link, LinkKind, Series } from './types';
+import type { Collection, CollectionStatus, Entry, Issue, Kind, Link, LinkKind, Review, Series } from './types';
 
 /** Types whose lines show which run or event each issue belongs to, worked out automatically. */
 export const READING_KINDS: Kind[] = ['crisis', 'era'];
@@ -18,6 +18,8 @@ export interface Library {
   slicedInto: Map<string, string[]>;
   /** Connections between lists and issues that aren't "inside" (follows, background, tie-in). */
   links: Link[];
+  /** Your review of each list or issue, by the list's or issue's id. */
+  reviews: Map<string, Review>;
 }
 
 export function buildLibrary(rows: {
@@ -26,7 +28,16 @@ export function buildLibrary(rows: {
   collections: Collection[];
   entries: Entry[];
   links?: Link[];
+  reviews?: Review[];
 }): Library {
+  const reviews = new Map<string, Review>();
+  // One review per list or issue; if two ever exist, the later day wins.
+  for (const r of rows.reviews ?? []) {
+    const key = r.collection_id ?? r.issue_id;
+    if (!key) continue;
+    const had = reviews.get(key);
+    if (!had || (r.reviewed_on ?? '') >= (had.reviewed_on ?? '')) reviews.set(key, { ...r, score: r.score == null ? null : Number(r.score) });
+  }
   const children = new Map<string, Entry[]>();
   const parents = new Map<string, string[]>();
   const slicedInto = new Map<string, string[]>();
@@ -60,6 +71,7 @@ export function buildLibrary(rows: {
     parents,
     slicedInto,
     links: rows.links ?? [],
+    reviews,
   };
 }
 

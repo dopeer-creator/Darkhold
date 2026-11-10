@@ -4,6 +4,7 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { collectionStatus, coverFor, isNested, issueTitle, progress } from '@/domain/library';
+import { allCharacters, splitTags } from '@/domain/characters';
 import { seriesLabel } from '@/domain/series';
 import type { Kind } from '@/domain/types';
 import { setIssueStatus } from '@/store/repo';
@@ -53,9 +54,14 @@ export default function LibraryScreen() {
   const [query, setQuery] = useState('');
   const [pubs, setPubs] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
+  const [chars, setChars] = useState<string[]>([]);
+  const [allChars, setAllChars] = useState(false);
+  const characters = useMemo(() => allCharacters(lib), [lib]);
+  /** Tagged with any ticked character (or none ticked). */
+  const charOk = (text: string | null | undefined) => !chars.length || splitTags(text).some((t) => chars.includes(t.toLowerCase()));
   const [filtersOpen, setFiltersOpen] = useState(false);
   const toggle = (set: (fn: (v: string[]) => string[]) => void, key: string) => set((v) => (v.includes(key) ? v.filter((k) => k !== key) : [...v, key]));
-  const active = pubs.length + statuses.length;
+  const active = pubs.length + statuses.length + chars.length;
   const { width } = useWindowDimensions();
   const tile = Math.floor((Math.min(width, 600) - 32 - 24) / 3);
 
@@ -66,10 +72,12 @@ export default function LibraryScreen() {
       .filter((c) => (tab === 'all' ? !isNested(lib, c.id) || !!query.trim() : tab === c.kind))
       .filter((c) => pubOk(pubs, c.publisher))
       .filter((c) => !statuses.length || statuses.includes(collectionStatus(lib, c.id)))
+      .filter((c) => charOk(c.characters))
       .filter((c) => !q || [c.title, c.writer, c.artist, c.characters, c.publisher].some((v) => v?.toLowerCase().includes(q)))
       .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id) }))
       .sort((a, b) => rank(a.st) - rank(b.st) || a.c.title.localeCompare(b.c.title));
-  }, [lib, tab, query, pubs, statuses]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lib, tab, query, pubs, statuses, chars]);
 
   const seriesRows = useMemo(() => {
     if (tab !== 'series') return [];
@@ -96,8 +104,10 @@ export default function LibraryScreen() {
       .filter((x) => !q || x.title.toLowerCase().includes(q))
       .filter((x) => pubOk(pubs, x.series?.publisher ?? null))
       .filter((x) => !statuses.length || statuses.some((st) => ISSUE_STATUS[st]?.(x.i.status)))
+      .filter((x) => charOk(x.i.characters))
       .sort((a, b) => (a.series?.title ?? '').localeCompare(b.series?.title ?? '') || (a.series?.volume_year ?? 0) - (b.series?.volume_year ?? 0) || num(a.i.number) - num(b.i.number));
-  }, [lib, tab, query, pubs, statuses]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lib, tab, query, pubs, statuses, chars]);
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
@@ -106,7 +116,7 @@ export default function LibraryScreen() {
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
           <View style={[s.search, { flex: 1, marginTop: 0 }]}>
             <SearchIcon size={18} />
-            <TextInput value={query} onChangeText={setQuery} placeholder="Search runs, events, issues…" placeholderTextColor={C.dim} style={s.searchInput} accessibilityLabel="Search library" />
+            <TextInput value={query} onChangeText={setQuery} placeholder="Search runs, events, characters…" placeholderTextColor={C.dim} style={s.searchInput} accessibilityLabel="Search library" />
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel={`Filter${active ? `, ${active} on` : ''}`} accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((o) => !o)} style={[s.filterBtn, active || filtersOpen ? { borderColor: C.text } : null]}>
             <FilterIcon size={18} color={active ? C.text : C.muted} />
@@ -141,18 +151,34 @@ export default function LibraryScreen() {
           <View style={s.chipRow}>
             {(tab === 'issues' ? ISSUE_STATUSES : STATUSES).map((st) => <Chip key={st.key} label={st.label} active={statuses.includes(st.key)} onPress={() => toggle(setStatuses, st.key)} />)}
           </View>
+          {characters.length ? (
+            <>
+              <Text style={[T.label, { marginTop: 6 }]}>CHARACTER OR TEAM</Text>
+              <View style={s.chipRow}>
+                {(allChars ? characters : characters.slice(0, 12)).map((ch) => (
+                  <Chip key={ch.name} label={ch.name} active={chars.includes(ch.name.toLowerCase())} onPress={() => toggle(setChars, ch.name.toLowerCase())} />
+                ))}
+                {characters.length > 12 ? <Chip label={allChars ? 'Fewer' : `All ${characters.length}…`} onPress={() => setAllChars((v) => !v)} /> : null}
+              </View>
+            </>
+          ) : null}
           <Text style={T.tiny}>Pick as many as you like: DC + On hold shows DC lists that are on hold.</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-            <Pressable accessibilityRole="button" onPress={() => { setPubs([]); setStatuses([]); }} style={[s.panelBtn, { flex: 1 }]}><Text style={T.small}>Clear</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={() => { setPubs([]); setStatuses([]); setChars([]); }} style={[s.panelBtn, { flex: 1 }]}><Text style={T.small}>Clear</Text></Pressable>
             <Pressable accessibilityRole="button" onPress={() => setFiltersOpen(false)} style={[s.panelBtn, { flex: 1, backgroundColor: C.text, borderColor: C.text }]}><Text style={[T.small, { color: C.onLight, fontFamily: F.semibold }]}>Done</Text></Pressable>
           </View>
         </View>
       ) : active ? (
         <View style={s.activeRow}>
           <Text style={[T.small, { flex: 1 }]} numberOfLines={1}>
-            {[...PUBLISHERS.filter((p) => pubs.includes(p.key)).map((p) => p.label), ...[...STATUSES, ...ISSUE_STATUSES].filter((st) => statuses.includes(st.key)).map((st) => st.label)].filter((v, i, all) => all.indexOf(v) === i).join(' · ')}
+            {[...PUBLISHERS.filter((p) => pubs.includes(p.key)).map((p) => p.label), ...[...STATUSES, ...ISSUE_STATUSES].filter((st) => statuses.includes(st.key)).map((st) => st.label), ...characters.filter((ch) => chars.includes(ch.name.toLowerCase())).map((ch) => ch.name)].filter((v, i, all) => all.indexOf(v) === i).join(' · ')}
           </Text>
-          <Pressable accessibilityRole="button" onPress={() => { setPubs([]); setStatuses([]); }} hitSlop={8}><Text style={[T.small, { color: C.dc }]}>Clear</Text></Pressable>
+          {chars.length === 1 ? (
+            <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/character/[name]', params: { name: characters.find((ch) => ch.name.toLowerCase() === chars[0])?.name ?? chars[0] } })} hitSlop={8}>
+              <Text style={[T.small, { color: C.dc }]}>Page ›</Text>
+            </Pressable>
+          ) : null}
+          <Pressable accessibilityRole="button" onPress={() => { setPubs([]); setStatuses([]); setChars([]); }} hitSlop={8}><Text style={[T.small, { color: C.dc }]}>Clear</Text></Pressable>
         </View>
       ) : (
         <View style={{ height: 12 }} />

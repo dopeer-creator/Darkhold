@@ -7,6 +7,7 @@ import type { Collection, Kind } from '@/domain/types';
 import { changeKind, createCollection, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { CloseIcon } from '@/ui/icons';
+import { TagEditor } from '@/ui/tag-editor';
 import { Checkbox, Chip, PrimaryButton, T } from '@/ui/parts';
 import { C, F, KIND_HINT, KIND_LABEL, KIND_NAME, KINDS } from '@/ui/theme';
 
@@ -82,7 +83,10 @@ function CollectionForm() {
           </View>
           {kind !== 'crisis' ? <Field label="Writer" value={f.writer} onChange={set('writer')} /> : null}
           {kind !== 'crisis' && kind !== 'era' ? <Field label="Artist (optional)" value={f.artist} onChange={set('artist')} /> : null}
-          <Field label="Main character or team" value={f.characters} onChange={set('characters')} />
+          <View style={{ gap: 6 }}>
+            <Text style={T.label}>CHARACTERS OR TEAMS</Text>
+            <TagEditor value={f.characters} onChange={(v) => setF((x) => ({ ...x, characters: v }))} />
+          </View>
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-end' }}>
             <View style={{ flex: 1 }}><Field label="Start year" value={f.start_year?.toString()} onChange={year('start_year')} numeric /></View>
             {f.ongoing ? (

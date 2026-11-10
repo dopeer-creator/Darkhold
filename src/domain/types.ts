@@ -38,6 +38,8 @@ export interface Issue {
   upcoming?: boolean;
   /** Known release day ("2027-02-10") or month ("2027-02"); null when there's no date yet. */
   release_on?: string | null;
+  /** Characters or teams in this issue, comma-separated ("Batman, Superman"). */
+  characters?: string | null;
 }
 
 export interface Collection {
@@ -109,6 +111,21 @@ export interface ReadLog {
   date_precision: DatePrecision;
   rating: number | null;
   note: string | null;
+}
+
+export type Verdict = 'bad' | 'forgettable' | 'good_enough' | 'generational' | 'peak';
+
+/** Your review of one list (run, event, reading order…) or one issue. */
+export interface Review {
+  id: string;
+  collection_id: string | null;
+  issue_id: string | null;
+  verdict: Verdict;
+  /** Out of 10, up to two decimals; the stars are this halved. */
+  score: number | null;
+  body: string | null;
+  /** The day you wrote it ("2026-11-10"). */
+  reviewed_on: string | null;
 }
 
 export type CollectionStatus = 'not_started' | 'planned' | 'reading' | 'on_hold' | 'completed';

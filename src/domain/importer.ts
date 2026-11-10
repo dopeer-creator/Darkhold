@@ -1,5 +1,5 @@
 import type { Library } from './library';
-import type { Collection, Entry, Issue, Link, ReadLog, Series } from './types';
+import type { Collection, Entry, Issue, Link, ReadLog, Review, Series } from './types';
 
 /** The JSON file format Darkhold exports and imports. Ids inside it are only used to connect rows. */
 export interface ExportFile {
@@ -12,6 +12,8 @@ export interface ExportFile {
   read_log: ReadLog[];
   /** Connections between lists and issues (files from before connections existed have none). */
   links?: Link[];
+  /** Your reviews (older files have none). */
+  reviews?: Review[];
   /** When the backup was made. */
   exported_at?: string;
 }
@@ -25,6 +27,7 @@ export interface ImportPlan {
   entries: Entry[];
   read_log: ReadLog[];
   links: Link[];
+  reviews: Review[];
   reused: { series: number; issues: number; collections: number };
 }
 
@@ -34,7 +37,7 @@ export interface ImportPlan {
  * Importing the same file twice changes nothing the second time.
  */
 export function planImport(lib: Library, file: ExportFile, newId: () => string): ImportPlan {
-  const plan: ImportPlan = { series: [], issues: [], markRead: [], collections: [], entries: [], read_log: [], links: [], reused: { series: 0, issues: 0, collections: 0 } };
+  const plan: ImportPlan = { series: [], issues: [], markRead: [], collections: [], entries: [], read_log: [], links: [], reviews: [], reused: { series: 0, issues: 0, collections: 0 } };
   const seriesKey = (s: Pick<Series, 'title' | 'volume_year'>) => `${s.title.trim().toLowerCase()}|${s.volume_year ?? ''}`;
 
   const seriesByKey = new Map([...lib.series.values()].map((s) => [seriesKey(s), s.id]));
@@ -124,6 +127,17 @@ export function planImport(lib: Library, file: ExportFile, newId: () => string):
     if (haveLinks.has(linkKey(mapped))) continue;
     haveLinks.add(linkKey(mapped));
     plan.links.push(mapped);
+  }
+
+  // Reviews, for lists and issues that don't have one here yet.
+  const reviewed = new Set(lib.reviews.keys());
+  for (const r of file.reviews ?? []) {
+    const collection_id = r.collection_id ? (collMap.get(r.collection_id) ?? null) : null;
+    const issue_id = !collection_id && r.issue_id ? (issueMap.get(r.issue_id) ?? null) : null;
+    const key = collection_id ?? issue_id;
+    if (!key || reviewed.has(key)) continue;
+    reviewed.add(key);
+    plan.reviews.push({ ...r, id: newId(), collection_id, issue_id });
   }
 
   // History rows only for issues this import adds or newly marks read, so a re-import adds none.

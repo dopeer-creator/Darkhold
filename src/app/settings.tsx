@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { ExportFile } from '@/domain/importer';
 import { pickTextFile, saveTextFile } from '@/lib/backup';
 import { getComicVineKey, setComicVineKey, testComicVineKey } from '@/lib/comicvine';
+import { getInstagramAppId, setInstagramAppId } from '@/lib/share-review';
 import { exportFile, importFile, today } from '@/store/repo';
 import { supabaseConfigured } from '@/lib/supabase';
 import { useStore } from '@/store/store';
@@ -22,6 +23,8 @@ import { C, F } from '@/ui/theme';
 export default function Settings() {
   const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, stopJob, act } = useStore();
   const [backupStatus, setBackupStatus] = useState('');
+  const [igId, setIgId] = useState('');
+  const [savedIgId, setSavedIgId] = useState<string | null>(null);
   const db = useSQLiteContext();
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState('');
@@ -53,6 +56,7 @@ export default function Settings() {
 
   useEffect(() => {
     getComicVineKey(db).then((k) => setSavedKey(k));
+    getInstagramAppId(db).then((k) => setSavedIgId(k || null));
   }, [db]);
 
   const saveKey = async () => {
@@ -211,6 +215,35 @@ export default function Settings() {
           </View>
           {job?.kind === 'covers' ? <Text style={T.tiny}>{job.busy ? `Finding covers · ${job.status}. You can leave this page; it keeps going.` : job.status}</Text> : null}
           {coverStatus ? <Text style={T.tiny}>{coverStatus}</Text> : null}
+        </View>
+
+        <View style={{ gap: 8 }}>
+          <SectionTitle>Instagram stories</SectionTitle>
+          <Text style={T.tiny}>
+            {savedIgId
+              ? 'Add to story opens Instagram’s story editor with your review picture already in it.'
+              : 'Without this, Add to story opens the share menu: pick Instagram, then Story. Instagram only opens its story editor straight away for apps that send a Facebook app ID (free to make at developers.facebook.com).'}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TextInput value={igId} onChangeText={setIgId} placeholder={savedIgId ? `App ID ${savedIgId} saved · replace` : 'Facebook app ID (numbers)'} placeholderTextColor={C.faint} keyboardType="number-pad" style={s.input} accessibilityLabel="Facebook app ID" />
+            <Pressable
+              accessibilityRole="button"
+              onPress={async () => {
+                if (!/^\d{5,20}$/.test(igId.trim())) return Alert.alert('That isn’t an app ID', 'It’s the long number shown at the top of your app on developers.facebook.com.');
+                await setInstagramAppId(db, igId);
+                setSavedIgId(igId.trim());
+                setIgId('');
+              }}
+              disabled={!igId.trim()}
+              style={[s.smallBtn, { height: 48 }, !igId.trim() ? { opacity: 0.4 } : null]}>
+              <Text style={[T.small, { color: C.text }]}>Save</Text>
+            </Pressable>
+          </View>
+          {savedIgId ? (
+            <Pressable onPress={async () => { await setInstagramAppId(db, ''); setSavedIgId(null); }} style={{ minHeight: 32, justifyContent: 'center' }}>
+              <Text style={[T.small, { color: C.dc }]}>Remove the app ID</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={{ gap: 8 }}>

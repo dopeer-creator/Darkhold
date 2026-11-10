@@ -46,6 +46,8 @@ export default function RootLayout() {
             <Stack.Screen name="part-of" options={{ presentation: 'modal' }} />
             <Stack.Screen name="connect" options={{ presentation: 'modal' }} />
             <Stack.Screen name="merge-series" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="review" />
+            <Stack.Screen name="character/[name]" />
           </Stack>
           <JobBanner />
         </StoreProvider>

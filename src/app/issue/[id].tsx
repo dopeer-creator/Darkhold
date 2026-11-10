@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { issueTitle, notOutYet } from '@/domain/library';
 import type { Issue, IssueStatus } from '@/domain/types';
 import { findVolume, getComicVineKey, volumeCovers } from '@/lib/comicvine';
-import { daysAgo, mergeSeries, moveIssue, removeEntry, setIssueStatus, setOptional, setReadDate, setRelease, today, updateIssue, updateSeries } from '@/store/repo';
+import { daysAgo, saveReview, mergeSeries, moveIssue, removeEntry, setIssueStatus, setOptional, setReadDate, setRelease, today, updateIssue, updateSeries } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
 import { Chip, Cover, GhostButton, SectionTitle, T } from '@/ui/parts';
@@ -15,6 +15,8 @@ import { relativeDay, releaseLabel } from '@/ui/format';
 import { useFillDetails } from '@/ui/use-fill-details';
 import { pickDay } from '@/ui/pick-day';
 import { ConnectionsBlock } from '@/ui/connections';
+import { ButtonRow, ReviewForm, ReviewSummary } from '@/ui/review';
+import { TagEditor } from '@/ui/tag-editor';
 import { C, F, KIND_COLOR, kindLabel } from '@/ui/theme';
 
 const STATUSES: { key: IssueStatus; label: string }[] = [
@@ -23,7 +25,7 @@ const STATUSES: { key: IssueStatus; label: string }[] = [
   { key: 'read', label: 'Read' },
 ];
 
-/** One issue: status, when you read it (or "date unknown"), rating, notes, cover, and where it appears. */
+/** One issue: status, when you read it (or "date unknown"), your review, characters, notes, cover, and where it appears. */
 export default function IssueScreen() {
   const { id, entry, parent } = useLocalSearchParams<{ id: string; entry?: string; parent?: string }>();
   const { lib, act } = useStore();
@@ -38,6 +40,8 @@ export default function IssueScreen() {
   const [editTitle, setEditTitle] = useState(startSeries?.title ?? '');
   const [editYear, setEditYear] = useState(startSeries?.volume_year ? String(startSeries.volume_year) : '');
   const fill = useFillDetails();
+  const [reviewing, setReviewing] = useState(false);
+  const review = issue ? lib.reviews.get(issue.id) : undefined;
 
   useEffect(() => {
     getComicVineKey(db).then((k) => setHasKey(!!k));
@@ -214,23 +218,33 @@ export default function IssueScreen() {
             </View>
           ) : null}
 
-          <View style={{ gap: 8 }}>
-            <SectionTitle>Your rating</SectionTitle>
-            <View style={{ flexDirection: 'row', gap: 4 }}>
-              {[1, 2, 3, 4, 5].map((n) => {
-                const on = (issue.rating ?? 0) >= n * 2;
-                return (
-                  <Pressable
-                    key={n}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${n} star${n > 1 ? 's' : ''}`}
-                    onPress={() => act((d, l) => updateIssue(d, l, issue.id, { rating: issue.rating === n * 2 ? null : n * 2 }))}
-                    style={s.star}>
-                    <Text style={{ fontSize: 28, color: on ? '#E8B04B' : C.faint }}>{on ? '★' : '☆'}</Text>
-                  </Pressable>
-                );
-              })}
+          {issue.status === 'read' ? (
+            <View style={{ gap: 10 }}>
+              <SectionTitle>Your review</SectionTitle>
+              {review && !reviewing ? (
+                <>
+                  <ReviewSummary review={review} lines={4} />
+                  <ButtonRow
+                    items={[
+                      { label: 'View', onPress: () => router.push({ pathname: '/review', params: { issue: issue.id } }) },
+                      { label: 'Edit', onPress: () => setReviewing(true) },
+                      { label: 'Add to story', onPress: () => router.push({ pathname: '/review', params: { issue: issue.id, share: '1' } }), strong: true },
+                    ]}
+                  />
+                </>
+              ) : (
+                <ReviewForm
+                  initial={review}
+                  onSave={(f) => act((d, l) => saveReview(d, l, { issue_id: issue.id }, f)).then(() => setReviewing(false))}
+                  onCancel={review ? () => setReviewing(false) : undefined}
+                />
+              )}
             </View>
+          ) : null}
+
+          <View style={{ gap: 8 }}>
+            <SectionTitle>Characters</SectionTitle>
+            <TagEditor value={issue.characters} onChange={(v) => act((d, l) => updateIssue(d, l, issue.id, { characters: v }))} />
           </View>
 
           <View style={{ gap: 8 }}>
