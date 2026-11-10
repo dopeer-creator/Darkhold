@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { collectionStatus, coverFor, isNested, lastRead, reviewDay } from '@/domain/library';
+import { collectionStatus, coverFor, isNested, reviewDay, finishedOn } from '@/domain/library';
 import { VERDICTS } from '@/domain/reviews';
 import type { Review, Verdict } from '@/domain/types';
 import { useStore } from '@/store/store';
@@ -12,7 +12,7 @@ import { Chip, Cover, T } from '@/ui/parts';
 import { Stars, VERDICT_COLORS, VerdictBadge } from '@/ui/review';
 import { RecapView } from '@/ui/recap';
 import { reviewTarget } from '@/ui/story-card';
-import { C, F } from '@/ui/theme';
+import { C, F, kindLabel } from '@/ui/theme';
 
 type Kind = 'all' | 'lists' | 'issues';
 type Sort = 'newest' | 'best';
@@ -46,19 +46,19 @@ export default function ReviewsScreen() {
     [all, kind, verdict, sort, lib],
   );
 
-  // Finished top-level lists with no review yet, most recently finished first.
+  // Every finished list with no review yet (runs and events inside bigger lists too), the ones you
+  // finished most recently first: reviewing those counts in this week's or month's recap. Lists
+  // finished on an unknown date come last.
   const waiting = useMemo(
     () =>
       [...lib.collections.values()]
-        .filter((c) => !isNested(lib, c.id) && !lib.reviews.has(c.id) && collectionStatus(lib, c.id) === 'completed')
-        .map((c) => {
-          const last = lastRead(lib, c.id);
-          return { c, day: last ? (lib.issues.get(last.issueId)?.completed_at ?? '') : '' };
-        })
-        .sort((a, b) => b.day.localeCompare(a.day))
-        .slice(0, 12),
+        .filter((c) => !lib.reviews.has(c.id) && collectionStatus(lib, c.id) === 'completed')
+        .map((c) => ({ c, day: finishedOn(lib, c.id) }))
+        .sort((a, b) => (b.day ?? '').localeCompare(a.day ?? '') || Number(isNested(lib, a.c.id)) - Number(isNested(lib, b.c.id)) || a.c.title.localeCompare(b.c.title)),
     [lib],
   );
+  const [allWaiting, setAllWaiting] = useState(false);
+  const finishedLabel = (day: string | null) => (day ? `Finished ${relativeDay(day)}` : 'Date unknown');
 
   const open = (r: Review) => router.push({ pathname: '/review', params: r.collection_id ? { collection: r.collection_id } : { issue: r.issue_id! } });
 
@@ -67,16 +67,36 @@ export default function ReviewsScreen() {
 
       {waiting.length ? (
         <View style={{ gap: 8 }}>
-          <Text style={T.label}>FINISHED, NOT REVIEWED</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-            {waiting.map(({ c }) => (
-              <Pressable key={c.id} accessibilityRole="button" accessibilityLabel={`Review ${c.title}`} onPress={() => router.push({ pathname: '/review', params: { collection: c.id, edit: '1' } })} style={{ width: 76, gap: 4 }}>
-                <Cover title={c.title} publisher={c.publisher} width={76} uri={coverFor(lib, c.id)} done />
-                <Text numberOfLines={2} style={[T.tiny, { color: C.text }]}>{c.title}</Text>
-                <Text style={[T.tiny, { color: C.dc }]}>Review</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={T.label}>FINISHED, NOT REVIEWED · {waiting.length}</Text>
+            <Pressable accessibilityRole="button" onPress={() => setAllWaiting((v) => !v)} hitSlop={8}>
+              <Text style={[T.small, { color: C.dc }]}>{allWaiting ? 'Show less' : 'Show all'}</Text>
+            </Pressable>
+          </View>
+          {allWaiting ? (
+            <View>
+              {waiting.map(({ c, day }) => (
+                <Pressable key={c.id} accessibilityRole="button" onPress={() => router.push({ pathname: '/review', params: { collection: c.id, edit: '1' } })} style={s.waitRow}>
+                  <Cover title={c.title} publisher={c.publisher} width={36} uri={coverFor(lib, c.id)} done />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[T.body, { fontSize: 14 }]} numberOfLines={2}>{c.title}</Text>
+                    <Text style={[T.tiny, day ? null : { color: C.faint }]}>{kindLabel(c)} · {finishedLabel(day)}</Text>
+                  </View>
+                  <Text style={[T.small, { color: C.dc }]}>Review</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+              {waiting.slice(0, 10).map(({ c, day }) => (
+                <Pressable key={c.id} accessibilityRole="button" accessibilityLabel={`Review ${c.title}`} onPress={() => router.push({ pathname: '/review', params: { collection: c.id, edit: '1' } })} style={{ width: 76, gap: 4 }}>
+                  <Cover title={c.title} publisher={c.publisher} width={76} uri={coverFor(lib, c.id)} done />
+                  <Text numberOfLines={2} style={[T.tiny, { color: C.text }]}>{c.title}</Text>
+                  <Text numberOfLines={1} style={[T.tiny, { fontSize: 10, color: day ? C.dc : C.faint }]}>{day ? relativeDay(day) : 'Date unknown'}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
         </View>
       ) : null}
 
@@ -155,5 +175,6 @@ const s = StyleSheet.create({
   seg: { flexGrow: 1, height: 34, borderRadius: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
   segOn: { backgroundColor: C.text, borderColor: C.text },
   segText: { fontFamily: F.medium, fontSize: 12.5, color: C.muted },
+  waitRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.divider },
   row: { flexDirection: 'row', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.divider },
 });
