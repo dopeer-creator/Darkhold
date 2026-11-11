@@ -62,12 +62,13 @@ export function RecapView() {
 
       <View style={{ gap: 6 }}>
         <Text style={T.label}>{kind === 'week' || kind === 'month' ? 'ISSUES PER DAY' : kind === 'year' ? 'ISSUES PER MONTH' : 'ISSUES PER YEAR'}</Text>
-        <BarChart recap={r} max={max} gap={kind === 'month' ? 2 : 6} />
+        <BarChart key={`${kind}:${r.period.label}`} recap={r} max={max} gap={kind === 'month' ? 2 : 6} />
         <View style={{ flexDirection: 'row', gap: kind === 'month' ? 2 : 6 }}>
           {r.period.buckets.map((b, i) => (
             <Text key={i} style={[T.tiny, { flex: 1, fontSize: 10, textAlign: 'center' }]} numberOfLines={1}>{b.label}</Text>
           ))}
         </View>
+        {r.issuesRead ? <Text style={[T.tiny, { color: C.faint, fontSize: 11 }]}>Hold a bar to see it, then tap the label to open it in History.</Text> : null}
       </View>
 
       {r.topCharacters.length || r.topWriters.length ? (
@@ -128,6 +129,12 @@ export function RecapView() {
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+/** Opens History at the bar's day, month, or (for a year bar) its latest reading day. */
+function openInHistory(kind: PeriodKind, start: string) {
+  const params = kind === 'week' || kind === 'month' ? { day: start } : kind === 'year' ? { month: start.slice(0, 7) } : { year: start.slice(0, 4) };
+  router.push({ pathname: '/history', params });
+}
+
 /** What one bar stands for: "Tue 10 Nov", "10 Nov", "November", "2026". */
 function bucketName(kind: PeriodKind, start: string) {
   const d = new Date(`${start}T12:00:00`);
@@ -140,7 +147,7 @@ function bucketName(kind: PeriodKind, start: string) {
 
 /**
  * The chart. Press and hold (or slide along it) to see how many issues you read on that day, in that
- * month or that year; let go and the label disappears.
+ * month or that year. The label stays when you let go; tap it to open that day (or month) in History.
  */
 function BarChart({ recap: r, max, gap }: { recap: Recap; max: number; gap: number }) {
   const [active, setActive] = useState<number | null>(null);
@@ -159,8 +166,8 @@ function BarChart({ recap: r, max, gap }: { recap: Recap; max: number; gap: numb
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (e) => pick(e.nativeEvent.locationX),
       onPanResponderMove: (e) => pick(e.nativeEvent.locationX),
-      onPanResponderRelease: () => setActive(null),
-      onPanResponderTerminate: () => setActive(null),
+      onPanResponderRelease: () => undefined,
+      onPanResponderTerminate: () => undefined,
     });
   });
   const n = r.perBucket.length;
@@ -169,17 +176,22 @@ function BarChart({ recap: r, max, gap }: { recap: Recap; max: number; gap: numb
     <View>
       <View style={{ height: 26, justifyContent: 'flex-end' }}>
         {shown != null ? (
-          <View style={[s.tip, { left: `${Math.min(78, Math.max(0, ((shown + 0.5) / n) * 100 - 11))}%` }]}>
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel={`Open ${bucketName(r.period.kind, r.period.buckets[shown].start)} in History`}
+            onPress={() => openInHistory(r.period.kind, r.period.buckets[shown].start)}
+            hitSlop={8}
+            style={[s.tip, { left: `${Math.min(70, Math.max(0, ((shown + 0.5) / n) * 100 - 15))}%` }]}>
             <Text style={[T.tiny, { color: C.onLight, fontFamily: F.semibold }]} numberOfLines={1}>
-              {r.perBucket[shown]} issue{r.perBucket[shown] === 1 ? '' : 's'} · {bucketName(r.period.kind, r.period.buckets[shown].start)}
+              {r.perBucket[shown]} issue{r.perBucket[shown] === 1 ? '' : 's'} · {bucketName(r.period.kind, r.period.buckets[shown].start)}  ›
             </Text>
-          </View>
+          </Pressable>
         ) : null}
       </View>
       <View
         {...pan.panHandlers}
         onLayout={(e) => (width.current = e.nativeEvent.layout.width)}
-        accessibilityLabel="Issues read chart. Press and hold a bar to see its count."
+        accessibilityLabel="Issues read chart. Press and hold a bar to see its count, then tap the label to open it in History."
         style={{ flexDirection: 'row', alignItems: 'flex-end', gap, height: 90 }}>
         {r.perBucket.map((v, i) => (
           <View key={i} pointerEvents="none" style={{ flex: 1, height: Math.max(2, (v / max) * 86), borderRadius: 2, backgroundColor: i === shown ? C.text : v ? STAR : C.border }} />
