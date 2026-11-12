@@ -505,3 +505,41 @@ export function reviewDay(lib: Library, r: Review): string | null {
   if (r.collection_id) return lib.collections.has(r.collection_id) ? finishedOn(lib, r.collection_id) : null;
   return r.issue_id ? (lib.issues.get(r.issue_id)?.completed_at ?? null) : null;
 }
+
+/** A chapter of a list, as "Add issues" offers it: where new lines go to land at its end, and the runs or events its issues are part of. */
+export interface ChapterSpot {
+  headingId: string;
+  title: string;
+  /** The chapter's last line (or the heading itself when it's empty): new lines go right after it. */
+  afterEntryId: string;
+  /** Runs and events its issues belong to, the latest last. */
+  partOf: string[];
+}
+
+export function chapterSpots(lib: Library, parentId: string): ChapterSpot[] {
+  const list = lib.children.get(parentId) ?? [];
+  const out: ChapterSpot[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const h = list[i];
+    if (!h.heading) continue;
+    let j = i + 1;
+    while (j < list.length && !list[j].heading) j++;
+    const vias: string[] = [];
+    for (const e of list.slice(i + 1, j)) {
+      const via = e.child_issue_id ? (e.part_of ?? e.via_collection_id ?? null) : null;
+      if (!via || !lib.collections.has(via)) continue;
+      if (vias.includes(via)) vias.splice(vias.indexOf(via), 1);
+      vias.push(via);
+    }
+    out.push({ headingId: h.id, title: h.heading, afterEntryId: list[j - 1].id, partOf: vias });
+  }
+  return out;
+}
+
+/** Lists ordered by their latest read issue, newest first (`readLog` comes newest first). Lists with no reads keep their order, last. */
+export function byLatestRead(lib: Library, ids: string[], readLog: { issue_id: string }[]): string[] {
+  const rank = new Map<string, number>();
+  readLog.forEach((l, i) => { if (!rank.has(l.issue_id)) rank.set(l.issue_id, i); });
+  const latest = new Map(ids.map((id) => [id, Math.min(Infinity, ...walk(lib, id).map((s) => rank.get(s.issueId) ?? Infinity))]));
+  return ids.map((id, i) => ({ id, i })).sort((a, b) => latest.get(a.id)! - latest.get(b.id)! || a.i - b.i).map((x) => x.id);
+}

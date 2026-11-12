@@ -41,7 +41,6 @@ export default function AddSheet() {
             </Pressable>
           ))}
         </View>
-        <Text style={[T.tiny, { marginTop: 10 }]}>Not sure? Pick the closest one. You can change the type any time. A story inside a run is a chapter heading in that run.</Text>
         <Pressable accessibilityRole="button" onPress={importShared} style={({ pressed }) => [s.importRow, pressed ? { opacity: 0.7 } : null]}>
           <View style={{ flex: 1 }}>
             <Text style={[T.body, { fontFamily: F.medium }]}>Import a shared list</Text>

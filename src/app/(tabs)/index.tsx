@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { activeRoots, connections, coverFor, issueTitle, nextUp, progress, shownProgress, rootsWithStatus, stats } from '@/domain/library';
+import { activeRoots, byLatestRead, connections, coverFor, issueTitle, nextUp, progress, shownProgress, rootsWithStatus, stats } from '@/domain/library';
 import { saveReview, startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { FinishedCard } from '@/ui/finished-card';
@@ -15,7 +15,7 @@ import { C, F, publisherColor, kindLabel } from '@/ui/theme';
 
 export default function Home() {
   const { lib, readLog, sync, ready, session, act, finished, dismissFinished } = useStore();
-  const roots = useMemo(() => activeRoots(lib), [lib]);
+  const roots = useMemo(() => byLatestRead(lib, activeRoots(lib), readLog), [lib, readLog]);
   const totals = useMemo(() => stats(lib), [lib]);
   const [recentAll, setRecentAll] = useState(false);
   const [holdAll, setHoldAll] = useState(false);

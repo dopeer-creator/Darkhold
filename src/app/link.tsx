@@ -36,7 +36,10 @@ export default function LinkExisting() {
         </Pressable>
         <Text style={s.title}>Link into {target?.title}</Text>
       </View>
-      <Text style={[T.small, { paddingHorizontal: 16 }]}>Linked, not copied: reading it here updates it everywhere.</Text>
+      <Pressable accessibilityRole="button" onPress={() => router.replace(`/new?kind=event&parent=${parent}`)} style={s.create}>
+        <Text style={[T.bodyMedium, { color: C.text }]}>＋ Create a new run or event</Text>
+      </Pressable>
+      <Text style={[T.small, { paddingHorizontal: 16, marginTop: 14 }]}>Or pick one you already have. Reading it here counts everywhere.</Text>
       <TextInput value={q} onChangeText={setQ} placeholder="Search" placeholderTextColor={C.dim} style={s.search} accessibilityLabel="Search collections" />
       <FlatList
         data={options}
@@ -69,5 +72,6 @@ const s = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingTop: 4, paddingRight: 16 },
   title: { fontFamily: F.condBold, fontSize: 22, color: C.text, flexShrink: 1 },
   search: { margin: 16, height: 44, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, color: C.text, fontFamily: F.sans, fontSize: 15, paddingHorizontal: 14 },
+  create: { marginHorizontal: 16, marginTop: 8, minHeight: 48, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.divider },
 });

@@ -362,18 +362,18 @@ export default function IssueScreen() {
             ) : null}
           </View>
 
-          {appearsIn.length ? (
-            <View style={{ gap: 4 }}>
-              <SectionTitle>Appears in</SectionTitle>
-              <Text style={T.tiny}>One issue, linked in each place — reading it anywhere counts everywhere, once.</Text>
-              {appearsIn.map((c) => (
-                <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={s.row}>
-                  <Text style={[T.label, { color: KIND_COLOR[c.kind], width: 116 }]} numberOfLines={1}>{kindLabel(c)}</Text>
-                  <Text style={[T.body, { flex: 1 }]} numberOfLines={1}>{c.title}</Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
+          <View style={{ gap: 4 }}>
+            <SectionTitle>Appears in</SectionTitle>
+            {appearsIn.map((c) => (
+              <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={s.row}>
+                <Text style={[T.label, { color: KIND_COLOR[c.kind], width: 116 }]} numberOfLines={1}>{kindLabel(c)}</Text>
+                <Text style={[T.body, { flex: 1 }]} numberOfLines={1}>{c.title}</Text>
+              </Pressable>
+            ))}
+            <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/add-issues', params: { issue: issue.id } })} style={s.row}>
+              <Text style={[T.body, { color: C.text }]}>＋ Add to another list</Text>
+            </Pressable>
+          </View>
 
           <ConnectionsBlock issueId={issue.id} />
 

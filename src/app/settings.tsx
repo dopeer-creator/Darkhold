@@ -159,14 +159,10 @@ export default function Settings() {
               </Pressable>
             )}
           </View>
-          <Text style={T.tiny}>Changes save on this phone first and upload by themselves when you are online.</Text>
         </View>
 
         <View style={{ gap: 8 }}>
           <SectionTitle>Covers</SectionTitle>
-          <Text style={T.tiny}>
-            Covers come from Comic Vine with your own free key. Only the links are saved; each picture downloads the first time you see it and then stays cached on this phone.
-          </Text>
           {savedKey ? (
             <View style={s.row}>
               <View style={{ flex: 1 }}>
@@ -211,10 +207,9 @@ export default function Settings() {
               )}
             </View>
           ) : null}
-          <Text style={T.tiny}>Most credits come from the Grand Comics Database (comics.org), CC BY-SA 4.0.</Text>
-          {savedKey && noCredits > 200 ? <Text style={T.tiny}>Comic Vine allows about 200 lookups an hour, so a big library fills over several runs. Each run carries on where the last stopped, issues you’ve read first.</Text> : null}
-          {job?.kind === 'covers' ? <Text style={T.tiny}>{job.busy ? `Finding covers · ${job.status}. You can leave this page; it keeps going.` : job.status}</Text> : null}
-          {job?.kind === 'details' && !job.collectionId ? <Text style={T.tiny}>{job.busy ? `Finding credits · ${job.status}. You can leave this page; it keeps going.` : job.status}</Text> : null}
+          {savedKey && noCredits > 200 ? <Text style={T.tiny}>Comic Vine allows about 200 lookups an hour. Tap again later to carry on.</Text> : null}
+          {job?.kind === 'covers' ? <Text style={T.tiny}>{job.busy ? `Finding covers · ${job.status}` : job.status}</Text> : null}
+          {job?.kind === 'details' && !job.collectionId ? <Text style={T.tiny}>{job.busy ? `Finding credits · ${job.status}` : job.status}</Text> : null}
           {coverStatus ? <Text style={T.tiny}>{coverStatus}</Text> : null}
         </View>
 
@@ -223,7 +218,7 @@ export default function Settings() {
           <Text style={T.tiny}>
             {savedIgId
               ? 'Add to story opens Instagram’s story editor with your review picture already in it.'
-              : 'Without this, Add to story opens the share menu: pick Instagram, then Story. Instagram only opens its story editor straight away for apps that send a Facebook app ID (free to make at developers.facebook.com).'}
+              : 'Optional. Without it, Add to story opens the share menu instead.'}
           </Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TextInput value={igId} onChangeText={setIgId} placeholder={savedIgId ? `App ID ${savedIgId} saved · replace` : 'Facebook app ID (numbers)'} placeholderTextColor={C.faint} keyboardType="number-pad" style={s.input} accessibilityLabel="Facebook app ID" />
@@ -260,7 +255,7 @@ export default function Settings() {
           </View>
           <Text style={T.tiny}>
             {cacheStatus ||
-              'Only the cover links are kept in your library (and synced), so clearing is safe: pictures download again as you scroll. Android caps this at about 250 MB on its own.'}
+              'Safe to clear: covers download again as you scroll.'}
           </Text>
         </View>
 
@@ -269,7 +264,7 @@ export default function Settings() {
           <View style={s.row}>
             <View style={{ flex: 1 }}>
               <Text style={T.body}>Export everything</Text>
-              <Text style={T.tiny}>One readable file with every list, issue, read date and connection</Text>
+              <Text style={T.tiny}>Every list, issue and read date in one file</Text>
             </View>
             <Pressable accessibilityRole="button" onPress={exportBackup} style={s.smallBtn}>
               <Text style={[T.small, { color: C.text }]}>Export</Text>
@@ -278,13 +273,13 @@ export default function Settings() {
           <View style={s.row}>
             <View style={{ flex: 1 }}>
               <Text style={T.body}>Import a backup or shared list</Text>
-              <Text style={T.tiny}>Brings back anything missing; never duplicates or deletes</Text>
+              <Text style={T.tiny}>Adds what’s missing, never duplicates</Text>
             </View>
             <Pressable accessibilityRole="button" onPress={importBackup} style={s.smallBtn}>
               <Text style={[T.small, { color: C.text }]}>Import</Text>
             </Pressable>
           </View>
-          <Text style={T.tiny}>{backupStatus || 'Your library is already saved to your account. A backup file is an extra copy you keep yourself, in Downloads or Drive.'}</Text>
+          <Text style={T.tiny}>{backupStatus || 'An extra copy you keep yourself.'}</Text>
         </View>
 
         <View style={{ gap: 8 }}>
@@ -319,7 +314,7 @@ export default function Settings() {
               </Pressable>
             ) : null}
           </View>
-          <Text style={T.tiny}>{updateStatus || 'New versions download by themselves when you open the app and apply the next time you open it.'}</Text>
+          <Text style={T.tiny}>{updateStatus || 'Updates install by themselves the next time you open the app.'}</Text>
         </View>
       </KeyboardScroll>
     </SafeAreaView>

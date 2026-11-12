@@ -4,7 +4,7 @@ import { Alert, Animated, Dimensions, PanResponder, Pressable, ScrollView, Style
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { creditsSummary, splitNames } from '@/domain/credits';
-import { collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, rereadNumber, rereadSince, shownProgress, timesRead, type Library, walk, moveUnits } from '@/domain/library';
+import { chapterSpots, collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, rereadNumber, rereadSince, shownProgress, timesRead, type Library, walk, moveUnits } from '@/domain/library';
 import type { Collection, Entry, Review } from '@/domain/types';
 import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, startReading, startReread, stopReading, stopReread, toggleRereadInList, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
@@ -124,11 +124,9 @@ export default function CollectionScreen() {
   };
 
   const menuItems: { label: string; go: () => void }[] = [
-    { label: 'New list inside this one', go: () => router.push(`/new?kind=event&parent=${c.id}`) },
-    { label: 'Put an existing list inside', go: () => router.push(`/link?parent=${c.id}`) },
-    { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
     { label: 'Add issues', go: () => router.push(`/add-issues?parent=${c.id}`) },
-    { label: 'Add a chapter heading', go: () => router.push({ pathname: '/heading', params: { parent: c.id } }) },
+    { label: 'Add a chapter', go: () => router.push({ pathname: '/heading', params: { parent: c.id } }) },
+    { label: 'Add a run or event inside', go: () => router.push(`/link?parent=${c.id}`) },
   ];
 
   return (
@@ -396,6 +394,9 @@ function EntryList(props: ListProps) {
 
   // Chapter headings fold their section. The section holding the next issue starts open, others closed.
   const sections = headingSections(lib, parentId);
+  const spots = new Map(chapterSpots(lib, parentId).map((sp) => [sp.headingId, sp]));
+  const addHere = (afterEntryId: string, partOf: string | null) =>
+    router.push({ pathname: '/add-issues', params: { parent: parentId, after: afterEntryId, ...(partOf ? { partOf } : {}) } });
   const nextSection = [...sections.entries()].find(([, sec]) => !!nextIssueId && sec.issueIds.has(nextIssueId))?.[0];
   const isFolded = (id: string) => folded[id] ?? (!!nextSection && id !== nextSection);
   const inView = rows.filter((r) => r.kind === 'heading' || !sectionOf.get(r) || !isFolded(sectionOf.get(r)!));
@@ -470,24 +471,36 @@ function EntryList(props: ListProps) {
           const sec = sections.get(r.entry.id);
           const isOpen = !isFolded(r.entry.id);
           return (
-            <Pressable
-              key={r.entry.id}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: isOpen }}
-              onPress={() => setFolded((f) => ({ ...f, [r.entry.id]: isOpen }))}
-              style={s.heading}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {isOpen ? <ChevronDown color={C.text} /> : <ChevronRight color={C.text} />}
-                <Text style={s.headingText} numberOfLines={2}>{r.entry.heading}</Text>
-                {sec?.total ? <Text style={[T.small, T.num]}>{sec.read} / {sec.total}</Text> : null}
-              </View>
-              {r.entry.note ? <Text style={[T.tiny, { marginLeft: 24 }]}>{r.entry.note}</Text> : null}
-              {sec?.total ? (
-                <View style={{ marginLeft: 24 }}>
-                  <Bar read={sec.read} total={sec.total} color={C.text} height={2} />
+            <View key={r.entry.id} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: isOpen }}
+                onPress={() => setFolded((f) => ({ ...f, [r.entry.id]: isOpen }))}
+                style={[s.heading, { flex: 1 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {isOpen ? <ChevronDown color={C.text} /> : <ChevronRight color={C.text} />}
+                  <Text style={s.headingText} numberOfLines={2}>{r.entry.heading}</Text>
+                  {sec?.total ? <Text style={[T.small, T.num]}>{sec.read} / {sec.total}</Text> : null}
                 </View>
-              ) : null}
-            </Pressable>
+                {r.entry.note ? <Text style={[T.tiny, { marginLeft: 24 }]}>{r.entry.note}</Text> : null}
+                {sec?.total ? (
+                  <View style={{ marginLeft: 24 }}>
+                    <Bar read={sec.read} total={sec.total} color={C.text} height={2} />
+                  </View>
+                ) : null}
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Add issues to ${r.entry.heading}`}
+                hitSlop={8}
+                onPress={() => {
+                  const sp = spots.get(r.entry.id);
+                  addHere(sp?.afterEntryId ?? r.entry.id, sp?.partOf.length === 1 ? sp.partOf[0] : null);
+                }}
+                style={s.chapterAdd}>
+                <PlusIcon size={16} width={2} />
+              </Pressable>
+            </View>
           );
         }
         if (r.kind === 'group') {
@@ -526,11 +539,16 @@ function EntryList(props: ListProps) {
               {isOpen ? (
                 <View style={{ borderTopWidth: 1, borderTopColor: C.border, paddingLeft: 14 }}>
                   {r.entries.map(renderIssue)}
-                  {via ? (
-                    <Pressable onPress={() => router.push(`/collection/${via.id}`)} style={{ paddingVertical: 12, alignItems: 'center' }}>
-                      <Text style={T.small}>Open all of {via.title}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 24 }}>
+                    <Pressable accessibilityRole="button" onPress={() => addHere(r.entries[r.entries.length - 1].id, via?.id ?? null)} style={{ paddingVertical: 12 }}>
+                      <Text style={[T.small, { color: C.text }]}>＋ Add issues here</Text>
                     </Pressable>
-                  ) : null}
+                    {via ? (
+                      <Pressable onPress={() => router.push(`/collection/${via.id}`)} style={{ paddingVertical: 12 }}>
+                        <Text style={T.small}>Open {via.title}</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 </View>
               ) : null}
             </View>
@@ -834,6 +852,7 @@ const s = StyleSheet.create({
   headingText: { flex: 1, fontFamily: F.condBold, fontSize: 18, letterSpacing: 0.6, textTransform: 'uppercase', color: C.text },
   partBtn: { height: 32, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center', marginRight: 2 },
   arrow: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  chapterAdd: { marginTop: 8, width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
   pickedActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: -2 },
   pickBtn: { flexGrow: 1, flexBasis: '30%', height: 40, borderRadius: 10, borderWidth: 1, borderColor: C.dc, backgroundColor: '#16223A', alignItems: 'center', justifyContent: 'center' },
   grip: { width: 48, height: 56, alignItems: 'center', justifyContent: 'center' },

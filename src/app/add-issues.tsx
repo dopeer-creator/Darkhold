@@ -3,49 +3,64 @@ import { useMemo, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { issueTitle, type Library } from '@/domain/library';
-import { parseReadingList, parseStructuredList, resolveAgainstLibrary, type BlockKind, type ResolvedLine } from '@/domain/parser';
+import { chapterSpots, issueTitle, type Library } from '@/domain/library';
+import { parseStructuredList, resolveAgainstLibrary, type BlockKind, type ResolvedLine } from '@/domain/parser';
 import { addIssueBlocks, linkIssues } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { ChevronDown, CloseIcon } from '@/ui/icons';
 import { Checkbox, Chip, Cover, PrimaryButton, T } from '@/ui/parts';
 import { C, F, KIND_COLOR, KIND_LABEL, kindLabel } from '@/ui/theme';
 
-type Mode = 'library' | 'range' | 'paste';
+type Mode = 'type' | 'library';
 
-/** Add issues to ?parent=<id>: pick existing ones, type a range, or paste a reading list. */
+/**
+ * Add issues to ?parent=<id>: type them ("Uncanny X-Men #139–140, 143") or pick ones you already have.
+ * Where they go (?after=<entry>, or a chapter picked here), the run or event they're part of (?partOf=<id>),
+ * and whether you've read them are all chosen on this one screen. ?issue=<id> starts with that issue picked.
+ */
 export default function AddIssues() {
-  const params = useLocalSearchParams<{ parent?: string }>();
+  const params = useLocalSearchParams<{ parent?: string; after?: string; partOf?: string; issue?: string }>();
   const { lib, act } = useStore();
   const [parentId, setParentId] = useState(params.parent ?? null);
-  const [mode, setMode] = useState<Mode>('paste');
+  const [mode, setMode] = useState<Mode>(params.issue ? 'library' : 'type');
   const [text, setText] = useState('');
-  const [range, setRange] = useState({ series: '', from: '', to: '' });
   const [overrides, setOverrides] = useState<Record<number, string>>({});
-  const [picked, setPicked] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string[]>(params.issue ? [params.issue] : []);
   const [q, setQ] = useState('');
+  const [after, setAfter] = useState<string | null>(params.after ?? null);
+  const [partOf, setPartOf] = useState<string | null>(params.partOf ?? null);
+  const [markRead, setMarkRead] = useState(false);
   const parent = parentId ? lib.collections.get(parentId) : undefined;
+  const chapters = useMemo(() => (parentId ? chapterSpots(lib, parentId) : []), [lib, parentId]);
 
-  const source = mode === 'range' ? (range.series && range.from ? `${range.series} #${range.from}${range.to ? `-${range.to}` : ''}` : '') : text;
-  // Paste mode understands "event:" / "run:" / "issue:" headers; each named part becomes a slice of that run or event.
-  const structured = useMemo(() => (mode === 'paste' ? parseStructuredList(source) : null), [mode, source]);
-  const plain = useMemo(() => (mode === 'range' ? parseReadingList(source) : null), [mode, source]);
-  const errors = structured?.errors ?? plain?.errors ?? [];
+  const structured = useMemo(() => (mode === 'type' ? parseStructuredList(text) : null), [mode, text]);
+  const errors = structured?.errors ?? [];
   const blocks = useMemo(() => {
-    const raw = structured ? structured.blocks : plain ? [{ kind: null, title: null, continued: false, items: plain.items }] : [];
+    const raw = structured ? structured.blocks : [];
     // Line numbers run across all parts, so a volume choice sticks to the right line.
     const starts = raw.map((_, i) => raw.slice(0, i).reduce((n, b) => n + b.items.length, 0));
     return raw.map((b, i) => ({ ...b, start: starts[i], lines: applyOverrides(resolveAgainstLibrary(b.items, lib), overrides, lib, starts[i]) }));
-  }, [structured, plain, lib, overrides]);
+  }, [structured, lib, overrides]);
   const lines = blocks.flatMap((b) => b.lines);
   const total = lines.reduce((n, l) => n + l.numbers.length, 0);
-  const reused = lines.reduce((n, l) => n + l.existing.filter(Boolean).length, 0);
 
   if (!parent) return <PickTarget lib={lib} onPick={setParentId} />;
 
+  const chapter = chapters.find((ch) => ch.afterEntryId === after || ch.headingId === after);
+  const pickChapter = (ch: (typeof chapters)[number] | null) => {
+    setAfter(ch ? ch.afterEntryId : null);
+    setPartOf(ch?.partOf.length === 1 ? ch.partOf[0] : null);
+  };
+  // Runs and events worth offering: the chapter's own first, then the others this list already uses.
+  const listVias = [...new Set((lib.children.get(parent.id) ?? []).map((e) => (e.child_issue_id ? (e.part_of ?? e.via_collection_id) : null)).filter((v): v is string => !!v && lib.collections.has(v)))];
+  const suggestions = [...new Set([...(partOf ? [partOf] : []), ...(chapter?.partOf ?? []).slice().reverse(), ...listVias.reverse()])].slice(0, 6);
+  const canFile = parent.kind !== 'event';
+  const count = mode === 'library' ? picked.length : total;
+
   const add = async () => {
-    if (mode === 'library') await act((db, l) => linkIssues(db, l, parent.id, picked));
-    else await act((db, l) => addIssueBlocks(db, l, parent.id, blocks.map((b) => ({ kind: b.kind, title: b.title, lines: b.lines })), parent.publisher));
+    const opts = { afterEntryId: after, partOf: canFile ? partOf : null, markRead };
+    if (mode === 'library') await act((db, l) => linkIssues(db, l, parent.id, picked, opts));
+    else await act((db, l) => addIssueBlocks(db, l, parent.id, blocks.map((b) => ({ kind: b.kind, title: b.title, lines: b.lines })), parent.publisher, opts));
     router.back();
   };
 
@@ -53,7 +68,7 @@ export default function AddIssues() {
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
       <Header title="Add issues" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-        <View style={{ paddingHorizontal: 16, gap: 12 }}>
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
           <Pressable onPress={() => !params.parent && setParentId(null)} style={s.target}>
             <View style={{ flex: 1 }}>
               <Text style={T.tiny}>Adding to</Text>
@@ -61,111 +76,118 @@ export default function AddIssues() {
             </View>
             {!params.parent ? <ChevronDown /> : null}
           </Pressable>
+
+          {chapters.length ? (
+            <View style={{ gap: 6 }}>
+              <Text style={T.label}>WHERE</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                <Chip label="At the end" active={!after} onPress={() => pickChapter(null)} />
+                {chapters.map((ch) => (
+                  <Chip key={ch.headingId} label={ch.title} active={chapter?.headingId === ch.headingId} onPress={() => pickChapter(ch)} />
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {canFile ? (
+            <View style={{ gap: 6 }}>
+              <Text style={T.label}>PART OF</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                <Chip label="Nothing" active={!partOf} onPress={() => setPartOf(null)} />
+                {suggestions.map((id) => (
+                  <Chip key={id} label={lib.collections.get(id)!.title} active={partOf === id} onPress={() => setPartOf(id)} />
+                ))}
+              </View>
+              <PartOfSearch lib={lib} exclude={parent.id} onPick={setPartOf} />
+              {partOf ? <Text style={T.tiny}>They’re added to {lib.collections.get(partOf)?.title} too, in number order.</Text> : null}
+            </View>
+          ) : null}
+
+          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: markRead }} onPress={() => setMarkRead((m) => !m)} style={s.readRow}>
+            <Text style={[T.body, { flex: 1 }]}>I’ve read these</Text>
+            <View style={[s.box, markRead ? { backgroundColor: C.text, borderColor: C.text } : null]}>
+              {markRead ? <Text style={{ color: C.onLight, fontFamily: F.semibold, fontSize: 14 }}>✓</Text> : null}
+            </View>
+          </Pressable>
+
           <View style={s.segment} accessibilityRole="tablist">
-            {(['library', 'range', 'paste'] as Mode[]).map((m) => (
+            {(['type', 'library'] as Mode[]).map((m) => (
               <Pressable key={m} accessibilityRole="tab" accessibilityState={{ selected: mode === m }} onPress={() => setMode(m)} style={[s.segItem, mode === m ? { backgroundColor: '#2C2C31' } : null]}>
-                <Text style={[T.small, mode === m ? { color: C.text, fontFamily: F.semibold } : null]}>{m === 'library' ? 'From library' : m === 'range' ? 'Range' : 'Paste list'}</Text>
+                <Text style={[T.small, mode === m ? { color: C.text, fontFamily: F.semibold } : null]}>{m === 'type' ? 'Type or paste' : 'From your library'}</Text>
               </Pressable>
             ))}
           </View>
-        </View>
 
-        {mode === 'library' ? (
-          <LibraryPicker lib={lib} parentId={parent.id} q={q} setQ={setQ} picked={picked} setPicked={setPicked} />
-        ) : (
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
-            {mode === 'paste' ? (
+          {mode === 'library' ? (
+            <LibraryPicker lib={lib} parentId={parent.id} q={q} setQ={setQ} picked={picked} setPicked={setPicked} />
+          ) : (
+            <View style={{ gap: 10 }}>
               <TextInput
                 value={text}
                 onChangeText={(t) => { setText(t); setOverrides({}); }}
                 multiline
-                placeholder={parent.kind === 'event'
-                  ? 'Green Lantern #63–67\nGreen Lantern Corps #58–60\nGreen Lantern: Emerald Warriors #8–10'
-                  : 'event: Blood Hunt\n• [ ] Blood Hunt #1–5\nrun: Captain America by Chip Zdarsky\n• [ ] Captain America (2025) #1–5\nissue:\n• [ ] The Will of Doom #1'}
+                placeholder={'Uncanny X-Men (1963) #139–140, 143\nX-Men (2024) #35'}
                 placeholderTextColor={C.faint}
-                accessibilityLabel="Pasted reading list"
+                accessibilityLabel="Issues to add"
                 style={s.paste}
               />
-            ) : (
-              <View style={{ gap: 10 }}>
-                <TextInput value={range.series} onChangeText={(v) => setRange((r) => ({ ...r, series: v }))} placeholder="Series, e.g. Green Lantern (2005)" placeholderTextColor={C.faint} style={s.input} accessibilityLabel="Series" />
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <TextInput value={range.from} onChangeText={(v) => setRange((r) => ({ ...r, from: v }))} placeholder="From #" keyboardType="number-pad" placeholderTextColor={C.faint} style={[s.input, { flex: 1 }]} accessibilityLabel="First issue" />
-                  <TextInput value={range.to} onChangeText={(v) => setRange((r) => ({ ...r, to: v }))} placeholder="To # (optional)" keyboardType="number-pad" placeholderTextColor={C.faint} style={[s.input, { flex: 1 }]} accessibilityLabel="Last issue" />
-                </View>
-              </View>
-            )}
-
-            {errors.map((e) => (
-              <Text key={e.line} style={[T.small, { color: C.indie }]}>Line {e.line}: {e.message}</Text>
-            ))}
-            {lines.length ? <Text style={[s.preview]}>Preview · {total} issues{structured?.hasHeaders ? ` in ${blocks.length} parts` : ''}</Text> : null}
-            {blocks.map((b, bi) => (
-              // A chapter heading holds no lines, so its start can equal the next part's: key on the position too.
-              <View key={`${bi}:${b.start}`} style={{ gap: 8 }}>
-                {b.kind ? (
-                  <View style={s.blockHead}>
-                    <Text style={[T.label, { color: KIND_COLOR[b.kind] }]}>{KIND_LABEL[b.kind]}</Text>
-                    <Text style={[T.bodyMedium, { flex: 1 }]} numberOfLines={1}>
-                      {b.title ?? (b.lines.length === 1 ? 'Single issue' : 'Single issues')}
-                      {b.continued ? <Text style={T.small}> (continued)</Text> : null}
-                    </Text>
-                    {b.title && b.kind !== 'heading' ? <Text style={T.tiny}>{findCollection(lib, b.kind, b.title) ? 'in library' : 'new'}</Text> : null}
-                  </View>
-                ) : null}
-                {b.lines.map((l, i) => {
-                  const idx = b.start + i;
-                  return (
-                    <View key={idx} style={s.lineCard}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-                        <Text style={[T.bodyMedium, { flex: 1 }]}>
-                          {l.series ? l.series.title : l.seriesTitle}
-                          {l.series?.volume_year ? ` (${l.series.volume_year})` : l.volumeYear ? ` (${l.volumeYear})` : ''} {rangeLabel(l.numbers)}
-                          {l.checked ? <Text style={T.tiny}>  · read</Text> : null}
-                        </Text>
-                        <Text style={T.tiny}>{countLabel(l)}</Text>
-                      </View>
-                      {l.note ? <Text style={T.tiny}>{l.note}</Text> : null}
-                      {l.assumedOneShot ? <Text style={[T.tiny, { color: C.indie }]}>No number given — added as #1</Text> : null}
-                      {l.choices.length > 1 || (l.choices.length > 0 && !l.series) || (l.series && l.volumeYear == null && l.series.volume_year != null) ? (
-                        <View style={{ gap: 6 }}>
-                          <Text style={[T.tiny, { color: C.indie }]}>
-                            {l.series && l.volumeYear == null && l.choices.length === 1
-                              ? `No year given, so it goes into your ${l.series.title} (${l.series.volume_year}). A different volume? Tap New series and add the year after the name.`
-                              : `Which ${l.seriesTitle}?`}
-                          </Text>
-                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                            {l.choices.map((ch) => (
-                              <Chip key={ch.id} label={ch.volume_year ? String(ch.volume_year) : 'No year'} active={l.series?.id === ch.id} onPress={() => setOverrides((o) => ({ ...o, [idx]: ch.id }))} />
-                            ))}
-                            <Chip label="New series" active={!l.series} onPress={() => setOverrides((o) => ({ ...o, [idx]: 'new' }))} />
-                          </View>
-                        </View>
-                      ) : !l.series ? (
-                        <Text style={[T.tiny, l.volumeYear == null ? { color: C.indie } : null]}>
-                          {l.volumeYear == null ? `New series with no year. Write it as “${l.seriesTitle} (YYYY)”, the year it started, so another volume never gets mixed in.` : 'New series'}
-                        </Text>
-                      ) : null}
+              {!text ? <Text style={T.tiny}>One series per line. Ranges and lists work: #1–5, 7, 9.</Text> : null}
+              {errors.map((e) => (
+                <Text key={e.line} style={[T.small, { color: C.indie }]}>Line {e.line}: {e.message}</Text>
+              ))}
+              {blocks.map((b, bi) => (
+                <View key={`${bi}:${b.start}`} style={{ gap: 8 }}>
+                  {b.kind ? (
+                    <View style={s.blockHead}>
+                      <Text style={[T.label, { color: KIND_COLOR[b.kind] }]}>{KIND_LABEL[b.kind]}</Text>
+                      <Text style={[T.bodyMedium, { flex: 1 }]} numberOfLines={1}>
+                        {b.title ?? (b.lines.length === 1 ? 'Single issue' : 'Single issues')}
+                        {b.continued ? <Text style={T.small}> (continued)</Text> : null}
+                      </Text>
+                      {b.title && b.kind !== 'heading' ? <Text style={T.tiny}>{findCollection(lib, b.kind, b.title) ? 'in library' : 'new'}</Text> : null}
                     </View>
-                  );
-                })}
-              </View>
-            ))}
-            {mode === 'paste' && !text && parent.kind !== 'event' ? (
-              <Text style={[T.tiny, { lineHeight: 18 }]}>
-                Tip: label parts with “event:”, “run:” or “issue:” and add “(continued)” when a run comes back. Each part is added to that run or event and shown here in your order. “[x]” marks an issue read.
-              </Text>
-            ) : null}
-          </ScrollView>
-        )}
+                  ) : null}
+                  {b.lines.map((l, i) => {
+                    const idx = b.start + i;
+                    return (
+                      <View key={idx} style={s.lineCard}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                          <Text style={[T.bodyMedium, { flex: 1 }]}>
+                            {l.series ? l.series.title : l.seriesTitle}
+                            {l.series?.volume_year ? ` (${l.series.volume_year})` : l.volumeYear ? ` (${l.volumeYear})` : ''} {rangeLabel(l.numbers)}
+                          </Text>
+                          <Text style={T.tiny}>{countLabel(l)}</Text>
+                        </View>
+                        {(l.choices.length > 0 && !l.series) || (l.choices.length > 1 && l.volumeYear == null) ? (
+                          <View style={{ gap: 6 }}>
+                            <Text style={[T.tiny, { color: C.indie }]}>Which {l.seriesTitle}?</Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                              {l.choices.map((ch) => (
+                                <Chip key={ch.id} label={ch.volume_year ? String(ch.volume_year) : 'No year'} active={l.series?.id === ch.id} onPress={() => setOverrides((o) => ({ ...o, [idx]: ch.id }))} />
+                              ))}
+                              <Chip label="New series" active={!l.series} onPress={() => setOverrides((o) => ({ ...o, [idx]: 'new' }))} />
+                            </View>
+                          </View>
+                        ) : !l.series ? (
+                          <Text style={[T.tiny, l.volumeYear == null ? { color: C.indie } : null]}>
+                            {l.volumeYear == null ? `New series. Add the year it started, like “${l.seriesTitle} (2024)”.` : 'New series'}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
 
         <View style={s.footer}>
           <PrimaryButton
-            label={mode === 'library' ? `Add ${picked.length} issue${picked.length === 1 ? '' : 's'}` : total ? `Add ${total} issues${reused ? ` · ${total - reused} new, ${reused} reused` : ''}` : 'Add issues'}
+            label={count ? `Add ${count} issue${count === 1 ? '' : 's'}${chapter ? ` to ${chapter.title}` : ''}` : 'Add issues'}
             onPress={add}
-            disabled={mode === 'library' ? !picked.length : !total}
+            disabled={!count}
           />
-          <Text style={[T.tiny, { textAlign: 'center', marginTop: 8 }]}>Issues you already have are reused, never duplicated.</Text>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -194,47 +216,65 @@ function countLabel(l: ResolvedLine) {
   return [fresh ? `${fresh} new` : '', have ? `${have} in library` : ''].filter(Boolean).join(' · ');
 }
 
+/** "Other…": find any run or event by name. */
+function PartOfSearch({ lib, exclude, onPick }: { lib: Library; exclude: string; onPick: (id: string) => void }) {
+  const [q, setQ] = useState('');
+  const hits = q.trim().length < 2 ? [] : [...lib.collections.values()]
+    .filter((c) => c.id !== exclude && (c.kind === 'run' || c.kind === 'event') && c.title.toLowerCase().includes(q.trim().toLowerCase()))
+    .slice(0, 6);
+  return (
+    <View style={{ gap: 4 }}>
+      <TextInput value={q} onChangeText={setQ} placeholder="Another run or event…" placeholderTextColor={C.dim} style={[s.input, { minHeight: 40, fontSize: 14 }]} accessibilityLabel="Find a run or event" />
+      {hits.map((c) => (
+        <Pressable key={c.id} onPress={() => { onPick(c.id); setQ(''); }} style={s.hit}>
+          <Text style={[T.body, { fontSize: 14, flex: 1 }]} numberOfLines={1}>{c.title}</Text>
+          <Text style={T.tiny}>{kindLabel(c)}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 function LibraryPicker({ lib, parentId, q, setQ, picked, setPicked }: { lib: Library; parentId: string; q: string; setQ: (v: string) => void; picked: string[]; setPicked: (fn: (p: string[]) => string[]) => void }) {
   const inList = new Set((lib.children.get(parentId) ?? []).map((e) => e.child_issue_id));
-  const items = useMemo(
-    () =>
-      [...lib.issues.values()]
-        .filter((i) => !inList.has(i.id))
-        .map((i) => ({ id: i.id, title: issueTitle(lib, i.id), read: i.status === 'read' }))
-        .filter((x) => q.trim().length > 1 && x.title.toLowerCase().includes(q.toLowerCase()))
-        .slice(0, 200),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lib, q],
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const items = q.trim().length < 2 ? [] : [...lib.issues.values()]
+    .filter((i) => !inList.has(i.id) && !picked.includes(i.id))
+    .map((i) => ({ id: i.id, title: issueTitle(lib, i.id), read: i.status === 'read' }))
+    .filter((x) => words.every((w) => x.title.toLowerCase().replace('#', ' ').includes(w.replace('#', ''))))
+    .slice(0, 60);
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const row = (id: string, title: string, read: boolean) => (
+    <View key={id} style={s.pickRow}>
+      <Text style={[T.body, { flex: 1, fontSize: 14 }]}>{title}{read ? <Text style={T.tiny}>  · read</Text> : null}</Text>
+      <Checkbox checked={picked.includes(id)} label={`Select ${title}`} onPress={() => toggle(id)} />
+    </View>
   );
   return (
-    <View style={{ flex: 1 }}>
-      <TextInput value={q} onChangeText={setQ} placeholder="Search your issues, e.g. Blackest Night" placeholderTextColor={C.dim} style={[s.input, { margin: 16 }]} accessibilityLabel="Search issues" />
-      <FlatList
-        data={items}
-        keyExtractor={(x) => x.id}
-        contentContainerStyle={{ paddingHorizontal: 16 }}
-        ListEmptyComponent={<Text style={T.small}>{q.trim().length > 1 ? 'No matches.' : 'Type at least two letters.'}</Text>}
-        renderItem={({ item }) => (
-          <View style={s.pickRow}>
-            <Text style={[T.body, { flex: 1, fontSize: 14 }]}>{item.title}{item.read ? <Text style={T.tiny}>  · read</Text> : null}</Text>
-            <Checkbox checked={picked.includes(item.id)} label={`Select ${item.title}`} onPress={() => setPicked((p) => (p.includes(item.id) ? p.filter((x) => x !== item.id) : [...p, item.id]))} />
-          </View>
-        )}
-      />
+    <View>
+      <TextInput value={q} onChangeText={setQ} placeholder="Search, e.g. x-men 40" placeholderTextColor={C.dim} style={s.input} accessibilityLabel="Search issues" />
+      {picked.map((id) => (lib.issues.has(id) ? row(id, issueTitle(lib, id), lib.issues.get(id)!.status === 'read') : null))}
+      {items.map((x) => row(x.id, x.title, x.read))}
+      {!items.length && !picked.length ? <Text style={[T.small, { paddingTop: 10 }]}>{q.trim().length > 1 ? 'No matches.' : 'Type at least two letters.'}</Text> : null}
     </View>
   );
 }
 
 function PickTarget({ lib, onPick }: { lib: Library; onPick: (id: string) => void }) {
-  const list = [...lib.collections.values()].sort((a, b) => a.title.localeCompare(b.title));
+  const [q, setQ] = useState('');
+  const list = [...lib.collections.values()]
+    .filter((c) => !q.trim() || c.title.toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => a.title.localeCompare(b.title));
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      <Header title="Add issues to…" />
+      <Header title="Add to which list?" />
+      <TextInput value={q} onChangeText={setQ} placeholder="Search your lists" placeholderTextColor={C.dim} style={[s.input, { marginHorizontal: 16, marginBottom: 8 }]} accessibilityLabel="Search lists" />
       <FlatList
         data={list}
         keyExtractor={(c) => c.id}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-        ListEmptyComponent={<Text style={T.small}>Create a run or event first — issues always live inside one.</Text>}
+        ListEmptyComponent={<Text style={T.small}>No lists yet. Create a run or event first.</Text>}
         renderItem={({ item }) => (
           <Pressable onPress={() => onPick(item.id)} style={s.pickRow}>
             <Cover title={item.title} publisher={item.publisher} width={30} />
@@ -264,9 +304,11 @@ const s = StyleSheet.create({
   target: { minHeight: 52, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
   segment: { flexDirection: 'row', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 3 },
   segItem: { flex: 1, height: 38, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  paste: { minHeight: 110, backgroundColor: C.sunken, borderWidth: 1, borderColor: C.border, borderRadius: 12, color: '#D8D6D0', fontFamily: Platform.select({ android: 'monospace', default: 'Menlo' }), fontSize: 13, lineHeight: 21, padding: 12, textAlignVertical: 'top' },
+  paste: { minHeight: 96, backgroundColor: C.sunken, borderWidth: 1, borderColor: C.border, borderRadius: 12, color: '#D8D6D0', fontFamily: Platform.select({ android: 'monospace', default: 'Menlo' }), fontSize: 13, lineHeight: 21, padding: 12, textAlignVertical: 'top' },
   input: { minHeight: 48, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, color: C.text, fontFamily: F.sans, fontSize: 15, paddingHorizontal: 14 },
-  preview: { fontFamily: F.cond, fontSize: 15, letterSpacing: 1.8, textTransform: 'uppercase', color: C.muted, marginTop: 6 },
+  box: { width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
+  readRow: { flexDirection: 'row', alignItems: 'center', minHeight: 48, paddingHorizontal: 14, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  hit: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: C.divider },
   blockHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   lineCard: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 12, gap: 8 },
   footer: { padding: 16, paddingTop: 12, backgroundColor: C.bar, borderTopWidth: 1, borderTopColor: C.border },

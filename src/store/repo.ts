@@ -178,9 +178,10 @@ async function appendEntry(
   lib: Library,
   parentId: string,
   child: { child_issue_id?: string; child_collection_id?: string; via_collection_id?: string | null; heading?: string; note?: string | null; optional?: boolean },
+  at?: number,
 ) {
   const list = lib.children.get(parentId) ?? [];
-  const position = positionBetween(list.length ? list[list.length - 1].position : null, null);
+  const position = at ?? positionBetween(list.length ? list[list.length - 1].position : null, null);
   const entry: Entry = {
     id: newId(), parent_id: parentId, position, child_issue_id: child.child_issue_id ?? null,
     child_collection_id: child.child_collection_id ?? null, via_collection_id: child.via_collection_id ?? null,
@@ -188,7 +189,70 @@ async function appendEntry(
   };
   await putRow(db, 'entries', entry);
   list.push(entry);
+  list.sort((a, b) => a.position - b.position);
   lib.children.set(parentId, list);
+}
+
+/**
+ * Where each new line goes. With a line to add after (the end of a chapter), an issue whose series is already in
+ * that chapter lands by number among them (#139 between #138 and #141); anything else goes after that line, in
+ * the order added. Without one, everything goes at the end.
+ */
+function placer(lib: Library, parentId: string, afterEntryId: string | null | undefined, count: number): (seriesId?: string, number?: string | null) => number {
+  const list = () => lib.children.get(parentId) ?? [];
+  const start = list();
+  const at = afterEntryId ? start.findIndex((e) => e.id === afterEntryId) : -1;
+  if (at < 0) {
+    let last = start.length ? start[start.length - 1].position : 0;
+    return () => (last += 1024);
+  }
+  const anchor = start[at];
+  let from = at;
+  while (from > 0 && !start[from].heading) from--;
+  const chapterStart = start[from].position;
+  const lo = anchor.position;
+  const hi = start[at + 1]?.position ?? lo + 1024 * (count + 1);
+  // Leave the upper half of the gap after the chapter for lines placed by number.
+  const step = (hi - lo) / 2 / (count + 1);
+  let k = 0;
+  return (seriesId, number) => {
+    const n = number == null ? NaN : parseFloat(number);
+    if (seriesId && !Number.isNaN(n)) {
+      const now = list();
+      const inChapter = now
+        .map((e, i) => ({ e, i, issue: e.child_issue_id ? lib.issues.get(e.child_issue_id) : undefined }))
+        .filter((x) => x.e.position >= chapterStart && x.e.position <= lo && x.issue?.series_id === seriesId && x.issue.number != null && !Number.isNaN(parseFloat(x.issue.number)));
+      const after = inChapter.find((x) => parseFloat(x.issue!.number!) > n);
+      if (after) return positionBetween(now[after.i - 1]?.position ?? null, after.e.position);
+    }
+    return lo + step * ++k;
+  };
+}
+
+/** Puts an issue into a run or event next to its neighbours by number (#139 lands between #138 and #141), or at the end. */
+async function insertInOrder(db: SQLiteDatabase, lib: Library, listId: string, issueId: string, seriesId: string, number: string | null) {
+  const list = lib.children.get(listId) ?? [];
+  if (list.some((e) => e.child_issue_id === issueId)) return;
+  const n = number == null ? NaN : parseFloat(number);
+  const sameSeries = list
+    .map((e, i) => ({ i, issue: e.child_issue_id ? lib.issues.get(e.child_issue_id) : undefined }))
+    .filter((x) => x.issue?.series_id === seriesId && x.issue.number != null && !Number.isNaN(parseFloat(x.issue.number)));
+  if (Number.isNaN(n) || !sameSeries.length) return appendEntry(db, lib, listId, { child_issue_id: issueId });
+  const before = sameSeries.filter((x) => parseFloat(x.issue!.number!) < n).pop();
+  const after = sameSeries.find((x) => parseFloat(x.issue!.number!) > n);
+  if (before) return appendEntry(db, lib, listId, { child_issue_id: issueId }, positionBetween(list[before.i].position, list[before.i + 1]?.position ?? null));
+  if (after) return appendEntry(db, lib, listId, { child_issue_id: issueId }, positionBetween(list[after.i - 1]?.position ?? null, list[after.i].position));
+  return appendEntry(db, lib, listId, { child_issue_id: issueId });
+}
+
+/** How "Add issues" places what it adds. */
+export interface AddOptions {
+  /** Insert right after this line of the list (e.g. at the end of a chapter); otherwise at the end. */
+  afterEntryId?: string | null;
+  /** Also put the issues in this run or event, by number, and show them here as part of it. */
+  partOf?: string | null;
+  /** Mark every added issue read. */
+  markRead?: boolean;
 }
 
 /** Links an existing run or event into a collection. Returns why not, if the layering rules forbid it. */
@@ -199,9 +263,19 @@ export async function linkCollection(db: SQLiteDatabase, lib: Library, parentId:
   return null;
 }
 
-export async function linkIssues(db: SQLiteDatabase, lib: Library, parentId: string, issueIds: string[]) {
+/** Adds issues you already have to a list, placed and filed as the options say. Lines already in the list are skipped. */
+export async function linkIssues(db: SQLiteDatabase, lib: Library, parentId: string, issueIds: string[], opts: AddOptions = {}) {
+  const ids = issueIds.filter((id) => !(lib.children.get(parentId) ?? []).some((e) => e.child_issue_id === id));
+  const via = opts.partOf && canSlice(lib, parentId, opts.partOf) ? opts.partOf : null;
+  const next = placer(lib, parentId, opts.afterEntryId, ids.length);
   await db.withTransactionAsync(async () => {
-    for (const id of issueIds) await appendEntry(db, lib, parentId, { child_issue_id: id });
+    for (const id of ids) {
+      const issue = lib.issues.get(id);
+      if (!issue) continue;
+      if (via) await insertInOrder(db, lib, via, id, issue.series_id, issue.number);
+      if (opts.markRead && issue.status !== 'read') await putRow(db, 'issues', { ...issue, status: 'read', upcoming: false });
+      await appendEntry(db, lib, parentId, { child_issue_id: id, via_collection_id: via }, next(issue.series_id, issue.number));
+    }
   });
 }
 
@@ -217,17 +291,22 @@ export interface ResolvedBlock {
  * as a slice of it, so the crisis keeps your reading order while the run stays whole. Ticked lines ("[x]")
  * are marked read; nothing is ever marked unread.
  */
-export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId: string, blocks: ResolvedBlock[], publisher: string | null) {
+export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId: string, blocks: ResolvedBlock[], publisher: string | null, opts: AddOptions = {}) {
   const parent = lib.collections.get(parentId);
+  const count = blocks.reduce((n, b) => n + (b.kind === 'heading' ? 1 : b.lines.reduce((m, l) => m + l.numbers.length, 0)), 0);
+  const next = placer(lib, parentId, opts.afterEntryId, count);
+  const partOf = opts.partOf && canSlice(lib, parentId, opts.partOf) ? opts.partOf : null;
   await db.withTransactionAsync(async () => {
     const madeSeries = new Map<string, string>();
     const madeIssues = new Map<string, string>();
     for (const block of blocks) {
       if (block.kind === 'heading') {
-        if (block.title) await appendEntry(db, lib, parentId, { heading: block.title });
+        if (block.title) await appendEntry(db, lib, parentId, { heading: block.title }, next());
         continue;
       }
       let via: string | null = null;
+      // Loose issues go into the run or event you picked; named parts ("run: …") keep their own.
+      const chosen = !block.title || block.kind === 'issue' ? partOf : null;
       if ((block.kind === 'run' || block.kind === 'event') && block.title) {
         const name = block.title.toLowerCase();
         via = [...lib.collections.values()].find((c) => c.kind === block.kind && c.title.toLowerCase() === name)?.id ?? null;
@@ -255,21 +334,25 @@ export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId:
             issueId = newId();
             const release = releaseFromNote(line.note);
             await putRow(db, 'issues', {
-              id: issueId, series_id: seriesId, number: line.numbers[k], label: null, status: line.checked ? 'read' : 'unread',
+              id: issueId, series_id: seriesId, number: line.numbers[k], label: null, status: line.checked || opts.markRead ? 'read' : 'unread',
               completed_at: null, date_precision: 'unknown', rating: null, notes: release ? null : line.note, cover_path: null, pub_year: null,
-              upcoming: !!release && !line.checked, release_on: release?.on ?? null,
+              upcoming: !!release && !line.checked && !opts.markRead, release_on: release?.on ?? null,
               characters: seriesTags(lib, seriesId) ?? lib.collections.get(via ?? parentId)?.characters ?? parent?.characters ?? null,
             });
             madeIssues.set(issueKey, issueId);
-          } else if (line.checked) {
+          } else if (line.checked || opts.markRead) {
             const existing = lib.issues.get(issueId);
-            if (existing && existing.status !== 'read') await putRow(db, 'issues', { ...existing, status: 'read' });
+            if (existing && existing.status !== 'read') await putRow(db, 'issues', { ...existing, status: 'read', upcoming: false });
           }
           if (via && !(lib.children.get(via) ?? []).some((e) => e.child_issue_id === issueId)) {
             await appendEntry(db, lib, via, { child_issue_id: issueId });
+          } else if (chosen) {
+            await insertInOrder(db, lib, chosen, issueId, seriesId, line.numbers[k]);
           }
+          // Already in this list: leave that line where it is.
+          if ((lib.children.get(parentId) ?? []).some((e) => e.child_issue_id === issueId)) continue;
           // "Ion #1–12 (optional)" in a pasted list: shown, but not counted.
-          await appendEntry(db, lib, parentId, { child_issue_id: issueId, via_collection_id: via, optional: /^optional\b/i.test(line.note ?? '') });
+          await appendEntry(db, lib, parentId, { child_issue_id: issueId, via_collection_id: via ?? chosen, optional: /^optional\b/i.test(line.note ?? '') }, next(seriesId, line.numbers[k]));
         }
       }
     }
@@ -277,8 +360,8 @@ export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId:
 }
 
 /** Adds a plain list of parsed issues to a collection. */
-export function addParsedIssues(db: SQLiteDatabase, lib: Library, parentId: string, lines: ResolvedLine[], publisher: string | null) {
-  return addIssueBlocks(db, lib, parentId, [{ kind: null, title: null, lines }], publisher);
+export function addParsedIssues(db: SQLiteDatabase, lib: Library, parentId: string, lines: ResolvedLine[], publisher: string | null, opts: AddOptions = {}) {
+  return addIssueBlocks(db, lib, parentId, [{ kind: null, title: null, lines }], publisher, opts);
 }
 
 export async function moveEntry(db: SQLiteDatabase, lib: Library, entryId: string, parentId: string, toIndex: number) {
