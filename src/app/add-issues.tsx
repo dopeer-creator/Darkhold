@@ -30,6 +30,7 @@ export default function AddIssues() {
   const [after, setAfter] = useState<string | null>(params.after ?? null);
   const [partOf, setPartOf] = useState<string | null>(params.partOf ?? null);
   const [markRead, setMarkRead] = useState(false);
+  const [optional, setOptional] = useState(false);
   const parent = parentId ? lib.collections.get(parentId) : undefined;
   const chapters = useMemo(() => (parentId ? chapterSpots(lib, parentId) : []), [lib, parentId]);
 
@@ -58,7 +59,7 @@ export default function AddIssues() {
   const count = mode === 'library' ? picked.length : total;
 
   const add = async () => {
-    const opts = { afterEntryId: after, partOf: canFile ? partOf : null, markRead };
+    const opts = { afterEntryId: after, partOf: canFile ? partOf : null, markRead, optional };
     if (mode === 'library') await act((db, l) => linkIssues(db, l, parent.id, picked, opts));
     else await act((db, l) => addIssueBlocks(db, l, parent.id, blocks.map((b) => ({ kind: b.kind, title: b.title, lines: b.lines })), parent.publisher, opts));
     router.back();
@@ -103,12 +104,10 @@ export default function AddIssues() {
             </View>
           ) : null}
 
-          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: markRead }} onPress={() => setMarkRead((m) => !m)} style={s.readRow}>
-            <Text style={[T.body, { flex: 1 }]}>I’ve read these</Text>
-            <View style={[s.box, markRead ? { backgroundColor: C.text, borderColor: C.text } : null]}>
-              {markRead ? <Text style={{ color: C.onLight, fontFamily: F.semibold, fontSize: 14 }}>✓</Text> : null}
-            </View>
-          </Pressable>
+          <View style={{ gap: 8 }}>
+            <Toggle label="I’ve read these" on={markRead} onPress={() => setMarkRead((m) => !m)} />
+            <Toggle label="Optional" hint="Shown here, but not counted or up next" on={optional} onPress={() => setOptional((o) => !o)} />
+          </View>
 
           <View style={s.segment} accessibilityRole="tablist">
             {(['type', 'library'] as Mode[]).map((m) => (
@@ -184,7 +183,7 @@ export default function AddIssues() {
 
         <View style={s.footer}>
           <PrimaryButton
-            label={count ? `Add ${count} issue${count === 1 ? '' : 's'}${chapter ? ` to ${chapter.title}` : ''}` : 'Add issues'}
+            label={count ? `Add ${count}${optional ? ' optional' : ''} issue${count === 1 ? '' : 's'}${chapter ? ` to ${chapter.title}` : ''}` : 'Add issues'}
             onPress={add}
             disabled={!count}
           />
@@ -297,6 +296,20 @@ function Header({ title }: { title: string }) {
       </Pressable>
       <Text style={{ fontFamily: F.condBold, fontSize: 24, color: C.text }}>{title}</Text>
     </View>
+  );
+}
+
+function Toggle({ label, hint, on, onPress }: { label: string; hint?: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label} onPress={onPress} style={s.readRow}>
+      <View style={{ flex: 1, paddingVertical: hint ? 8 : 0 }}>
+        <Text style={T.body}>{label}</Text>
+        {hint ? <Text style={T.tiny}>{hint}</Text> : null}
+      </View>
+      <View style={[s.box, on ? { backgroundColor: C.text, borderColor: C.text } : null]}>
+        {on ? <Text style={{ color: C.onLight, fontFamily: F.semibold, fontSize: 14 }}>✓</Text> : null}
+      </View>
+    </Pressable>
   );
 }
 
