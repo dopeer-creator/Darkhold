@@ -180,6 +180,8 @@ export function parseStructuredList(text: string): StructuredList {
 }
 
 export interface ResolvedLine extends ParsedLine {
+  /** Add this line as optional in the list: shown, not counted. */
+  optional?: boolean;
   /** Every series in the library with this title, newest volume first. */
   choices: Series[];
   /** The series these issues will go into; null means a new series gets created. */

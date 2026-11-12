@@ -253,8 +253,8 @@ export interface AddOptions {
   partOf?: string | null;
   /** Mark every added issue read. */
   markRead?: boolean;
-  /** Add them as optional here: shown, but not counted and skipped by Up next. */
-  optional?: boolean;
+  /** Issues (picked from the library) to add as optional here: shown, not counted, skipped by Up next. */
+  optionalIds?: string[];
 }
 
 /** Links an existing run or event into a collection. Returns why not, if the layering rules forbid it. */
@@ -276,7 +276,7 @@ export async function linkIssues(db: SQLiteDatabase, lib: Library, parentId: str
       if (!issue) continue;
       if (via) await insertInOrder(db, lib, via, id, issue.series_id, issue.number);
       if (opts.markRead && issue.status !== 'read') await putRow(db, 'issues', { ...issue, status: 'read', upcoming: false });
-      await appendEntry(db, lib, parentId, { child_issue_id: id, via_collection_id: via, optional: !!opts.optional }, next(issue.series_id, issue.number));
+      await appendEntry(db, lib, parentId, { child_issue_id: id, via_collection_id: via, optional: !!opts.optionalIds?.includes(id) }, next(issue.series_id, issue.number));
     }
   });
 }
@@ -354,7 +354,7 @@ export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId:
           // Already in this list: leave that line where it is.
           if ((lib.children.get(parentId) ?? []).some((e) => e.child_issue_id === issueId)) continue;
           // "Ion #1–12 (optional)" in a pasted list: shown, but not counted.
-          await appendEntry(db, lib, parentId, { child_issue_id: issueId, via_collection_id: via ?? chosen, optional: !!opts.optional || /^optional\b/i.test(line.note ?? '') }, next(seriesId, line.numbers[k]));
+          await appendEntry(db, lib, parentId, { child_issue_id: issueId, via_collection_id: via ?? chosen, optional: !!line.optional || /^optional\b/i.test(line.note ?? '') }, next(seriesId, line.numbers[k]));
         }
       }
     }

@@ -30,7 +30,9 @@ export default function AddIssues() {
   const [after, setAfter] = useState<string | null>(params.after ?? null);
   const [partOf, setPartOf] = useState<string | null>(params.partOf ?? null);
   const [markRead, setMarkRead] = useState(false);
-  const [optional, setOptional] = useState(false);
+  // Optional, per line typed (by line number) or per issue picked.
+  const [optLines, setOptLines] = useState<Record<number, boolean>>({});
+  const [optIds, setOptIds] = useState<string[]>([]);
   const parent = parentId ? lib.collections.get(parentId) : undefined;
   const chapters = useMemo(() => (parentId ? chapterSpots(lib, parentId) : []), [lib, parentId]);
 
@@ -59,9 +61,9 @@ export default function AddIssues() {
   const count = mode === 'library' ? picked.length : total;
 
   const add = async () => {
-    const opts = { afterEntryId: after, partOf: canFile ? partOf : null, markRead, optional };
+    const opts = { afterEntryId: after, partOf: canFile ? partOf : null, markRead, optionalIds: optIds.filter((id) => picked.includes(id)) };
     if (mode === 'library') await act((db, l) => linkIssues(db, l, parent.id, picked, opts));
-    else await act((db, l) => addIssueBlocks(db, l, parent.id, blocks.map((b) => ({ kind: b.kind, title: b.title, lines: b.lines })), parent.publisher, opts));
+    else await act((db, l) => addIssueBlocks(db, l, parent.id, blocks.map((b) => ({ kind: b.kind, title: b.title, lines: b.lines.map((l, i) => ({ ...l, optional: !!optLines[b.start + i] })) })), parent.publisher, opts));
     router.back();
   };
 
@@ -104,10 +106,7 @@ export default function AddIssues() {
             </View>
           ) : null}
 
-          <View style={{ gap: 8 }}>
-            <Toggle label="I’ve read these" on={markRead} onPress={() => setMarkRead((m) => !m)} />
-            <Toggle label="Optional" hint="Shown here, but not counted or up next" on={optional} onPress={() => setOptional((o) => !o)} />
-          </View>
+          <Toggle label="I’ve read these" on={markRead} onPress={() => setMarkRead((m) => !m)} />
 
           <View style={s.segment} accessibilityRole="tablist">
             {(['type', 'library'] as Mode[]).map((m) => (
@@ -118,12 +117,12 @@ export default function AddIssues() {
           </View>
 
           {mode === 'library' ? (
-            <LibraryPicker lib={lib} parentId={parent.id} q={q} setQ={setQ} picked={picked} setPicked={setPicked} />
+            <LibraryPicker lib={lib} parentId={parent.id} q={q} setQ={setQ} picked={picked} setPicked={setPicked} optIds={optIds} setOptIds={setOptIds} />
           ) : (
             <View style={{ gap: 10 }}>
               <TextInput
                 value={text}
-                onChangeText={(t) => { setText(t); setOverrides({}); }}
+                onChangeText={(t) => { setText(t); setOverrides({}); setOptLines({}); }}
                 multiline
                 placeholder={'Uncanny X-Men (1963) #139–140, 143\nX-Men (2024) #35'}
                 placeholderTextColor={C.faint}
@@ -172,6 +171,9 @@ export default function AddIssues() {
                             {l.volumeYear == null ? `New series. Add the year it started, like “${l.seriesTitle} (2024)”.` : 'New series'}
                           </Text>
                         ) : null}
+                        {b.kind !== 'heading' ? (
+                          <OptionalChip on={!!optLines[idx]} onPress={() => setOptLines((o) => ({ ...o, [idx]: !o[idx] }))} />
+                        ) : null}
                       </View>
                     );
                   })}
@@ -183,7 +185,7 @@ export default function AddIssues() {
 
         <View style={s.footer}>
           <PrimaryButton
-            label={count ? `Add ${count}${optional ? ' optional' : ''} issue${count === 1 ? '' : 's'}${chapter ? ` to ${chapter.title}` : ''}` : 'Add issues'}
+            label={count ? `Add ${count} issue${count === 1 ? '' : 's'}${chapter ? ` to ${chapter.title}` : ''}` : 'Add issues'}
             onPress={add}
             disabled={!count}
           />
@@ -234,7 +236,7 @@ function PartOfSearch({ lib, exclude, onPick }: { lib: Library; exclude: string;
   );
 }
 
-function LibraryPicker({ lib, parentId, q, setQ, picked, setPicked }: { lib: Library; parentId: string; q: string; setQ: (v: string) => void; picked: string[]; setPicked: (fn: (p: string[]) => string[]) => void }) {
+function LibraryPicker({ lib, parentId, q, setQ, picked, setPicked, optIds, setOptIds }: { lib: Library; parentId: string; q: string; setQ: (v: string) => void; picked: string[]; setPicked: (fn: (p: string[]) => string[]) => void; optIds: string[]; setOptIds: (fn: (p: string[]) => string[]) => void }) {
   const inList = new Set((lib.children.get(parentId) ?? []).map((e) => e.child_issue_id));
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const items = q.trim().length < 2 ? [] : [...lib.issues.values()]
@@ -246,6 +248,9 @@ function LibraryPicker({ lib, parentId, q, setQ, picked, setPicked }: { lib: Lib
   const row = (id: string, title: string, read: boolean) => (
     <View key={id} style={s.pickRow}>
       <Text style={[T.body, { flex: 1, fontSize: 14 }]}>{title}{read ? <Text style={T.tiny}>  · read</Text> : null}</Text>
+      {picked.includes(id) ? (
+        <OptionalChip on={optIds.includes(id)} onPress={() => setOptIds((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]))} />
+      ) : null}
       <Checkbox checked={picked.includes(id)} label={`Select ${title}`} onPress={() => toggle(id)} />
     </View>
   );
@@ -299,13 +304,20 @@ function Header({ title }: { title: string }) {
   );
 }
 
-function Toggle({ label, hint, on, onPress }: { label: string; hint?: string; on: boolean; onPress: () => void }) {
+/** Marks a line optional in this list: shown, not counted, skipped by Up next. */
+function OptionalChip({ on, onPress }: { on: boolean; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="switch" accessibilityState={{ checked: on }} accessibilityLabel="Optional" hitSlop={6} onPress={onPress}
+      style={[s.optChip, on ? { backgroundColor: C.text, borderColor: C.text } : null]}>
+      <Text style={[T.tiny, on ? { color: C.onLight, fontFamily: F.semibold } : null]}>{on ? '✓ Optional' : 'Optional'}</Text>
+    </Pressable>
+  );
+}
+
+function Toggle({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   return (
     <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label} onPress={onPress} style={s.readRow}>
-      <View style={{ flex: 1, paddingVertical: hint ? 8 : 0 }}>
-        <Text style={T.body}>{label}</Text>
-        {hint ? <Text style={T.tiny}>{hint}</Text> : null}
-      </View>
+      <Text style={[T.body, { flex: 1 }]}>{label}</Text>
       <View style={[s.box, on ? { backgroundColor: C.text, borderColor: C.text } : null]}>
         {on ? <Text style={{ color: C.onLight, fontFamily: F.semibold, fontSize: 14 }}>✓</Text> : null}
       </View>
@@ -319,6 +331,7 @@ const s = StyleSheet.create({
   segItem: { flex: 1, height: 38, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   paste: { minHeight: 96, backgroundColor: C.sunken, borderWidth: 1, borderColor: C.border, borderRadius: 12, color: '#D8D6D0', fontFamily: Platform.select({ android: 'monospace', default: 'Menlo' }), fontSize: 13, lineHeight: 21, padding: 12, textAlignVertical: 'top' },
   input: { minHeight: 48, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, color: C.text, fontFamily: F.sans, fontSize: 15, paddingHorizontal: 14 },
+  optChip: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1, borderColor: C.borderStrong },
   box: { width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
   readRow: { flexDirection: 'row', alignItems: 'center', minHeight: 48, paddingHorizontal: 14, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   hit: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: C.divider },
