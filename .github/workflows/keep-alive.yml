@@ -1,0 +1,29 @@
+# Keeps the free Supabase project from pausing (it pauses after a week with no requests).
+# Every 3 days it makes one small read through the REST API, which counts as activity.
+# Needs two repository secrets (GitHub → Settings → Secrets and variables → Actions):
+#   SUPABASE_URL              the EXPO_PUBLIC_SUPABASE_URL value from .env.local
+#   SUPABASE_PUBLISHABLE_KEY  the EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY value from .env.local
+# Run it by hand from the Actions tab ("Keep Supabase awake" → Run workflow) to test it.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: '17 6 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the database
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "Add the SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY repository secrets first."; exit 1
+          fi
+          status=$(curl -s -o /dev/null -w '%{http_code}' "$URL/rest/v1/series?select=id&limit=1" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          echo "Supabase answered $status"
+          [ "$status" = "200" ]
