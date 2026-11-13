@@ -8,9 +8,9 @@ import { deleteReview, saveReview } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
 import { KeyboardScroll } from '@/ui/keyboard-scroll';
-import { Cover, T } from '@/ui/parts';
+import { Cover, PrimaryButton, T } from '@/ui/parts';
 import { ButtonRow, ReviewForm, ReviewSummary } from '@/ui/review';
-import { reviewTarget, StoryCard, type ReviewTarget } from '@/ui/story-card';
+import { rangesLine, readHeadline, reviewTarget, StoryCard, type ReviewTarget } from '@/ui/story-card';
 import { StoryShareSheet } from '@/ui/story-share';
 import { C, F } from '@/ui/theme';
 
@@ -35,6 +35,10 @@ export default function ReviewScreen() {
     );
   }
 
+  // Lists are reviewed (and shown off) once they're finished: an unfinished one can't get a new review or be shared.
+  const left = target.read ? target.read.total - target.read.count : 0;
+  const unfinished = left > 0;
+
   const open = () => (params.collection ? router.push(`/collection/${params.collection}`) : router.push({ pathname: '/issue/[id]', params: { id: key } }));
   const remove = () =>
     Alert.alert('Delete this review?', 'The list or issue stays; only your verdict, score and words go.', [
@@ -56,13 +60,20 @@ export default function ReviewScreen() {
               <Text style={[T.label, { color: C.muted }]}>{target.kind}</Text>
               <Text style={s.title}>{target.title}</Text>
               {target.creators ? <Text style={T.small}>{target.creators}</Text> : null}
-              <Text style={T.tiny}>{target.meta}</Text>
+              {target.read?.total ? <Text style={[T.tiny, { color: '#E8C48A' }]}>{readHeadline(target.read)}</Text> : null}
+              {target.read?.ranges.length ? <Text style={T.tiny} numberOfLines={3}>{rangesLine(target.read.ranges)}</Text> : null}
+              {target.meta ? <Text style={T.tiny}>{target.meta}</Text> : null}
               <Text style={[T.small, { color: C.dc }]}>Open ›</Text>
             </View>
           </Pressable>
           <View style={{ height: 1, backgroundColor: C.divider }} />
 
-          {editing || !review ? (
+          {unfinished && !review ? (
+            <View style={{ gap: 12 }}>
+              <Text style={T.body}>Finish this list to review it. {left} issue{left === 1 ? '' : 's'} left.</Text>
+              <PrimaryButton label="Open the list" onPress={open} />
+            </View>
+          ) : editing || !review ? (
             <ReviewForm
               initial={review}
               onSave={(f) => act((d, l) => saveReview(d, l, params.collection ? { collection_id: key } : { issue_id: key }, f)).then(() => setEditing(false))}
@@ -73,17 +84,22 @@ export default function ReviewScreen() {
             <>
               <ReviewSummary review={review} big />
               <ButtonRow
-                items={[
-                  { label: 'Edit', onPress: () => setEditing(true) },
-                  { label: 'Share…', onPress: () => setSharing('menu') },
-                  { label: 'Add to story', onPress: () => setSharing('story'), strong: true },
-                ]}
+                items={
+                  unfinished
+                    ? [{ label: 'Edit', onPress: () => setEditing(true) }]
+                    : [
+                        { label: 'Edit', onPress: () => setEditing(true) },
+                        { label: 'Share…', onPress: () => setSharing('menu') },
+                        { label: 'Add to story', onPress: () => setSharing('story'), strong: true },
+                      ]
+                }
               />
+              {unfinished ? <Text style={T.tiny}>{left} issue{left === 1 ? '' : 's'} added since you finished it. Read {left === 1 ? 'it' : 'them'} to share this review again.</Text> : null}
             </>
           )}
         </KeyboardScroll>
 
-      {review && sharing ? <ShareSheet mode={sharing} onClose={() => setSharing(null)} target={target} review={review} /> : null}
+      {review && sharing && !unfinished ? <ShareSheet mode={sharing} onClose={() => setSharing(null)} target={target} review={review} /> : null}
     </SafeAreaView>
   );
 }

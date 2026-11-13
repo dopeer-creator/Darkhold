@@ -3,7 +3,7 @@ import type { ComponentRef, Ref } from 'react';
 import { Text, View } from 'react-native';
 
 import { creditsSummary } from '@/domain/credits';
-import { coverFor, finishedOn, issueTitle, progress, type Library } from '@/domain/library';
+import { coverFor, finishedOn, issueTitle, progress, readRanges, type Library } from '@/domain/library';
 import { formatScore, verdictLabel } from '@/domain/reviews';
 import type { Review } from '@/domain/types';
 import { sizedCover } from '@/ui/parts';
@@ -18,6 +18,25 @@ export interface ReviewTarget {
   creators: string;
   meta: string;
   cover: string | null;
+  /** For a list: how many of its counted issues you read, and which, as ranges per series. */
+  read?: { count: number; total: number; ranges: string[] };
+}
+
+/** "READ ALL 59 ISSUES" or "READ 24 OF 59 ISSUES". */
+export const readHeadline = (r: NonNullable<ReviewTarget['read']>) =>
+  r.count === r.total ? `Read all ${r.total} issue${r.total === 1 ? '' : 's'}` : `Read ${r.count} of ${r.total} issues`;
+
+/** The ranges as one line that fits about `room` characters, ending "+N more" when some don't fit. */
+export function rangesLine(ranges: string[], room = 150): string {
+  let line = '';
+  let used = 0;
+  for (const r of ranges) {
+    const next = line ? `${line} · ${r}` : r;
+    if (used && next.length > room) break;
+    line = next;
+    used++;
+  }
+  return used < ranges.length ? `${line} · +${ranges.length - used} more` : line;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -35,8 +54,9 @@ export function reviewTarget(lib: Library, key: string): ReviewTarget | null {
       kind: `${kindLabel(c)}${c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}`,
       publisher: c.publisher,
       creators: [writers, years].filter(Boolean).join(' · '),
-      meta: [`${p.total} issue${p.total === 1 ? '' : 's'}`, finished ? `finished ${finished}` : ''].filter(Boolean).join(' · '),
+      meta: finished ? `Finished ${finished}` : '',
       cover: coverFor(lib, c.id),
+      read: { count: p.read, total: p.total, ranges: readRanges(lib, c.id) },
     };
   }
   const i = lib.issues.get(key);
@@ -67,7 +87,15 @@ export function StoryCard({ width, target, review, showText, ref }: { width: num
   // Longer reviews use a smaller size; anything past the space ends in an ellipsis, never off the edge.
   const size = words.length <= 140 ? 17 : words.length <= 320 ? 15 : 13.5;
   const lineH = Math.round(size * 1.5);
-  const room = 196; // height left for the words, in card units (the card is 360 × 640)
+  const readBox = target.read && target.read.total ? (
+    <View style={{ marginBottom: 12 * k, gap: 3 * k }}>
+      <Text style={{ fontFamily: F.semibold, fontSize: 12 * k, letterSpacing: 1.4 * k, color: '#E8C48A' }}>{readHeadline(target.read).toUpperCase()}</Text>
+      {target.read.ranges.length ? (
+        <Text numberOfLines={3} style={{ fontFamily: F.sans, fontSize: 12 * k, lineHeight: 17 * k, color: C.muted }}>{rangesLine(target.read.ranges)}</Text>
+      ) : null}
+    </View>
+  ) : null;
+  const room = readBox ? 150 : 196; // height left for the words, in card units (the card is 360 × 640)
   const lines = Math.max(3, Math.floor(room / lineH));
   // The line limit does the cutting (it ends in "…"); this only keeps a huge review from being laid out in full.
   const shown = words.length > 900 ? `${words.slice(0, 899).trimEnd()}…` : words;
@@ -137,6 +165,7 @@ export function StoryCard({ width, target, review, showText, ref }: { width: num
           </>
         )}
 
+        {readBox}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <Text style={{ fontFamily: F.sans, fontSize: 12 * k, color: C.faint }}>{target.meta}</Text>
           <Text style={{ fontFamily: F.semibold, fontSize: 12 * k, color: C.faint, letterSpacing: 1 * k }}>darkhold</Text>

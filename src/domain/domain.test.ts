@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { moveUnits, activeRoots, rootsWithStatus, canSlice, coverFor, entryUnits, moveUnit, isNested, buildLibrary, cannotNest, collectionStatus, issueTitle, lastRead, nextUp, progress, stats } from './library';
+import { moveUnits, activeRoots, rootsWithStatus, canSlice, coverFor, entryUnits, moveUnit, isNested, buildLibrary, cannotNest, collectionStatus, issueTitle, lastRead, nextUp, progress, readRanges, stats } from './library';
 import { parseReadingList, parseStructuredList, resolveAgainstLibrary, titleCase } from './parser';
 import type { Collection, Entry, Issue, Kind, Series } from './types';
 import armageddon from '../../scripts/armageddon.txt?raw';
@@ -397,5 +397,23 @@ describe('moving several pieces', () => {
     expect(moveUnits(units, [1, 3], 0)).toEqual(['b', 'd', 'a', 'c', 'e']);
     expect(moveUnits(units, [0, 2], 5)).toEqual(['b', 'd', 'e', 'a', 'c']);
     expect(moveUnits(units, [0, 4], 3)).toEqual(['b', 'c', 'a', 'e', 'd']);
+  });
+});
+
+describe('what you read in a list', () => {
+  it('lists read issues per series, joining runs of numbers', () => {
+    const lib = fixture();
+    expect(readRanges(lib, 'crisis')).toEqual(['Green Lantern #43', 'Blackest Night #0–1']);
+    lib.issues.get('gl44')!.status = 'read';
+    lib.issues.get('bn2')!.status = 'read';
+    expect(readRanges(lib, 'crisis')).toEqual(['Green Lantern #43–44', 'Blackest Night #0–2']);
+  });
+
+  it('skips optional lines and keeps point issues apart', () => {
+    const lib = fixture();
+    lib.children.get('event')![1].optional = true;
+    lib.issues.get('bn2')!.status = 'read';
+    lib.issues.get('bn2')!.number = '1.5';
+    expect(readRanges(lib, 'event')).toEqual(['Blackest Night #0, #1.5']);
   });
 });

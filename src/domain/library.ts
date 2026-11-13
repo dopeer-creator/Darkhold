@@ -485,6 +485,38 @@ export function rereadNumber(lib: Library, id: string): number {
   return (Number.isFinite(before) ? before : 0) + 2;
 }
 
+/**
+ * The counted issues of a list you've read, one line per series in reading order, with runs of numbers
+ * joined: ["Dark Reign: Fantastic Four #1–5", "Fantastic Four #570–588, #600–611"].
+ */
+export function readRanges(lib: Library, rootId: string): string[] {
+  const bySeries = new Map<string, string[]>();
+  const seen = new Set<string>();
+  for (const s of walk(lib, rootId)) {
+    if (s.optional || s.upcoming || seen.has(s.issueId)) continue;
+    seen.add(s.issueId);
+    const issue = lib.issues.get(s.issueId);
+    if (!issue || issue.status !== 'read') continue;
+    const nums = bySeries.get(issue.series_id) ?? [];
+    nums.push(issue.number ?? issue.label ?? '?');
+    bySeries.set(issue.series_id, nums);
+  }
+  const whole = (n: string) => /^\d+$/.test(n);
+  const out: string[] = [];
+  for (const [seriesId, nums] of bySeries) {
+    const sorted = [...nums].sort((a, b) => parseFloat(a) - parseFloat(b) || a.localeCompare(b));
+    const parts: string[] = [];
+    for (let i = 0; i < sorted.length; ) {
+      let j = i;
+      while (j + 1 < sorted.length && whole(sorted[j]) && whole(sorted[j + 1]) && Number(sorted[j + 1]) === Number(sorted[j]) + 1) j++;
+      parts.push(j > i ? `#${sorted[i]}–${sorted[j]}` : `#${sorted[i]}`);
+      i = j + 1;
+    }
+    out.push(`${lib.series.get(seriesId)?.title ?? 'Unknown series'} ${parts.join(', ')}`);
+  }
+  return out;
+}
+
 /** When a list was finished: the latest read day among its counted issues (null if any has no date, or none are read). */
 export function finishedOn(lib: Library, id: string): string | null {
   let last = '';
