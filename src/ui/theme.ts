@@ -71,7 +71,8 @@ export const KIND_HINT: Record<Kind, string> = {
   edition: 'A trade, omnibus or other collected book',
 };
 /** The kinds you can pick. A story inside a run is a chapter heading there, not a list of its own. */
-export const KINDS: Kind[] = ['run', 'event', 'crisis', 'era', 'edition'];
+// Collected editions are no longer offered: a book's contents fit a run, event or reading order. The kind stays for old data.
+export const KINDS: Kind[] = ['run', 'event', 'crisis', 'era'];
 /** A list's label: your own word if you gave one, else its type. */
 export const kindLabel = (c: Pick<Collection, 'kind' | 'label'>) => (c.label?.trim() ? c.label.trim().toUpperCase() : KIND_LABEL[c.kind]);
 export const STATUS_LABEL = { not_started: 'Not started', planned: 'Plan to read', reading: 'Reading', on_hold: 'On hold', completed: 'Completed' } as const;

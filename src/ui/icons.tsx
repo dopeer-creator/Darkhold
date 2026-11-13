@@ -92,13 +92,6 @@ export const EraIcon = ({ size = 22, color = C.text, width = 1.8 }: P) => (
     <Circle cx="19" cy="12" r="2.2" {...stroke(color, width)} />
   </Svg>
 );
-/** Collected edition: a book on the shelf. */
-export const EditionIcon = ({ size = 22, color = C.text, width = 1.8 }: P) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z" {...stroke(color, width)} />
-    <Path d="M5 17a3 3 0 0 1 3-3h11" {...stroke(color, width)} />
-  </Svg>
-);
 /** Filter: three lines, shortest at the bottom. */
 export const FilterIcon = ({ size = 20, color = C.muted, width = 1.8 }: P) => (
   <Svg width={size} height={size} viewBox="0 0 24 24"><Path d="M4 6h16M7 12h10M10 18h4" {...stroke(color, width)} /></Svg>

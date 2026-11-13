@@ -3,7 +3,7 @@ import { useState, type ComponentType } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CrisisIcon, EditionIcon, EraIcon, EventIcon, IssueIcon, RunIcon } from '@/ui/icons';
+import { CrisisIcon, EraIcon, EventIcon, IssueIcon, RunIcon } from '@/ui/icons';
 import { GhostButton, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
 import { useImportFile } from '@/ui/use-import';
@@ -16,7 +16,6 @@ const OPTIONS: Option[] = [
   { label: 'Event', hint: 'One story or miniseries', href: '/new?kind=event', Icon: EventIcon, bg: '#331619', fg: '#F0B4B4' },
   { label: 'Reading order', hint: 'You jump between books', href: '/new?kind=crisis', Icon: CrisisIcon, bg: '#2A1D10', fg: '#E8C48A' },
   { label: 'Era', hint: 'A writer across books', href: '/new?kind=era', Icon: EraIcon, bg: '#12302F', fg: '#9ED9D3' },
-  { label: 'Collected edition', hint: 'A trade or omnibus', href: '/new?kind=edition', Icon: EditionIcon, bg: '#2E2A14', fg: '#E3D99A' },
   { label: 'Issues', hint: 'Single issues, a range or a pasted list', href: '/add-issues', Icon: IssueIcon, bg: '#26262B', fg: '#D8D6D0' },
 ];
 

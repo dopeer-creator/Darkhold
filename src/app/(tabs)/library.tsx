@@ -21,7 +21,6 @@ const TABS: { key: 'all' | Kind | 'series' | 'issues'; label: string }[] = [
   { key: 'event', label: 'Events' },
   { key: 'era', label: 'Eras' },
   { key: 'crisis', label: 'Reading orders' },
-  { key: 'edition', label: 'Editions' },
   { key: 'series', label: 'Series' },
   { key: 'issues', label: 'Issues' },
 ];
