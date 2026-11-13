@@ -28,7 +28,7 @@ export default function Home() {
     const issue = lib.issues.get(l.issue_id);
     const parent = lib.parents.get(l.issue_id)?.[0];
     const coll = parent ? lib.collections.get(parent) : undefined;
-    return { id: l.id, issueId: l.issue_id, title: issueTitle(lib, l.issue_id), number: issue?.number ?? '', where: coll ? `${kindLabel(coll)[0]}${kindLabel(coll).slice(1).toLowerCase()} · ${coll.title}` : '', parentId: parent, publisher: coll?.publisher ?? null, seriesTitle: issue ? (lib.series.get(issue.series_id)?.title ?? '') : '', day: l.read_on, cover: issue?.cover_path ?? null };
+    return { id: l.id, issueId: l.issue_id, title: issueTitle(lib, l.issue_id), number: issue?.number ?? '', where: coll ? `${kindLabel(coll)[0]}${kindLabel(coll).slice(1).toLowerCase()} · ${coll.title}` : '', publisher: coll?.publisher ?? null, seriesTitle: issue ? (lib.series.get(issue.series_id)?.title ?? '') : '', day: l.read_on, cover: issue?.cover_path ?? null };
   });
 
   return (
@@ -136,7 +136,7 @@ export default function Home() {
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
             <SectionTitle right={<Pressable onPress={() => router.push('/history')} hitSlop={10}><Text style={T.small}>History</Text></Pressable>}>Recently read</SectionTitle>
             {recent.map((r, i) => (
-              <Pressable key={r.id} onPress={() => r.parentId && router.push(`/collection/${r.parentId}`)} style={[s.row, i < recent.length - 1 ? s.rowLine : null]}>
+              <Pressable key={r.id} onPress={() => router.push(`/issue/${r.issueId}`)} style={[s.row, i < recent.length - 1 ? s.rowLine : null]}>
                 <Cover title={r.seriesTitle} publisher={r.publisher} width={36} mark={r.number} uri={r.cover} />
                 <View style={{ flex: 1 }}>
                   <Text numberOfLines={1} style={T.bodyMedium}>{r.title}</Text>
