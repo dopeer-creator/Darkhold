@@ -426,6 +426,7 @@ function EntryList(props: ListProps) {
         style={s.issueRow}>
         <View style={{ flex: 1, paddingVertical: 8 }}>
           <Text style={[T.body, { fontSize: 14, color: read || notOutYet(issue) ? C.muted : C.text }]}>{issueTitle(lib, issue.id)}</Text>
+          {issue.story_title ? <Text numberOfLines={2} style={[T.tiny, { fontSize: 12, marginTop: 1, fontStyle: 'italic' }]}>“{issue.story_title}”</Text> : null}
           {isNext ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>{issue.status === 'reading' ? 'READING NOW' : 'NEXT UP'}</Text> : null}
           {notOutYet(issue) ? <Text style={[T.label, { color: C.indie, marginTop: 2, fontSize: 10 }]}>NOT OUT YET{issue.release_on ? ` · ${releaseLabel(issue.release_on).toUpperCase()}` : ''}</Text> : null}
           {entry.optional ? <Text style={[T.label, { color: C.dim, marginTop: 2, fontSize: 10 }]}>OPTIONAL · NOT COUNTED</Text> : null}
