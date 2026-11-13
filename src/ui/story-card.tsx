@@ -22,9 +22,9 @@ export interface ReviewTarget {
   read?: { count: number; total: number; ranges: string[] };
 }
 
-/** "READ ALL 59 ISSUES" or "READ 24 OF 59 ISSUES". */
+/** "Read 59 issues:" (or "Read 24 of 59 issues:"), the colon leading into the list of what they were. */
 export const readHeadline = (r: NonNullable<ReviewTarget['read']>) =>
-  r.count === r.total ? `Read all ${r.total} issue${r.total === 1 ? '' : 's'}` : `Read ${r.count} of ${r.total} issues`;
+  `${r.count === r.total ? `Read ${r.total} issue${r.total === 1 ? '' : 's'}` : `Read ${r.count} of ${r.total} issues`}${r.ranges.length ? ':' : ''}`;
 
 /** The ranges as one line that fits about `room` characters, ending "+N more" when some don't fit. */
 export function rangesLine(ranges: string[], room = 150): string {
