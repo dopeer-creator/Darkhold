@@ -410,10 +410,16 @@ export function headingSections(lib: Library, parentId: string): Map<string, { r
       out.set(e.id, current);
       continue;
     }
-    if (!current || e.optional) continue;
-    const ids = e.child_issue_id ? [e.child_issue_id] : e.child_collection_id ? walk(lib, e.child_collection_id).map((s) => s.issueId) : [];
-    for (const id of ids) {
-      if (current.issueIds.has(id) || !lib.issues.has(id) || notOutYet(lib.issues.get(id)!)) continue;
+    if (!current) continue;
+    // Same rule as progress(): optional issues (on this line or inside a nested list) count once read.
+    const steps: Step[] = e.child_issue_id
+      ? [{ issueId: e.child_issue_id, path: [], via: null, optional: !!e.optional, upcoming: false }]
+      : e.child_collection_id
+        ? walk(lib, e.child_collection_id).map((s) => ({ ...s, optional: s.optional || !!e.optional }))
+        : [];
+    for (const s of steps) {
+      const id = s.issueId;
+      if (!counts(lib, s) || current.issueIds.has(id) || !lib.issues.has(id) || notOutYet(lib.issues.get(id)!)) continue;
       current.issueIds.add(id);
       current.total++;
       if (lib.issues.get(id)!.status === 'read') current.read++;

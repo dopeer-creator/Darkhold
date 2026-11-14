@@ -45,6 +45,16 @@ describe('chapter headings', () => {
     expect(nextUp(lib, 'road')!.issueId).toBe('3');
   });
 
+  it('count an optional issue once read, the same as the list total', () => {
+    const lib = road();
+    lib.issues.set('5', issue('5', 'read'));
+    lib.issues.set('6', issue('6'));
+    lib.children.get('road')!.splice(3, 0, line({ child_issue_id: '5', optional: true }), line({ child_issue_id: '6', optional: true }));
+    const s = headingSections(lib, 'road');
+    expect([s.get('h1')!.read, s.get('h1')!.total]).toEqual([3, 3]);
+    expect(progress(lib, 'road')).toEqual({ read: 3, total: 5, left: 2, upcoming: 0 });
+  });
+
   it('move in Edit order as their own pieces', () => {
     expect(entryUnits(road(), 'road').map((u) => u.kind)).toEqual(['heading', 'issue', 'issue', 'heading', 'issue', 'issue']);
   });
