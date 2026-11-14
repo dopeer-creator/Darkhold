@@ -379,7 +379,7 @@ export default function IssueScreen() {
 
           {entry && parentColl ? (
             <GhostButton
-              label={lineOptional ? `Count it in ${parentColl.title} again` : `Optional in ${parentColl.title}`}
+              label={lineOptional ? `Make it required in ${parentColl.title}` : `Optional in ${parentColl.title}`}
               onPress={() => act((d, l) => setOptional(d, l, parentColl.id, [entry], !lineOptional))}
             />
           ) : null}

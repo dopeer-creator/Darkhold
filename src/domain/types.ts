@@ -81,7 +81,7 @@ export interface Entry {
   /** A chapter heading line ("Phase 2 · The Incursions"): holds no issue or collection; note is its description. */
   heading?: string | null;
   note: string | null;
-  /** Shown and tickable, but not counted toward progress ("optional but recommended"). */
+  /** Shown and tickable, skipped by Next up, counted toward progress only once read ("optional but recommended"). */
   optional?: boolean;
   /**
    * Worked out when the library loads, never stored: the list this line is shown as part of.

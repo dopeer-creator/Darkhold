@@ -409,11 +409,15 @@ describe('what you read in a list', () => {
     expect(readRanges(lib, 'crisis')).toEqual(['Green Lantern #43–44', 'Blackest Night #0–2']);
   });
 
-  it('skips optional lines and keeps point issues apart', () => {
+  it('leaves out optional issues until read, and keeps point issues apart', () => {
     const lib = fixture();
-    lib.children.get('event')![1].optional = true;
+    const opt = lib.children.get('event')![1];
+    opt.optional = true;
+    lib.issues.get(opt.child_issue_id!)!.status = 'unread';
     lib.issues.get('bn2')!.status = 'read';
     lib.issues.get('bn2')!.number = '1.5';
     expect(readRanges(lib, 'event')).toEqual(['Blackest Night #0, #1.5']);
+    lib.issues.get(opt.child_issue_id!)!.status = 'read';
+    expect(readRanges(lib, 'event')).toEqual(['Blackest Night #0–1, #1.5']);
   });
 });

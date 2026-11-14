@@ -429,7 +429,7 @@ function EntryList(props: ListProps) {
           {issue.story_title ? <Text numberOfLines={2} style={[T.tiny, { fontSize: 12, marginTop: 1, fontStyle: 'italic' }]}>“{issue.story_title}”</Text> : null}
           {isNext ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>{issue.status === 'reading' ? 'READING NOW' : 'NEXT UP'}</Text> : null}
           {notOutYet(issue) ? <Text style={[T.label, { color: C.indie, marginTop: 2, fontSize: 10 }]}>NOT OUT YET{issue.release_on ? ` · ${releaseLabel(issue.release_on).toUpperCase()}` : ''}</Text> : null}
-          {entry.optional ? <Text style={[T.label, { color: C.dim, marginTop: 2, fontSize: 10 }]}>OPTIONAL · NOT COUNTED</Text> : null}
+          {entry.optional ? <Text style={[T.label, { color: C.dim, marginTop: 2, fontSize: 10 }]}>{ticked ? 'OPTIONAL · COUNTED' : 'OPTIONAL · COUNTS ONCE READ'}</Text> : null}
           {read && (issue.completed_at || lib.reviews.has(issue.id) || times > 1) ? (
             <Text style={[T.tiny, { fontSize: 11, marginTop: 2 }]}>
               {issue.completed_at ? `Read ${relativeDay(issue.completed_at)}` : ''}
@@ -516,8 +516,8 @@ function EntryList(props: ListProps) {
         if (r.kind === 'slice') {
           const via = r.via ? lib.collections.get(r.via)! : null;
           const ids = r.entries.map((e) => e.child_issue_id!);
-          // Optional lines show, but the block's count leaves them out (unless the whole block is optional).
-          const counted = (r.entries.every((e) => e.optional) ? ids : r.entries.filter((e) => !e.optional).map((e) => e.child_issue_id!)).filter((id) => !notOutYet(lib.issues.get(id)!));
+          // Optional lines count in the block once read (a block that's all optional counts all of them).
+          const counted = (r.entries.every((e) => e.optional) ? ids : r.entries.filter((e) => !e.optional || lib.issues.get(e.child_issue_id!)?.status === 'read').map((e) => e.child_issue_id!)).filter((id) => !notOutYet(lib.issues.get(id)!));
           const read = counted.filter((id) => lib.issues.get(id)?.status === 'read').length;
           const hasNext = !!nextIssueId && ids.includes(nextIssueId);
           const isOpen = open[r.key] ?? hasNext;

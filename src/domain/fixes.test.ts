@@ -104,7 +104,7 @@ describe('part of, worked out', () => {
 });
 
 describe('optional lines and plan to read', () => {
-  it('shows optional issues without counting them', () => {
+  it('shows optional issues, counting them only once read', () => {
     const lib = buildLibrary({
       series: [],
       issues: [issue('a', 's', '1'), issue('ion', 'ion', '1'), issue('b', 's', '2')],
@@ -114,8 +114,20 @@ describe('optional lines and plan to read', () => {
     lib.issues.get('a')!.status = 'read';
     expect(progress(lib, 'road')).toEqual({ read: 1, total: 2, left: 1, upcoming: 0 });
     expect(nextUp(lib, 'road')!.issueId).toBe('b');
+    lib.issues.get('ion')!.status = 'read';
+    expect(progress(lib, 'road')).toEqual({ read: 2, total: 3, left: 1, upcoming: 0 });
     lib.issues.get('b')!.status = 'read';
     expect(collectionStatus(lib, 'road')).toBe('completed');
+  });
+
+  it('an optional issue that is also a required line elsewhere in the list still counts', () => {
+    const lib = buildLibrary({
+      series: [],
+      issues: [issue('a', 's', '1'), issue('b', 's', '2')],
+      collections: [coll('road', 'crisis')],
+      entries: [line('road', { issue: 'a', optional: true }), line('road', { issue: 'b' }), line('road', { issue: 'a' })],
+    });
+    expect(progress(lib, 'road')).toEqual({ read: 0, total: 2, left: 2, upcoming: 0 });
   });
 
   it('a planned list not started yet is on the Plan to read shelf', () => {

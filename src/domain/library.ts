@@ -110,11 +110,14 @@ export interface Step {
   path: string[];
   /** The run or event this issue is a slice of, when it sits in a crisis reading order. */
   via: string | null;
-  /** On an optional line (or inside one): shown, but not counted toward progress. */
+  /** On an optional line (or inside one): shown, skipped by Next up, counted only once you've read it. */
   optional: boolean;
   /** Not out yet: shown, skipped by Next up, left out of the counts. */
   upcoming: boolean;
 }
+
+/** Whether a step counts toward a list's numbers: every required issue, plus optional ones you've read. */
+export const counts = (lib: Library, s: Step, read = (id: string) => lib.issues.get(id)?.status === 'read') => !s.optional || read(s.issueId);
 
 /** Every issue under a collection in reading order. An issue linked twice appears twice. */
 export function walk(lib: Library, rootId: string): Step[] {
@@ -162,13 +165,16 @@ export function notOutYet(issue: Issue, today = todayKey()): boolean {
   return day > today;
 }
 
-/** Counts each issue once, however many times it is linked inside the collection. Optional lines don't count. */
+/**
+ * Counts each issue once, however many times it is linked inside the collection. Optional issues count
+ * only once read: 10 of 20 read plus 1 optional read is 11 of 21.
+ */
 export function progress(lib: Library, rootId: string): Progress {
   const seen = new Set<string>();
   const later = new Set<string>();
   let read = 0;
   for (const s of walk(lib, rootId)) {
-    if (s.optional || seen.has(s.issueId) || later.has(s.issueId)) continue;
+    if (!counts(lib, s) || seen.has(s.issueId) || later.has(s.issueId)) continue;
     if (s.upcoming) {
       later.add(s.issueId);
       continue;
@@ -470,8 +476,10 @@ export function shownProgress(lib: Library, id: string): Progress {
   const p = progress(lib, id);
   const since = lib.collections.get(id)?.reread_since;
   if (!since) return p;
-  const counted = [...new Set(walk(lib, id).filter((s) => !s.optional).map((s) => s.issueId))];
-  const read = counted.filter((iid) => rereadSince(lib, iid, since)).length;
+  // This time through, an optional issue counts once you've read it again.
+  const again = (iid: string) => rereadSince(lib, iid, since);
+  const counted = [...new Set(walk(lib, id).filter((s) => counts(lib, s, again)).map((s) => s.issueId))];
+  const read = counted.filter(again).length;
   return { ...p, read, left: counted.length - read, total: counted.length };
 }
 
@@ -493,7 +501,7 @@ export function readRanges(lib: Library, rootId: string): string[] {
   const bySeries = new Map<string, string[]>();
   const seen = new Set<string>();
   for (const s of walk(lib, rootId)) {
-    if (s.optional || s.upcoming || seen.has(s.issueId)) continue;
+    if (!counts(lib, s) || s.upcoming || seen.has(s.issueId)) continue;
     seen.add(s.issueId);
     const issue = lib.issues.get(s.issueId);
     if (!issue || issue.status !== 'read') continue;
@@ -521,7 +529,7 @@ export function readRanges(lib: Library, rootId: string): string[] {
 export function finishedOn(lib: Library, id: string): string | null {
   let last = '';
   for (const s of walk(lib, id)) {
-    if (s.optional) continue;
+    if (!counts(lib, s)) continue;
     const issue = lib.issues.get(s.issueId);
     if (!issue || issue.status !== 'read' || !issue.completed_at) return null;
     if (issue.completed_at > last) last = issue.completed_at;
