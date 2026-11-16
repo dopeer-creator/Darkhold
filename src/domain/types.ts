@@ -65,6 +65,8 @@ export interface Collection {
   reread_since?: string | null;
   /** Your own word for the type, shown instead of it ("Saga", "Omnibus"). */
   label?: string | null;
+  /** When the list was added (Supabase keeps the first value). Lists from before this existed have a best guess. */
+  created_at?: string | null;
   rating: number | null;
   notes: string | null;
 }

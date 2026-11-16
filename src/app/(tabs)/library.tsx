@@ -35,6 +35,14 @@ const STATUSES = [
   { key: 'on_hold', label: 'On hold' },
   { key: 'completed', label: 'Completed' },
 ] as const;
+/** How the lists are ordered. "Status" keeps what you're reading first. */
+const SORTS = [
+  { key: 'status', label: 'Status' },
+  { key: 'recent', label: 'Recently added' },
+  { key: 'az', label: 'A–Z' },
+  { key: 'longest', label: 'Longest first' },
+] as const;
+type SortKey = (typeof SORTS)[number]['key'];
 const ISSUE_STATUSES = [
   { key: 'issue_read', label: 'Read' },
   { key: 'issue_unread', label: 'Unread' },
@@ -60,6 +68,7 @@ export default function LibraryScreen() {
   const [statuses, setStatuses] = useState<string[]>([]);
   const [chars, setChars] = useState<string[]>([]);
   const [writers, setWriters] = useState<string[]>([]);
+  const [sort, setSort] = useState<SortKey>('status');
   const characters = useMemo(() => allCharacters(lib), [lib]);
   const writerIndex = useMemo(() => peopleIndex(lib, 'writer'), [lib]);
   const artistIndex = useMemo(() => peopleIndex(lib, 'artist'), [lib]);
@@ -81,6 +90,7 @@ export default function LibraryScreen() {
     setStatuses([]);
     setChars([]);
     setWriters([]);
+    setSort('status');
   };
   /** The five most-read, plus any you've ticked from the full page. */
   const quick = <T extends { name: string }>(rows: T[], picked: string[]) => [...rows.slice(0, 5), ...rows.slice(5).filter((r) => picked.includes(r.name.toLowerCase()))];
@@ -88,7 +98,7 @@ export default function LibraryScreen() {
   const charOk = (text: string | null | undefined) => !chars.length || splitTags(text).some((t) => chars.includes(t.toLowerCase()));
   const [filtersOpen, setFiltersOpen] = useState(false);
   const toggle = (set: (fn: (v: string[]) => string[]) => void, key: string) => set((v) => (v.includes(key) ? v.filter((k) => k !== key) : [...v, key]));
-  const active = pubs.length + statuses.length + chars.length + writers.length;
+  const active = pubs.length + statuses.length + chars.length + writers.length + (sort === 'status' ? 0 : 1);
   const { width, height } = useWindowDimensions();
   const tile = Math.floor((Math.min(width, 600) - 32 - 24) / 3);
 
@@ -115,9 +125,9 @@ export default function LibraryScreen() {
       .filter((c) => !writers.length || writerLists.has(c.id))
       .filter((c) => !ws.length || byPerson.has(c.id) || hasAll(ws, [c.title, c.writer, c.artist, c.characters, c.publisher, kindLabel(c)].join(' ').toLowerCase()))
       .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id), by: byPerson.get(c.id) ? { ...byPerson.get(c.id)!, who } : null }))
-      .sort((a, b) => (b.by?.n ?? 0) - (a.by?.n ?? 0) || rank(a.st) - rank(b.st) || a.c.title.localeCompare(b.c.title));
+      .sort((a, b) => (b.by?.n ?? 0) - (a.by?.n ?? 0) || order(sort, a, b) || a.c.title.localeCompare(b.c.title));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lib, tab, query, pubs, statuses, chars, writers, writerLists, writerIndex, artistIndex]);
+  }, [lib, tab, query, pubs, statuses, chars, writers, writerLists, writerIndex, artistIndex, sort]);
 
   const seriesRows = useMemo(() => {
     if (tab !== 'series' && !(tab === 'all' && query.trim())) return [];
@@ -184,7 +194,15 @@ export default function LibraryScreen() {
       </View>
       {filtersOpen ? (
         <ScrollView style={[s.panel, { maxHeight: Math.round(height * 0.62) }]} contentContainerStyle={{ padding: 12, gap: 8 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-          <Text style={T.label}>PUBLISHER</Text>
+          {tab !== 'series' && tab !== 'issues' ? (
+            <>
+              <Text style={T.label}>SORT</Text>
+              <View style={s.chipRow}>
+                {SORTS.map((o) => <Chip key={o.key} label={o.label} active={sort === o.key} onPress={() => setSort(o.key)} />)}
+              </View>
+            </>
+          ) : null}
+          <Text style={[T.label, tab !== 'series' && tab !== 'issues' ? { marginTop: 6 } : null]}>PUBLISHER</Text>
           <View style={s.chipRow}>
             {PUBLISHERS.map((p) => <Chip key={p.key} label={p.label} dot={p.color} active={pubs.includes(p.key)} onPress={() => toggle(setPubs, p.key)} />)}
           </View>
@@ -223,7 +241,7 @@ export default function LibraryScreen() {
       ) : active ? (
         <View style={s.activeRow}>
           <Text style={[T.small, { flex: 1 }]} numberOfLines={1}>
-            {[...PUBLISHERS.filter((p) => pubs.includes(p.key)).map((p) => p.label), ...[...STATUSES, ...ISSUE_STATUSES].filter((st) => statuses.includes(st.key)).map((st) => st.label), ...characters.filter((ch) => chars.includes(ch.name.toLowerCase())).map((ch) => ch.name), ...writerIndex.filter((w) => writers.includes(w.name.toLowerCase())).map((w) => w.name)].filter((v, i, all) => all.indexOf(v) === i).join(' · ')}
+            {[...(sort === 'status' ? [] : [SORTS.find((o) => o.key === sort)!.label]), ...PUBLISHERS.filter((p) => pubs.includes(p.key)).map((p) => p.label), ...[...STATUSES, ...ISSUE_STATUSES].filter((st) => statuses.includes(st.key)).map((st) => st.label), ...characters.filter((ch) => chars.includes(ch.name.toLowerCase())).map((ch) => ch.name), ...writerIndex.filter((w) => writers.includes(w.name.toLowerCase())).map((w) => w.name)].filter((v, i, all) => all.indexOf(v) === i).join(' · ')}
           </Text>
           {chars.length === 1 && !writers.length ? (
             <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/character/[name]', params: { name: characters.find((ch) => ch.name.toLowerCase() === chars[0])?.name ?? chars[0] } })} hitSlop={8}>
@@ -327,6 +345,14 @@ export default function LibraryScreen() {
 }
 
 const rank = (st: string) => ({ reading: 0, planned: 1, not_started: 2, on_hold: 3, completed: 4 })[st] ?? 5;
+const added = (c: { created_at?: string | null }) => (c.created_at ? Date.parse(c.created_at) || 0 : 0);
+/** One list against another for the chosen sort (0 = tie, then they go A–Z). */
+function order(sort: SortKey, a: { c: { title: string; created_at?: string | null }; p: { total: number }; st: string }, b: typeof a) {
+  if (sort === 'recent') return added(b.c) - added(a.c);
+  if (sort === 'longest') return b.p.total - a.p.total;
+  if (sort === 'az') return 0;
+  return rank(a.st) - rank(b.st);
+}
 const num = (n: string | null) => (n == null ? 1e9 : Number.isNaN(Number(n)) ? 1e8 : Number(n));
 
 const s = StyleSheet.create({

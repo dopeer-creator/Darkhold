@@ -157,7 +157,7 @@ export async function updateIssue(db: SQLiteDatabase, lib: Library, issueId: str
 function collectionRow(fields: Pick<Collection, 'kind' | 'title'> & Partial<Collection>): Collection {
   return {
     publisher: null, writer: null, artist: null, characters: null, start_year: null, end_year: null,
-    description: null, cover_path: null, on_hold: false, ongoing: false, planned: false, reading_now: false, label: null, rating: null, notes: null, ...fields, id: newId(),
+    description: null, cover_path: null, on_hold: false, ongoing: false, planned: false, reading_now: false, label: null, rating: null, notes: null, ...fields, id: newId(), created_at: new Date().toISOString(),
   };
 }
 
@@ -415,7 +415,8 @@ export async function importFile(db: SQLiteDatabase, lib: Library, file: ExportF
   await db.withTransactionAsync(async () => {
     for (const s of plan.series) await putRow(db, 'series', s);
     for (const i of [...plan.issues, ...plan.markRead]) await putRow(db, 'issues', i);
-    for (const c of plan.collections) await putRow(db, 'collections', c);
+    const now = new Date().toISOString();
+    for (const c of plan.collections) await putRow(db, 'collections', { ...c, created_at: c.created_at ?? now });
     for (const e of plan.entries) await putRow(db, 'entries', e);
     for (const l of plan.read_log) await putRow(db, 'read_log', l);
     for (const l of plan.links) await putRow(db, 'links', l);
