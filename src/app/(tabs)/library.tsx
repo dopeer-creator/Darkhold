@@ -3,17 +3,18 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { collectionStatus, coverFor, isNested, issueTitle, progress, walk } from '@/domain/library';
+import { collectionStatus, coverFor, isNested, issueTitle, progress, rootsWithStatus, walk } from '@/domain/library';
 import { allCharacters, splitTags } from '@/domain/characters';
 import { splitNames } from '@/domain/credits';
 import { peopleIndex, personLists } from '@/domain/people';
 import { seriesLabel } from '@/domain/series';
-import type { Kind } from '@/domain/types';
+import type { CollectionStatus, Kind } from '@/domain/types';
 import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { FilterIcon, PlusIcon, SearchIcon } from '@/ui/icons';
 import { Bar, Checkbox, Chip, Cover, T } from '@/ui/parts';
 import { C, F, KIND_COLOR, publisherColor, kindLabel } from '@/ui/theme';
+import { TopBar } from '@/ui/top-bar';
 
 const TABS: { key: 'all' | Kind | 'series' | 'issues'; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -81,15 +82,23 @@ export default function LibraryScreen() {
   // Lists that belong to a ticked writer (their name on the list, or most of its issues).
   const writerLists = useMemo(() => new Set(writers.flatMap((w) => personLists(lib, w, 'writer').map((c) => c.id))), [lib, writers]);
   const writerOk = (text: string | null | undefined) => !writers.length || splitNames(text).some((n) => writers.includes(n.toLowerCase()));
-  // Opened from a character or writer page ("Filter"): show just them.
-  const params = useLocalSearchParams<{ character?: string; writer?: string }>();
-  const paramKey = `${params.character ?? ''}|${params.writer ?? ''}`;
-  const [appliedKey, setAppliedKey] = useState('|');
+  // Opened from a character or writer page ("Filter"), or a Home heading (On hold, Plan to read): show just them.
+  // `at` changes on every tap, so opening it again re-applies the filter after you cleared it.
+  const params = useLocalSearchParams<{ character?: string; writer?: string; status?: string; at?: string }>();
+  const paramKey = `${params.character ?? ''}|${params.writer ?? ''}|${params.status ?? ''}|${params.at ?? ''}`;
+  const [appliedKey, setAppliedKey] = useState('|||');
   if (paramKey !== appliedKey) {
     setAppliedKey(paramKey);
     if (params.character) setChars([params.character.toLowerCase()]);
     if (params.writer) setWriters([params.writer.toLowerCase()]);
-    if (params.character || params.writer) setTab('all');
+    if (params.status && STATUSES.some((st) => st.key === params.status)) {
+      setStatuses([params.status]);
+      setPubs([]);
+      setChars([]);
+      setWriters([]);
+      setQuery('');
+    }
+    if (params.character || params.writer || params.status) setTab('all');
   }
   const clearAll = () => {
     setPubs([]);
@@ -108,6 +117,12 @@ export default function LibraryScreen() {
   const { width, height } = useWindowDimensions();
   const tile = Math.floor((Math.min(width, 600) - 32 - 24) / 3);
 
+  // All with a status ticked shows the same lists as that section on Home (top-level ones, as Home shows them).
+  const homeRoots = useMemo(
+    () => (tab === 'all' && statuses.length && !query.trim() ? new Set(statuses.flatMap((st) => rootsWithStatus(lib, st as CollectionStatus))) : null),
+    [lib, tab, statuses, query],
+  );
+
   const collections = useMemo(() => {
     const ws = words(query);
     // Searching a writer or artist also finds every list holding their issues, with how many are theirs.
@@ -124,7 +139,7 @@ export default function LibraryScreen() {
     const who = people.length === 1 ? people[0] : people.length ? `${people[0]} +${people.length - 1}` : '';
     return [...lib.collections.values()]
       // "All" shows what sits at the top; events inside a run are under that run (and on the Events tab).
-      .filter((c) => (tab === 'all' ? !isNested(lib, c.id) || !!query.trim() : tab === c.kind))
+      .filter((c) => (tab === 'all' ? (homeRoots ? homeRoots.has(c.id) : !isNested(lib, c.id) || !!query.trim()) : tab === c.kind))
       .filter((c) => pubOk(pubs, c.publisher))
       .filter((c) => !statuses.length || statuses.includes(collectionStatus(lib, c.id)))
       .filter((c) => charOk(c.characters))
@@ -133,7 +148,7 @@ export default function LibraryScreen() {
       .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id), by: byPerson.get(c.id) ? { ...byPerson.get(c.id)!, who } : null }))
       .sort((a, b) => (b.by?.n ?? 0) - (a.by?.n ?? 0) || order(sort, a, b) || a.c.title.localeCompare(b.c.title));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lib, tab, query, pubs, statuses, chars, writers, writerLists, writerIndex, artistIndex, sort]);
+  }, [lib, tab, query, pubs, statuses, chars, writers, writerLists, writerIndex, artistIndex, sort, homeRoots]);
 
   const seriesRows = useMemo(() => {
     if (tab !== 'series' && !(tab === 'all' && query.trim())) return [];
@@ -168,9 +183,9 @@ export default function LibraryScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-        <Text style={T.h1}>Library</Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+      <TopBar title="Library" />
+      <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
           <View style={[s.search, { flex: 1, marginTop: 0 }]}>
             <SearchIcon size={18} />
             <TextInput value={query} onChangeText={setQuery} placeholder="Search lists, “green lantern 63”, writers…" placeholderTextColor={C.dim} style={s.searchInput} accessibilityLabel="Search library" />

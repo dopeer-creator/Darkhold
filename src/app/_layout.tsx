@@ -50,6 +50,7 @@ export default function RootLayout() {
             <Stack.Screen name="character/[name]" />
             <Stack.Screen name="person/[name]" />
             <Stack.Screen name="people" />
+            <Stack.Screen name="radar" />
           </Stack>
           <JobBanner />
         </StoreProvider>

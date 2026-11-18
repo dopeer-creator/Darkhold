@@ -11,6 +11,7 @@ import { monthName } from '@/ui/format';
 import { BackIcon, ChevronRight } from '@/ui/icons';
 import { Chip, Cover, T } from '@/ui/parts';
 import { C, F, publisherColor } from '@/ui/theme';
+import { TopBar } from '@/ui/top-bar';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -128,14 +129,16 @@ export default function History() {
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
-        <View style={{ paddingHorizontal: 16, paddingTop: 12, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <Text style={T.h1}>History</Text>
-          {!isCurrent || (chosen !== undefined && chosen !== latest) ? (
-            <Pressable accessibilityRole="button" onPress={() => { setMonth(thisMonth); setPicked(undefined); }} hitSlop={8} style={s.todayBtn}>
-              <Text style={[T.small, { color: C.text }]}>Today</Text>
-            </Pressable>
-          ) : null}
-        </View>
+        <TopBar
+          title="History"
+          right={
+            !isCurrent || (chosen !== undefined && chosen !== latest) ? (
+              <Pressable accessibilityRole="button" onPress={() => { setMonth(thisMonth); setPicked(undefined); }} hitSlop={8} style={s.todayBtn}>
+                <Text style={[T.small, { color: C.text }]}>Today</Text>
+              </Pressable>
+            ) : null
+          }
+        />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingVertical: 12 }}>
           <Chip label="All" active={!pub && !inColl} onPress={() => { setPub(null); setInColl(null); }} />
           <Chip label="DC" dot={C.dc} active={pub === 'dc'} onPress={() => setPub(pub === 'dc' ? null : 'dc')} />
@@ -246,7 +249,7 @@ function DayRow({ lib, log }: { lib: Library; log: ReadLog }) {
 }
 
 const s = StyleSheet.create({
-  todayBtn: { paddingHorizontal: 12, height: 32, borderRadius: 999, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  todayBtn: { paddingHorizontal: 12, height: 32, borderRadius: 999, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', marginRight: 6 },
   calendar: { marginHorizontal: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 12 },
   monthBtn: { width: 44, height: 40, alignItems: 'center', justifyContent: 'center' },
   monthTitle: { fontFamily: F.condBold, fontSize: 22, color: C.text },

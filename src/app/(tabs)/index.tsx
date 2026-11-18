@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { activeRoots, byLatestRead, connections, coverFor, issueTitle, nextUp, progress, shownProgress, rootsWithStatus, stats } from '@/domain/library';
@@ -12,19 +12,20 @@ import { ReleaseRadar } from '@/ui/release-radar';
 import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { C, F, publisherColor, kindLabel } from '@/ui/theme';
+import { TopBar } from '@/ui/top-bar';
 
 export default function Home() {
-  const { lib, readLog, sync, ready, session, act, finished, dismissFinished } = useStore();
+  const { lib, readLog, sync, ready, act, finished, dismissFinished } = useStore();
   const roots = useMemo(() => byLatestRead(lib, activeRoots(lib), readLog), [lib, readLog]);
   const totals = useMemo(() => stats(lib), [lib]);
-  const [recentAll, setRecentAll] = useState(false);
-  const [holdAll, setHoldAll] = useState(false);
-  const [planAll, setPlanAll] = useState(false);
   const empty = ready && lib.collections.size === 0 && lib.issues.size === 0;
   const onHold = useMemo(() => rootsWithStatus(lib, 'on_hold').map((id) => lib.collections.get(id)!).sort((a, b) => a.title.localeCompare(b.title)), [lib]);
-  const planned = useMemo(() => rootsWithStatus(lib, 'planned').map((id) => lib.collections.get(id)!).sort((a, b) => a.title.localeCompare(b.title)), [lib]);
+  // Newest first, so what you just added is the first cover you see.
+  const planned = useMemo(() => rootsWithStatus(lib, 'planned').map((id) => lib.collections.get(id)!).sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '') || a.title.localeCompare(b.title)), [lib]);
+  /** On hold and Plan to read headings open the Library with that status already picked. */
+  const openLibrary = (status: string) => router.navigate({ pathname: '/library', params: { status, at: String(Date.now()) } });
 
-  const recent = readLog.slice(0, recentAll ? 12 : 3).map((l) => {
+  const recent = readLog.slice(0, SHOWN).map((l) => {
     const issue = lib.issues.get(l.issue_id);
     const parent = lib.parents.get(l.issue_id)?.[0];
     const coll = parent ? lib.collections.get(parent) : undefined;
@@ -34,17 +35,7 @@ export default function Home() {
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
       <KeyboardScroll contentContainerStyle={{ paddingBottom: 32 }}>
-        <View style={s.header}>
-          <Text style={s.brand}>Darkhold</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {sync.state === 'syncing' ? <ActivityIndicator size="small" color={C.dim} style={{ marginRight: 4 }} /> : null}
-            <Pressable accessibilityRole="button" accessibilityLabel="Profile and settings" onPress={() => router.push('/settings')} style={s.iconBtn}>
-              <View style={s.avatar}>
-                <Text style={s.avatarText}>{(session?.user.email ?? 'D')[0].toUpperCase()}</Text>
-              </View>
-            </Pressable>
-          </View>
-        </View>
+        <TopBar title="Darkhold" brand />
         {sync.state === 'error' ? (
           <Text style={[T.tiny, { color: C.indie, paddingHorizontal: 16 }]}>Not synced yet — your changes are safe on this phone. {sync.message}</Text>
         ) : null}
@@ -134,7 +125,7 @@ export default function Home() {
 
         {recent.length ? (
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
-            <SectionTitle right={<Pressable onPress={() => router.push('/history')} hitSlop={10}><Text style={T.small}>History</Text></Pressable>}>Recently read</SectionTitle>
+            <SectionLink label="Recently read" more="History ›" onPress={() => router.navigate('/history')} />
             {recent.map((r, i) => (
               <Pressable key={r.id} onPress={() => router.push(`/issue/${r.issueId}`)} style={[s.row, i < recent.length - 1 ? s.rowLine : null]}>
                 <Cover title={r.seriesTitle} publisher={r.publisher} width={36} mark={r.number} uri={r.cover} />
@@ -145,7 +136,6 @@ export default function Home() {
                 <Text style={T.tiny}>{relativeDay(r.day)}</Text>
               </Pressable>
             ))}
-            {readLog.length > 3 ? <MoreToggle all={recentAll} count={Math.min(readLog.length, 12)} label={recentAll ? 'Show less' : 'Show more'} onPress={() => setRecentAll((v) => !v)} /> : null}
           </View>
         ) : null}
 
@@ -153,11 +143,11 @@ export default function Home() {
 
         {onHold.length ? (
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
-            <SectionTitle right={<Text style={T.tiny}>{onHold.length}</Text>}>On hold</SectionTitle>
-            {(holdAll ? onHold : onHold.slice(0, SHOWN)).map((c, i) => {
+            <SectionLink label="On hold" more={`All ${onHold.length} ›`} onPress={() => openLibrary('on_hold')} />
+            {onHold.slice(0, SHOWN).map((c, i, shown) => {
               const p = progress(lib, c.id);
               return (
-                <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={[s.row, i < onHold.length - 1 ? s.rowLine : null]}>
+                <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={[s.row, i < shown.length - 1 ? s.rowLine : null]}>
                   <Cover title={c.title} publisher={c.publisher} width={36} uri={coverFor(lib, c.id)} />
                   <View style={{ flex: 1 }}>
                     <Text numberOfLines={1} style={T.bodyMedium}>{c.title}</Text>
@@ -169,28 +159,34 @@ export default function Home() {
                 </Pressable>
               );
             })}
-            <MoreToggle all={holdAll} count={onHold.length} onPress={() => setHoldAll((v) => !v)} />
           </View>
         ) : null}
 
         {planned.length ? (
-          <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
-            <SectionTitle right={<Text style={T.tiny}>{planned.length}</Text>}>Plan to read</SectionTitle>
-            {(planAll ? planned : planned.slice(0, SHOWN)).map((c, i) => {
-              const before = connections(lib, { collectionId: c.id }).get('before')?.[0];
-              const after = before?.collectionId ? lib.collections.get(before.collectionId)?.title : before?.issueId ? issueTitle(lib, before.issueId) : null;
-              return (
-                <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={[s.row, i < planned.length - 1 ? s.rowLine : null]}>
-                  <Cover title={c.title} publisher={c.publisher} width={36} uri={coverFor(lib, c.id)} />
-                  <View style={{ flex: 1 }}>
-                    <Text numberOfLines={1} style={T.bodyMedium}>{c.title}</Text>
-                    <Text numberOfLines={1} style={T.tiny}>{kindLabel(c)}{after ? ` · after ${after}` : ''}</Text>
-                  </View>
-                  <Text style={[T.tiny, T.num]}>{progress(lib, c.id).total}</Text>
+          <View style={{ marginTop: 20 }}>
+            <View style={{ paddingHorizontal: 16 }}>
+              <SectionLink label="Plan to read" more={`All ${planned.length} ›`} onPress={() => openLibrary('planned')} />
+              <Text style={[T.tiny, { marginBottom: 8 }]}>Recently added first</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 16 }}>
+              {planned.slice(0, STRIP).map((c) => {
+                const before = connections(lib, { collectionId: c.id }).get('before')?.[0];
+                const after = before?.collectionId ? lib.collections.get(before.collectionId)?.title : before?.issueId ? issueTitle(lib, before.issueId) : null;
+                const total = progress(lib, c.id).total;
+                return (
+                  <Pressable key={c.id} accessibilityRole="button" onPress={() => router.push(`/collection/${c.id}`)} style={{ width: 76, gap: 4 }}>
+                    <Cover title={c.title} publisher={c.publisher} width={76} uri={coverFor(lib, c.id)} />
+                    <Text numberOfLines={2} style={[T.tiny, { color: C.text, fontFamily: F.medium, fontSize: 12, lineHeight: 15 }]}>{c.title}</Text>
+                    <Text numberOfLines={1} style={[T.tiny, T.num, { fontSize: 11 }]}>{after ? `After ${after}` : `${total} issue${total === 1 ? '' : 's'}`}</Text>
+                  </Pressable>
+                );
+              })}
+              {planned.length > STRIP ? (
+                <Pressable accessibilityRole="link" onPress={() => openLibrary('planned')} style={[s.moreTile, { height: 114 }]}>
+                  <Text style={[T.small, { color: C.dc, textAlign: 'center' }]}>All {planned.length} ›</Text>
                 </Pressable>
-              );
-            })}
-            <MoreToggle all={planAll} count={planned.length} onPress={() => setPlanAll((v) => !v)} />
+              ) : null}
+            </ScrollView>
           </View>
         ) : null}
 
@@ -200,11 +196,6 @@ export default function Home() {
 }
 
 const s = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 6, paddingTop: 12, paddingBottom: 4 },
-  brand: { fontFamily: F.condBold, fontSize: 28, letterSpacing: 1.2, textTransform: 'uppercase', color: C.text },
-  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontFamily: F.condBold, fontSize: 16, color: C.text },
   emptyCard: { margin: 16, padding: 16, gap: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14 },
   card: { width: 300, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, gap: 12 },
   cardTitle: { fontFamily: F.cond, fontSize: 21, lineHeight: 22, color: C.text },
@@ -214,16 +205,22 @@ const s = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
   resume: { height: 34, paddingHorizontal: 12, borderRadius: 17, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center' },
   rowLine: { borderBottomWidth: 1, borderBottomColor: C.divider },
+  link: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 },
+  linkText: { fontFamily: F.cond, fontSize: 15, letterSpacing: 1.8, textTransform: 'uppercase', color: C.muted },
+  moreTile: { width: 76, borderRadius: 6, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', padding: 6 },
 });
 
-const SHOWN = 4;
+/** Rows a Home section shows before its heading takes you to the rest. */
+const SHOWN = 3;
+/** Covers in the Plan to read strip. */
+const STRIP = 12;
 
-/** "Show all 12" under a long Home section, "Show less" once open. */
-function MoreToggle({ all, count, onPress, label }: { all: boolean; count: number; onPress: () => void; label?: string }) {
-  if (count <= SHOWN && !label) return null;
+/** A Home section heading you can tap: it opens the full page for that section. */
+function SectionLink({ label, more, onPress }: { label: string; more: string; onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={{ minHeight: 40, justifyContent: 'center' }}>
-      <Text style={[T.small, { color: C.dc }]}>{label ?? (all ? 'Show less' : `Show all ${count}`)}</Text>
+    <Pressable accessibilityRole="link" accessibilityLabel={`${label}, ${more.replace(' ›', '')}`} onPress={onPress} style={s.link}>
+      <Text style={s.linkText}>{label}</Text>
+      <Text style={[T.small, { color: C.dc }]}>{more}</Text>
     </Pressable>
   );
 }

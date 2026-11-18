@@ -13,6 +13,7 @@ import { Stars, VERDICT_COLORS, VerdictBadge } from '@/ui/review';
 import { RecapView } from '@/ui/recap';
 import { reviewTarget } from '@/ui/story-card';
 import { C, F, kindLabel } from '@/ui/theme';
+import { TopBar } from '@/ui/top-bar';
 
 type Kind = 'all' | 'lists' | 'issues';
 type Sort = 'newest' | 'best';
@@ -120,11 +121,8 @@ export default function ReviewsScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 12, paddingBottom: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <Text style={T.h1}>Reviews</Text>
-          {view === 'log' ? <Text style={[T.small, T.num]}>{all.length} written</Text> : null}
-        </View>
+      <TopBar title="Reviews" right={view === 'log' ? <Text style={[T.small, T.num, { marginRight: 10 }]}>{all.length} written</Text> : null} />
+      <View style={{ paddingHorizontal: 16, paddingTop: 4, gap: 12, paddingBottom: 12 }}>
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {(['log', 'recap'] as const).map((v) => (
             <Pressable key={v} accessibilityRole="tab" accessibilityState={{ selected: view === v }} onPress={() => setView(v)} style={[s.seg, view === v ? s.segOn : null]}>
