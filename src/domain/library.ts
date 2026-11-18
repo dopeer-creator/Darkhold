@@ -531,14 +531,20 @@ export function readRanges(lib: Library, rootId: string): string[] {
   return out;
 }
 
-/** When a list was finished: the latest read day among its counted issues (null if any has no date, or none are read). */
+/**
+ * When a list was finished: the day you read the last of its counted issues. Each issue counts on its
+ * first read day; one first read on an unknown date counts on its earliest logged reread (it was read by
+ * then); one with no date at all was read earlier. Rereading issues you'd already read never moves it.
+ * Null while anything is unread, or when no read has a date.
+ */
 export function finishedOn(lib: Library, id: string): string | null {
   let last = '';
   for (const s of walk(lib, id)) {
     if (!counts(lib, s)) continue;
     const issue = lib.issues.get(s.issueId);
-    if (!issue || issue.status !== 'read' || !issue.completed_at) return null;
-    if (issue.completed_at > last) last = issue.completed_at;
+    if (!issue || issue.status !== 'read') return null;
+    const day = issue.completed_at ?? lib.rereads.get(issue.id)?.[0]?.day ?? '';
+    if (day > last) last = day;
   }
   return last || null;
 }

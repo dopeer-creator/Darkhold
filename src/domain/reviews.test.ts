@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { allCharacters, characterStats, joinTags, splitTags } from './characters';
 import { planImport } from './importer';
-import { buildLibrary } from './library';
+import { buildLibrary, finishedOn, reviewDay } from './library';
 import { clampScore, formatScore, parseScore, suggestedVerdict } from './reviews';
-import type { Collection, Entry, Issue, Review } from './types';
+import type { Collection, Entry, Issue, ReadLog, Review } from './types';
 
 const issue = (id: string, status: Issue['status'], characters: string | null = null): Issue => ({
   id, series_id: 's', number: id, label: null, status, completed_at: null, date_precision: 'unknown', rating: null, notes: null, cover_path: null, pub_year: null, characters,
@@ -36,6 +36,31 @@ describe('scores and verdicts', () => {
     expect(parseScore('')).toBeNull();
     expect(clampScore(12)).toBe(10);
     expect(formatScore(8)).toBe('8.00');
+  });
+});
+
+describe('when a list was finished', () => {
+  const read = (id: string, day: string | null): Issue => ({ ...issue(id, 'read'), completed_at: day, date_precision: day ? 'day' : 'unknown' });
+  const rows = (issues: Issue[], readLog: ReadLog[] = []) =>
+    buildLibrary({ series: [], issues, collections: [coll('c', 'Run', null)], entries: issues.map((i, n) => entry(`e${n}`, 'c', i.id, n + 1)), readLog });
+  const reread = (id: string, issueId: string, day: string): ReadLog => ({ id, issue_id: issueId, read_on: day, date_precision: 'day', rating: null, note: null, reread: true });
+
+  it('is the day the last issue was read, even when older issues were read on unknown dates', () => {
+    // Issues 1–2 read before you logged dates, reread on the 13th; 3 read on the 13th; 4 finished on the 18th.
+    const lib = rows([read('1', null), read('2', null), read('3', '2026-11-13'), read('4', '2026-11-18')], [reread('r1', '1', '2026-11-13'), reread('r2', '2', '2026-11-13')]);
+    expect(finishedOn(lib, 'c')).toBe('2026-11-18');
+    expect(reviewDay(lib, review('x', { c: 'c' }, 'good_enough', 6.5))).toBe('2026-11-18');
+  });
+
+  it('does not move when you reread an issue you had read before', () => {
+    const lib = rows([read('1', '2026-11-01'), read('2', '2026-11-05')], [reread('r1', '1', '2026-11-17')]);
+    expect(finishedOn(lib, 'c')).toBe('2026-11-05');
+  });
+
+  it('counts an undated first read on its earliest reread, and has no day while unread or never dated', () => {
+    expect(finishedOn(rows([read('1', '2026-11-02'), read('2', null)], [reread('r1', '2', '2026-11-20'), reread('r2', '2', '2026-11-09')]), 'c')).toBe('2026-11-09');
+    expect(finishedOn(rows([read('1', '2026-11-02'), issue('2', 'unread')]), 'c')).toBeNull();
+    expect(finishedOn(rows([read('1', null), read('2', null)]), 'c')).toBeNull();
   });
 });
 
