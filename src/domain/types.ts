@@ -10,6 +10,8 @@ export interface Series {
   publisher: string | null;
   /** The Comic Vine volume this series was matched to. */
   cv_volume_id?: number | null;
+  /** When the series was added (Supabase keeps the first value; older ones are a best guess). */
+  created_at?: string | null;
 }
 
 export interface Issue {
@@ -40,6 +42,8 @@ export interface Issue {
   release_on?: string | null;
   /** Characters or teams in this issue, comma-separated ("Batman, Superman"). */
   characters?: string | null;
+  /** When the issue was added (Supabase keeps the first value; older ones are a best guess). */
+  created_at?: string | null;
 }
 
 export interface Collection {

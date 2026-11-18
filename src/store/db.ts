@@ -6,8 +6,8 @@ export type Table = (typeof TABLES)[number];
 
 /** Columns synced for each table (everything except user_id, which Supabase fills in). */
 export const COLUMNS: Record<Table, string[]> = {
-  series: ['id', 'title', 'volume_year', 'publisher', 'cv_volume_id'],
-  issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id', 'upcoming', 'release_on', 'characters'],
+  series: ['id', 'title', 'volume_year', 'publisher', 'cv_volume_id', 'created_at'],
+  issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id', 'upcoming', 'release_on', 'characters', 'created_at'],
   collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes', 'label', 'planned', 'reading_now', 'reread_since', 'created_at'],
   entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'heading', 'note', 'optional'],
   read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note', 'reread'],
@@ -18,7 +18,7 @@ export const COLUMNS: Record<Table, string[]> = {
 /** Yes/no columns: stored as 0/1 here, true/false in Supabase. */
 export const BOOLEAN_COLUMNS = new Set(['on_hold', 'ongoing', 'planned', 'reading_now', 'optional', 'upcoming', 'reread']);
 
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 /** Columns added after the first version, by schema version. */
 const ADDED: Record<number, [Table, string, string][]> = {
@@ -59,6 +59,11 @@ const ADDED: Record<number, [Table, string, string][]> = {
   ],
   // 11: when each list was added (Recently added in the Library).
   11: [['collections', 'created_at', 'TEXT']],
+  // 12: when each series and issue was added (Recently added on those tabs).
+  12: [
+    ['series', 'created_at', 'TEXT'],
+    ['issues', 'created_at', 'TEXT'],
+  ],
 };
 
 /** Extra one-off work for a version, run inside the same transaction. */
@@ -79,6 +84,8 @@ const AFTER: Record<number, string[]> = {
   ],
   // Lists fetched again so their added dates arrive.
   11: ["DELETE FROM meta WHERE key = 'pulled:collections'"],
+  // Series and issues fetched again so their added dates arrive.
+  12: ["DELETE FROM meta WHERE key = 'pulled:series'", "DELETE FROM meta WHERE key = 'pulled:issues'"],
 };
 
 /**
@@ -130,17 +137,22 @@ async function createTables(db: SQLiteDatabase) {
 export async function putRow(db: SQLiteDatabase, table: Table, data: object, opts: { dirty?: boolean } = {}) {
   const row = data as Record<string, unknown>;
   const cols = [...COLUMNS[table], 'updated_at', 'deleted_at', 'dirty'];
+  // A row written without its added date keeps the one saved here, or gets now only if it's new here.
+  // (An existing row with no date yet waits for the download to bring it, rather than becoming "just added".)
+  const keep = cols.includes('created_at') && row.created_at == null;
   const values = cols.map((c) => {
     if (c === 'dirty') return opts.dirty === false ? 0 : 1;
+    if (c === 'created_at' && keep) return new Date().toISOString();
     if (c === 'updated_at') return (row.updated_at as string) ?? new Date().toISOString();
     const v = row[c];
     if (v == null && BOOLEAN_COLUMNS.has(c)) return 0;
     return typeof v === 'boolean' ? (v ? 1 : 0) : (v ?? null);
   });
-  await db.runAsync(
-    `INSERT OR REPLACE INTO ${table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`,
-    values as (string | number | null)[],
+  const slots = cols.map((c) =>
+    c === 'created_at' && keep ? `CASE WHEN EXISTS (SELECT 1 FROM ${table} WHERE id = ?) THEN (SELECT created_at FROM ${table} WHERE id = ?) ELSE ? END` : '?',
   );
+  const args = cols.flatMap((c, k) => (c === 'created_at' && keep ? [row.id, row.id, values[k]] : [values[k]]));
+  await db.runAsync(`INSERT OR REPLACE INTO ${table} (${cols.join(',')}) VALUES (${slots.join(',')})`, args as (string | number | null)[]);
 }
 
 /**
