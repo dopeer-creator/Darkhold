@@ -7,12 +7,12 @@ import { issueTitle } from '@/domain/library';
 import { creditsSummary } from '@/domain/credits';
 import { seriesLabel, seriesView } from '@/domain/series';
 import type { Collection, Issue } from '@/domain/types';
-import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight } from '@/ui/icons';
 import { Bar, Checkbox, Cover, SectionTitle, T } from '@/ui/parts';
 import { C, F, KIND_COLOR, publisherColor, kindLabel } from '@/ui/theme';
 import { useFillDetails } from '@/ui/use-fill-details';
+import { useReadTick } from '@/ui/read-again';
 
 /**
  * A series is the publication itself — Batman (2016), every issue in number order — built from the
@@ -20,7 +20,8 @@ import { useFillDetails } from '@/ui/use-fill-details';
  */
 export default function SeriesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { lib, act } = useStore();
+  const { lib } = useStore();
+  const readTick = useReadTick();
   const view = seriesView(lib, id);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const fill = useFillDetails();
@@ -154,7 +155,7 @@ export default function SeriesScreen() {
                             <Text style={[T.body, { fontSize: 14, color: isRead ? C.muted : C.text }]}>{issueTitle(lib, i.id)}</Text>
                             {i.id === nextUnread ? <Text style={[T.label, { color: C.dc, marginTop: 2 }]}>NEXT IN THE SERIES</Text> : null}
                           </View>
-                          <Checkbox checked={isRead} label={`${isRead ? 'Mark unread' : 'Mark read'}: ${issueTitle(lib, i.id)}`} onPress={() => act((d, l) => setIssueStatus(d, l, i.id, isRead ? 'unread' : 'read'))} />
+                          <Checkbox checked={isRead} label={`${isRead ? 'Read, tap for options' : 'Mark read'}: ${issueTitle(lib, i.id)}`} onPress={() => readTick.tick(i.id)} />
                         </Pressable>
                       );
                     })
@@ -164,6 +165,7 @@ export default function SeriesScreen() {
           })}
         </View>
       </ScrollView>
+      {readTick.sheet}
     </SafeAreaView>
   );
 }

@@ -9,12 +9,12 @@ import { splitNames } from '@/domain/credits';
 import { peopleIndex, personLists } from '@/domain/people';
 import { seriesLabel } from '@/domain/series';
 import type { CollectionStatus, Kind } from '@/domain/types';
-import { setIssueStatus } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { FilterIcon, PlusIcon, SearchIcon } from '@/ui/icons';
 import { Bar, Checkbox, Chip, Cover, T } from '@/ui/parts';
 import { C, F, KIND_COLOR, publisherColor, kindLabel } from '@/ui/theme';
 import { TopBar } from '@/ui/top-bar';
+import { useReadTick } from '@/ui/read-again';
 
 const TABS: { key: 'all' | Kind | 'series' | 'issues'; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -62,7 +62,8 @@ const hasAll = (ws: string[], text: string) => ws.every((w) => text.includes(w))
 const ISSUE_STATUS: Record<string, (s: string) => boolean> = { issue_read: (s) => s === 'read', issue_unread: (s) => s !== 'read' };
 
 export default function LibraryScreen() {
-  const { lib, act } = useStore();
+  const { lib } = useStore();
+  const readTick = useReadTick();
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('all');
   // How many of each: types you have none of are dimmed.
   const counts = useMemo(() => {
@@ -309,8 +310,8 @@ export default function LibraryScreen() {
               </Pressable>
               <Checkbox
                 checked={item.i.status === 'read'}
-                label={`${item.i.status === 'read' ? 'Mark unread' : 'Mark read'}: ${item.title}`}
-                onPress={() => act((db, l) => setIssueStatus(db, l, item.i.id, item.i.status === 'read' ? 'unread' : 'read'))}
+                label={`${item.i.status === 'read' ? 'Read, tap for options' : 'Mark read'}: ${item.title}`}
+                onPress={() => readTick.tick(item.i.id)}
               />
             </View>
           )}
@@ -357,6 +358,7 @@ export default function LibraryScreen() {
           }
         />
       )}
+      {readTick.sheet}
     </SafeAreaView>
   );
 }

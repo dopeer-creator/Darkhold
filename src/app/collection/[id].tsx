@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { creditsSummary, splitNames } from '@/domain/credits';
 import { chapterSpots, collectionStatus, coverFor, entryUnits, headingSections, issueTitle, lastRead, moveUnit, nextUp, notOutYet, progress, READING_KINDS, rereadNumber, rereadSince, shownProgress, timesRead, type Library, walk, moveUnits } from '@/domain/library';
 import type { Collection, Entry, Review } from '@/domain/types';
-import { deleteCollection, removeEntries, reorderEntries, setIssueStatus, setOptional, startReading, startReread, stopReading, stopReread, toggleRereadInList, updateCollection } from '@/store/repo';
+import { deleteCollection, removeEntries, reorderEntries, setOptional, startReading, startReread, stopReading, stopReread, toggleRereadInList, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon, ChevronDown, ChevronRight, CloseIcon, GripIcon, MoreIcon, PlusIcon } from '@/ui/icons';
 import { Bar, Checkbox, Chip, Cover, PrimaryButton, SectionTitle, T } from '@/ui/parts';
@@ -20,12 +20,14 @@ import { reviewLine } from '@/domain/reviews';
 import { Stars, VERDICT_COLORS, VerdictBadge } from '@/ui/review';
 import { useFillDetails } from '@/ui/use-fill-details';
 import { C, F, KIND_COLOR, KIND_LABEL, KIND_NAME, kindLabel, publisherColor, STATUS_LABEL } from '@/ui/theme';
+import { useReadTick } from '@/ui/read-again';
 
 const ROW_LIMIT = 8;
 
 export default function CollectionScreen() {
   const { id, focus } = useLocalSearchParams<{ id: string; focus?: string }>();
   const { lib, act } = useStore();
+  const readTick = useReadTick();
   const c = lib.collections.get(id);
   const p = shownProgress(lib, id);
   const rereading = !!c?.reread_since;
@@ -295,7 +297,7 @@ export default function CollectionScreen() {
                   nextRowRef={nextRowRef}
                   onNextRowLayout={onNextRowLayout}
                   rereadSince={c.reread_since ?? null}
-                  onToggle={(issueId, read) => act((db, l) => (c.reread_since ? toggleRereadInList(db, l, c.id, issueId) : setIssueStatus(db, l, issueId, read ? 'unread' : 'read')))}
+                  onToggle={(issueId) => (c.reread_since ? act((db, l) => toggleRereadInList(db, l, c.id, issueId)) : readTick.tick(issueId))}
                   onIssueMenu={(entry) => router.push({ pathname: '/issue/[id]', params: { id: entry.child_issue_id!, entry: entry.id, parent: entry.parent_id } })}
                 />
               )}
@@ -303,6 +305,7 @@ export default function CollectionScreen() {
           </View>
         </View>
       </ScrollView>
+      {readTick.sheet}
     </SafeAreaView>
   );
 }
@@ -443,7 +446,7 @@ function EntryList(props: ListProps) {
             <Text style={[T.tiny, { fontSize: 11, marginTop: 2, color: C.indie }]}>Written by {issue.writers}</Text>
           ) : null}
         </View>
-        <Checkbox checked={ticked} label={`${props.rereadSince ? (ticked ? 'Undo reread' : 'Reread') : read ? 'Mark unread' : 'Mark read'}: ${issueTitle(lib, issue.id)}`} onPress={() => props.onToggle(issue.id, read)} />
+        <Checkbox checked={ticked} label={`${props.rereadSince ? (ticked ? 'Undo reread' : 'Reread') : read ? 'Read, tap for options' : 'Mark read'}: ${issueTitle(lib, issue.id)}`} onPress={() => props.onToggle(issue.id, read)} />
       </Pressable>
     );
   };

@@ -21,6 +21,7 @@ import { splitNames } from '@/domain/credits';
 import { ButtonRow, ReviewForm, ReviewSummary } from '@/ui/review';
 import { TagEditor } from '@/ui/tag-editor';
 import { C, F, KIND_COLOR, kindLabel } from '@/ui/theme';
+import { useReadTick } from '@/ui/read-again';
 
 const STATUSES: { key: IssueStatus; label: string }[] = [
   { key: 'unread', label: 'Unread' },
@@ -32,6 +33,7 @@ const STATUSES: { key: IssueStatus; label: string }[] = [
 export default function IssueScreen() {
   const { id, entry, parent } = useLocalSearchParams<{ id: string; entry?: string; parent?: string }>();
   const { lib, act } = useStore();
+  const readTick = useReadTick();
   const db = useSQLiteContext();
   const issue = lib.issues.get(id);
   const [notes, setNotes] = useState(issue?.notes ?? '');
@@ -165,7 +167,13 @@ export default function IssueScreen() {
                   key={st.key}
                   accessibilityRole="button"
                   accessibilityState={{ selected: issue.status === st.key }}
-                  onPress={() => act((d, l) => setIssueStatus(d, l, issue.id, st.key, st.key === 'read' ? null : undefined))}
+                  onPress={() => {
+                    // Tapping the status it already has does nothing (tapping Read again used to clear the read date).
+                    if (issue.status === st.key) return;
+                    // Leaving Read asks first: it removes the read date and rereads from History.
+                    if (issue.status === 'read') return readTick.askUnread(issue.id);
+                    act((d, l) => setIssueStatus(d, l, issue.id, st.key, st.key === 'read' ? null : undefined));
+                  }}
                   style={[s.segItem, issue.status === st.key ? { backgroundColor: '#2C2C31' } : null]}>
                   <Text style={[T.small, issue.status === st.key ? { color: C.text, fontFamily: F.semibold } : null]}>{st.label}</Text>
                 </Pressable>
@@ -395,6 +403,7 @@ export default function IssueScreen() {
             />
           ) : null}
         </KeyboardScroll>
+      {readTick.sheet}
     </SafeAreaView>
   );
 }
