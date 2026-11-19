@@ -347,6 +347,8 @@ function EntryList(props: ListProps) {
   const hasSlices = entries.some((e) => viaOf(e));
 
   const rows: Row[] = [];
+  // Whether any run of read issues is long enough to fold, so "Show less" can fold them back.
+  let foldable = false;
   const sectionOf = new Map<Row, string>();
   const seenVia = new Set<string>();
   let section = '';
@@ -381,6 +383,7 @@ function EntryList(props: ListProps) {
         j++;
       }
       const key = `${parentId}:${e.id}`;
+      if (j - i >= 3) foldable = true;
       if (j - i >= 3 && !showAll) {
         const lastIssue = lib.issues.get(entries[j - 1].child_issue_id!)!;
         rows.push({ kind: 'group', key, label: `${issueTitle(lib, issue.id)}–${lastIssue.number ?? ''}`, count: j - i });
@@ -405,11 +408,15 @@ function EntryList(props: ListProps) {
   const inView = rows.filter((r) => r.kind === 'heading' || !sectionOf.get(r) || !isFolded(sectionOf.get(r)!));
 
   // Long issue lists are cut short (blocks, events and runs always show), keeping the next issue in view.
+  // Not in a list with chapters: chapters already fold, and a cut counted across the whole list showed an
+  // opened chapter with only its first issue or two, and "Show all" under a later chapter.
+  const chaptered = rows.some((r) => r.kind === 'heading');
   const issueRows = inView.filter((r) => r.kind === 'issue' || r.kind === 'group');
   const nextIndex = issueRows.findIndex((r) => r.kind === 'issue' && r.entry.child_issue_id === nextIssueId);
   const limit = Math.max(ROW_LIMIT, nextIndex + 4);
+  const overLimit = !chaptered && issueRows.length > limit;
   let shown = 0;
-  const visible = showAll ? inView : inView.filter((r) => (r.kind !== 'issue' && r.kind !== 'group') || ++shown <= limit);
+  const visible = showAll || !overLimit ? inView : inView.filter((r) => (r.kind !== 'issue' && r.kind !== 'group') || ++shown <= limit);
   const hidden = inView.length - visible.length;
 
   const renderIssue = (entry: Entry) => {
@@ -586,11 +593,11 @@ function EntryList(props: ListProps) {
           </View>
         );
       })}
-      {hidden > 0 || rows.some((r) => r.kind === 'group') ? (
+      {!showAll && (hidden > 0 || rows.some((r) => r.kind === 'group')) ? (
         <Pressable accessibilityRole="button" onPress={() => setShowAll(true)} style={s.showAll}>
           <Text style={[T.small, { color: C.text }]}>Show all{hidden > 0 ? ` · ${hidden} more` : ''}</Text>
         </Pressable>
-      ) : showAll && inView.length > ROW_LIMIT ? (
+      ) : showAll && (overLimit || foldable) ? (
         <Pressable accessibilityRole="button" onPress={() => setShowAll(false)} style={s.showAll}>
           <Text style={T.small}>Show less</Text>
         </Pressable>
