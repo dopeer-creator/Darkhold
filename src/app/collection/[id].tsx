@@ -19,14 +19,16 @@ import { splitTags } from '@/domain/characters';
 import { reviewLine } from '@/domain/reviews';
 import { Stars, VERDICT_COLORS, VerdictBadge } from '@/ui/review';
 import { useFillDetails } from '@/ui/use-fill-details';
-import { C, F, KIND_COLOR, KIND_LABEL, KIND_NAME, kindLabel, publisherColor, STATUS_LABEL } from '@/ui/theme';
+import { C, F, KIND_COLOR, KIND_LABEL, kindLabel, kindName, publisherColor, STATUS_LABEL } from '@/ui/theme';
 import { useReadTick } from '@/ui/read-again';
+import { ReleasesCard } from '@/ui/releases-card';
+import { formatOf } from '@/domain/modes';
 
 const ROW_LIMIT = 8;
 
 export default function CollectionScreen() {
   const { id, focus } = useLocalSearchParams<{ id: string; focus?: string }>();
-  const { lib, act } = useStore();
+  const { lib, act, words } = useStore();
   const readTick = useReadTick();
   const c = lib.collections.get(id);
   const p = shownProgress(lib, id);
@@ -83,7 +85,8 @@ export default function CollectionScreen() {
     );
   }
 
-  const color = publisherColor(c.publisher);
+  const fmt = formatOf(c);
+  const color = fmt === 'comic' ? publisherColor(c.publisher) : words.accent;
   const years = c.start_year ? `${c.start_year}${c.ongoing ? '–present' : c.end_year && c.end_year !== c.start_year ? `–${c.end_year}` : ''}` : c.ongoing ? 'Ongoing' : '';
 
   const allIssues = [...new Set(walk(lib, c.id).map((st) => st.issueId))];
@@ -99,7 +102,9 @@ export default function CollectionScreen() {
     ...(status === 'completed' ? [{ label: 'Start a reread', go: () => act((db, l) => startReread(db, l, c.id)) }] : []),
     ...(c.reread_since ? [{ label: 'Stop the reread', go: () => act((db, l) => stopReread(db, l, c.id)) }] : []),
     { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
-    { label: 'Choose a cover…', go: () => router.push({ pathname: '/covers', params: { collection: c.id } }) },
+    fmt === 'comic'
+      ? { label: 'Choose a cover…', go: () => router.push({ pathname: '/covers', params: { collection: c.id } }) }
+      : { label: `Find cover & details on ${words.source}…`, go: () => router.push({ pathname: '/add-work', params: { match: c.id } }) },
     { label: 'Export to share…', go: () => shareList(c.id) },
     { label: 'Edit details, type or label', go: () => router.push(`/new?edit=${c.id}`) },
     { label: 'Delete…', go: () => confirmDelete(c), danger: true },
@@ -121,15 +126,27 @@ export default function CollectionScreen() {
     Alert.alert(`Delete ${col.title}?`, 'Issues you read stay in your history unless you also delete the contents.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete with contents', style: 'destructive', onPress: () => act((db, l) => deleteCollection(db, l, col.id, true)).then(() => router.back()) },
-      { text: `Delete ${KIND_NAME[col.kind]} only`, style: 'destructive', onPress: () => act((db, l) => deleteCollection(db, l, col.id, false)).then(() => router.back()) },
+      { text: `Delete ${kindName(col.kind, col.format)} only`, style: 'destructive', onPress: () => act((db, l) => deleteCollection(db, l, col.id, false)).then(() => router.back()) },
     ]);
   };
 
-  const menuItems: { label: string; go: () => void }[] = [
-    { label: 'Add issues', go: () => router.push(`/add-issues?parent=${c.id}`) },
-    { label: 'Add a chapter', go: () => router.push({ pathname: '/heading', params: { parent: c.id } }) },
-    { label: 'Add a run or event inside', go: () => router.push(`/link?parent=${c.id}`) },
-  ];
+  const menuItems: { label: string; go: () => void }[] =
+    fmt === 'comic'
+      ? [
+          { label: 'Add issues', go: () => router.push(`/add-issues?parent=${c.id}`) },
+          { label: 'Add a chapter', go: () => router.push({ pathname: '/heading', params: { parent: c.id } }) },
+          { label: 'Add a run or event inside', go: () => router.push(`/link?parent=${c.id}`) },
+        ]
+      : c.kind === 'crisis'
+        ? [
+            { label: fmt === 'book' ? 'Add a book inside' : 'Add a manga inside', go: () => router.push(`/link?parent=${c.id}`) },
+            { label: 'Add a heading', go: () => router.push({ pathname: '/heading', params: { parent: c.id } }) },
+          ]
+        : [
+            { label: `Add ${words.issues}`, go: () => router.push({ pathname: '/add-chapters', params: { list: c.id } }) },
+            { label: fmt === 'manga' ? 'Add a volume or arc heading' : 'Add a heading (Part One…)', go: () => router.push({ pathname: '/heading', params: { parent: c.id } }) },
+          ];
+  const workSeries = fmt === 'comic' ? null : ([...(lib.children.get(c.id) ?? [])].map((e) => (e.child_issue_id ? lib.issues.get(e.child_issue_id)?.series_id : null)).find(Boolean) ?? null);
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
@@ -160,7 +177,7 @@ export default function CollectionScreen() {
         contentContainerStyle={{ paddingBottom: 48 }}>
         <View ref={contentRef} collapsable={false}>
           <View style={s.hero}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Choose a cover" onPress={() => router.push({ pathname: '/covers', params: { collection: c.id } })}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Choose a cover" onPress={() => (fmt === 'comic' ? router.push({ pathname: '/covers', params: { collection: c.id } }) : router.push({ pathname: '/add-work', params: { match: c.id } }))}>
               <Cover title={c.title} publisher={c.publisher} width={108} uri={coverFor(lib, c.id)} />
               <Text style={[T.tiny, { textAlign: 'center', marginTop: 4, fontSize: 11 }]}>Change cover</Text>
             </Pressable>
@@ -227,12 +244,26 @@ export default function CollectionScreen() {
             ) : next ? (
               <PrimaryButton label={`Continue · ${issueTitle(lib, next.issueId)}`} icon="play" onPress={goToNext} style={{ marginTop: 14 }} />
             ) : status === 'completed' ? (
-              <ReviewStrip review={lib.reviews.get(c.id)} kind={KIND_NAME[c.kind]} onView={() => router.push({ pathname: '/review', params: { collection: c.id } })} onWrite={() => router.push({ pathname: '/review', params: { collection: c.id, edit: '1' } })} onAdd={() => setMenu(true)} />
+              <ReviewStrip review={lib.reviews.get(c.id)} kind={kindName(c.kind, c.format)} issues={words.issues} onView={() => router.push({ pathname: '/review', params: { collection: c.id } })} onWrite={() => router.push({ pathname: '/review', params: { collection: c.id, edit: '1' } })} onAdd={() => setMenu(true)} />
             ) : (
-              <PrimaryButton label={p.total ? 'All read — add more issues' : 'Add issues to start'} onPress={() => setMenu(true)} style={{ marginTop: 14 }} />
+              <PrimaryButton label={p.total ? `All read — add more ${words.issues}` : `Add ${words.issues} to start`} onPress={() => setMenu(true)} style={{ marginTop: 14 }} />
             )}
+            {fmt === 'book' && c.kind !== 'crisis' ? (
+              <Pressable accessibilityRole="button" accessibilityState={{ checked: !!c.owned }} onPress={() => act((db, l) => updateCollection(db, l, c.id, { owned: !c.owned }))} style={s.ownedRow}>
+                <Checkbox checked={!!c.owned} label="Bought" onPress={() => act((db, l) => updateCollection(db, l, c.id, { owned: !c.owned }))} />
+                <Text style={T.body}>Bought</Text>
+                <Text style={[T.tiny, { flex: 1 }]}> · you have a physical copy</Text>
+              </Pressable>
+            ) : null}
             {last ? <Text style={[T.tiny, { textAlign: 'center', marginTop: 8 }]}>Last read: {issueTitle(lib, last.issueId)}</Text> : null}
           </View>
+
+          {fmt === 'manga' && workSeries ? (
+            <View style={{ paddingHorizontal: 16, paddingTop: 22, gap: 8 }}>
+              <SectionTitle>Releases</SectionTitle>
+              <ReleasesCard seriesId={workSeries} />
+            </View>
+          ) : null}
 
           <View style={{ paddingHorizontal: 16, paddingTop: 22 }}>
             <ConnectionsBlock collectionId={c.id} />
@@ -258,7 +289,7 @@ export default function CollectionScreen() {
                   </View>
                 )
               }>
-              {READING_KINDS.includes(c.kind) ? 'Reading path' : 'Reading order'}
+              {fmt !== 'comic' && c.kind !== 'crisis' ? words.Issues : READING_KINDS.includes(c.kind) ? 'Reading path' : 'Reading order'}
             </SectionTitle>
             {menu ? (
               <View style={s.menu}>
@@ -285,7 +316,7 @@ export default function CollectionScreen() {
                   }
                 />
               ) : (lib.children.get(c.id) ?? []).length === 0 ? (
-                <Text style={[T.small, { paddingVertical: 16 }]}>Nothing here yet. Tap ＋ to add {c.kind === 'event' ? 'issues' : 'events or issues'}.</Text>
+                <Text style={[T.small, { paddingVertical: 16 }]}>Nothing here yet. Tap ＋ to add {fmt !== 'comic' ? (c.kind === 'crisis' ? (fmt === 'book' ? 'books' : 'manga') : words.issues) : c.kind === 'event' ? 'issues' : 'events or issues'}.</Text>
               ) : (
                 <EntryList
                   lib={lib}
@@ -846,6 +877,7 @@ function DragHandle({ label, onStart, onMove, onEnd }: { label: string; onStart:
 }
 
 const s = StyleSheet.create({
+  ownedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 12, minHeight: 44 },
   reviewStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.borderStrong },
   viewBtn: { minHeight: 36, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center' },
   topbar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 6, paddingTop: 4 },
@@ -877,7 +909,7 @@ const s = StyleSheet.create({
 });
 
 /** On a finished list, where the Continue button was: your review in one line with View, or a button to write one. */
-function ReviewStrip({ review, kind, onView, onWrite, onAdd }: { review?: Review; kind: string; onView: () => void; onWrite: () => void; onAdd: () => void }) {
+function ReviewStrip({ review, kind, issues, onView, onWrite, onAdd }: { review?: Review; kind: string; issues: string; onView: () => void; onWrite: () => void; onAdd: () => void }) {
   return (
     <View style={{ marginTop: 14, gap: 8 }}>
       {review ? (
@@ -896,7 +928,7 @@ function ReviewStrip({ review, kind, onView, onWrite, onAdd }: { review?: Review
         <PrimaryButton label={"Review this " + kind} onPress={onWrite} />
       )}
       <Pressable accessibilityRole="button" onPress={onAdd} style={{ alignSelf: 'center', minHeight: 32, justifyContent: 'center' }}>
-        <Text style={T.tiny}>All read · add more issues</Text>
+        <Text style={T.tiny}>All read · add more {issues}</Text>
       </Pressable>
     </View>
   );

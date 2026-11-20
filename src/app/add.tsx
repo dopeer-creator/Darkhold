@@ -7,6 +7,8 @@ import { CrisisIcon, EraIcon, EventIcon, IssueIcon, RunIcon } from '@/ui/icons';
 import { GhostButton, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
 import { useImportFile } from '@/ui/use-import';
+import type { Format } from '@/domain/types';
+import { useStore } from '@/store/store';
 
 type Option = { label: string; hint: string; href: Href; Icon: ComponentType<{ color?: string }>; bg: string; fg: string };
 
@@ -19,8 +21,22 @@ const OPTIONS: Option[] = [
   { label: 'Issues', hint: 'Single issues, a range or a pasted list', href: '/add-issues', Icon: IssueIcon, bg: '#26262B', fg: '#D8D6D0' },
 ];
 
+/** In Books and Manga Darkhold, + adds a book or manga (found on Open Library or AniList), or a series of them. */
+const MODE_OPTIONS: Record<Exclude<Format, 'comic'>, Option[]> = {
+  book: [
+    { label: 'Book', hint: 'Find it, then add its chapters', href: '/add-work', Icon: RunIcon, bg: '#16282A', fg: '#7FD3C6' },
+    { label: 'Book series', hint: 'Books in order, like The Witcher', href: '/new?kind=crisis', Icon: CrisisIcon, bg: '#2A1D10', fg: '#E8C48A' },
+  ],
+  manga: [
+    { label: 'Manga', hint: 'Find it on AniList, volumes from MangaDex', href: '/add-work', Icon: RunIcon, bg: '#2A1420', fg: '#F0A8CC' },
+    { label: 'Reading order', hint: 'Several manga in order', href: '/new?kind=crisis', Icon: CrisisIcon, bg: '#2A1D10', fg: '#E8C48A' },
+  ],
+};
+
 export default function AddSheet() {
   const insets = useSafeAreaInsets();
+  const { mode } = useStore();
+  const options = mode === 'comic' ? OPTIONS : MODE_OPTIONS[mode];
   const [status, setStatus] = useState('');
   const importShared = useImportFile({ onStatus: setStatus, replace: true });
   return (
@@ -30,7 +46,7 @@ export default function AddSheet() {
         <View style={s.handle} />
         <Text style={s.title}>What are you adding?</Text>
         <View style={s.grid}>
-          {OPTIONS.map(({ label, hint, href, Icon, bg, fg }) => (
+          {options.map(({ label, hint, href, Icon, bg, fg }) => (
             <Pressable key={label} accessibilityRole="button" accessibilityHint={hint} onPress={() => router.replace(href)} style={({ pressed }) => [s.tile, pressed ? { opacity: 0.7 } : null]}>
               <View style={[s.icon, { backgroundColor: bg }]}><Icon color={fg} /></View>
               <View>

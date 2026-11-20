@@ -8,7 +8,8 @@ import { allCharacters, splitTags } from '@/domain/characters';
 import { splitNames } from '@/domain/credits';
 import { peopleIndex, personLists } from '@/domain/people';
 import { seriesLabel } from '@/domain/series';
-import type { CollectionStatus, Kind } from '@/domain/types';
+import { formatOf, WORDS } from '@/domain/modes';
+import { FORMATS, type CollectionStatus, type Format, type Kind } from '@/domain/types';
 import { useStore } from '@/store/store';
 import { FilterIcon, PlusIcon, SearchIcon } from '@/ui/icons';
 import { Bar, Checkbox, Chip, Cover, T } from '@/ui/parts';
@@ -16,7 +17,8 @@ import { C, F, KIND_COLOR, publisherColor, kindLabel } from '@/ui/theme';
 import { TopBar } from '@/ui/top-bar';
 import { useReadTick } from '@/ui/read-again';
 
-const TABS: { key: 'all' | Kind | 'series' | 'issues'; label: string }[] = [
+type TabKey = 'all' | Kind | 'series' | 'issues';
+const TABS: { key: TabKey; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'run', label: 'Runs' },
   { key: 'event', label: 'Events' },
@@ -47,6 +49,13 @@ const SORTS = [
   { key: 'longest', label: 'Longest first' },
 ] as const;
 type SortKey = (typeof SORTS)[number]['key'];
+/** Books and manga only have their own kinds of list, and call issues chapters. */
+const MODE_TABS: Record<Exclude<Format, 'comic'>, { key: TabKey; label: string }[]> = {
+  book: [{ key: 'all', label: 'All' }, { key: 'run', label: 'Books' }, { key: 'crisis', label: 'Book series' }, { key: 'issues', label: 'Chapters' }],
+  manga: [{ key: 'all', label: 'All' }, { key: 'run', label: 'Manga' }, { key: 'crisis', label: 'Reading orders' }, { key: 'issues', label: 'Chapters' }],
+};
+const PLACEHOLDER: Record<Format, string> = { comic: 'Search lists, “green lantern 63”, writers…', book: 'Search books, authors…', manga: 'Search manga, mangaka…' };
+
 const sortsFor = (tab: string) => (tab === 'issues' ? SORTS.filter((o) => o.key === 'recent' || o.key === 'az') : SORTS);
 /** The sort a tab really uses: one it doesn't offer falls back to A–Z. */
 const sortOn = (tab: string, sort: SortKey): SortKey => (sortsFor(tab).some((o) => o.key === sort) ? sort : 'az');
@@ -62,7 +71,8 @@ const hasAll = (ws: string[], text: string) => ws.every((w) => text.includes(w))
 const ISSUE_STATUS: Record<string, (s: string) => boolean> = { issue_read: (s) => s === 'read', issue_unread: (s) => s !== 'read' };
 
 export default function LibraryScreen() {
-  const { lib } = useStore();
+  const { lib, fullLib, mode, setMode } = useStore();
+  const tabs = mode === 'comic' ? TABS : MODE_TABS[mode];
   const readTick = useReadTick();
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('all');
   // How many of each: types you have none of are dimmed.
@@ -72,8 +82,18 @@ export default function LibraryScreen() {
     return m;
   }, [lib]);
   const [query, setQuery] = useState('');
+  // A search also says how many lists match in the other modes, one tap to switch there.
+  const elsewhere = useMemo(() => {
+    const ws = words(query);
+    if (!ws.length) return [] as [Format, number][];
+    return FORMATS.filter((f) => f !== mode)
+      .map((f) => [f, [...fullLib.collections.values()].filter((c) => formatOf(c) === f && hasAll(ws, [c.title, c.writer, c.artist].join(' ').toLowerCase())).length] as [Format, number])
+      .filter(([, n]) => n > 0);
+  }, [fullLib, mode, query]);
   const [pubs, setPubs] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
+  // Books only: just the ones you have a physical copy of.
+  const [bought, setBought] = useState(false);
   const [chars, setChars] = useState<string[]>([]);
   const [writers, setWriters] = useState<string[]>([]);
   const [sort, setSort] = useState<SortKey>('status');
@@ -104,6 +124,7 @@ export default function LibraryScreen() {
   const clearAll = () => {
     setPubs([]);
     setStatuses([]);
+    setBought(false);
     setChars([]);
     setWriters([]);
     setSort('status');
@@ -114,7 +135,7 @@ export default function LibraryScreen() {
   const charOk = (text: string | null | undefined) => !chars.length || splitTags(text).some((t) => chars.includes(t.toLowerCase()));
   const [filtersOpen, setFiltersOpen] = useState(false);
   const toggle = (set: (fn: (v: string[]) => string[]) => void, key: string) => set((v) => (v.includes(key) ? v.filter((k) => k !== key) : [...v, key]));
-  const active = pubs.length + statuses.length + chars.length + writers.length + (sort === 'status' ? 0 : 1);
+  const active = pubs.length + statuses.length + chars.length + writers.length + (sort === 'status' ? 0 : 1) + (bought && mode === 'book' ? 1 : 0);
   const { width, height } = useWindowDimensions();
   const tile = Math.floor((Math.min(width, 600) - 32 - 24) / 3);
 
@@ -140,7 +161,8 @@ export default function LibraryScreen() {
     const who = people.length === 1 ? people[0] : people.length ? `${people[0]} +${people.length - 1}` : '';
     return [...lib.collections.values()]
       // "All" shows what sits at the top; events inside a run are under that run (and on the Events tab).
-      .filter((c) => (tab === 'all' ? (homeRoots ? homeRoots.has(c.id) : !isNested(lib, c.id) || !!query.trim()) : tab === c.kind))
+      .filter((c) => (tab === 'all' ? (homeRoots ? homeRoots.has(c.id) : !isNested(lib, c.id) || !!query.trim() || (bought && mode === 'book')) : tab === c.kind))
+      .filter((c) => !(bought && mode === 'book') || !!c.owned)
       .filter((c) => pubOk(pubs, c.publisher))
       .filter((c) => !statuses.length || statuses.includes(collectionStatus(lib, c.id)))
       .filter((c) => charOk(c.characters))
@@ -149,7 +171,7 @@ export default function LibraryScreen() {
       .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id), by: byPerson.get(c.id) ? { ...byPerson.get(c.id)!, who } : null }))
       .sort((a, b) => (b.by?.n ?? 0) - (a.by?.n ?? 0) || order(sort, a, b) || a.c.title.localeCompare(b.c.title));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lib, tab, query, pubs, statuses, chars, writers, writerLists, writerIndex, artistIndex, sort, homeRoots]);
+  }, [lib, tab, query, pubs, statuses, chars, writers, writerLists, writerIndex, artistIndex, sort, homeRoots, bought, mode]);
 
   const seriesRows = useMemo(() => {
     if (tab !== 'series' && !(tab === 'all' && query.trim())) return [];
@@ -189,7 +211,7 @@ export default function LibraryScreen() {
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
           <View style={[s.search, { flex: 1, marginTop: 0 }]}>
             <SearchIcon size={18} />
-            <TextInput value={query} onChangeText={setQuery} placeholder="Search lists, “green lantern 63”, writers…" placeholderTextColor={C.dim} style={s.searchInput} accessibilityLabel="Search library" />
+            <TextInput value={query} onChangeText={setQuery} placeholder={PLACEHOLDER[mode]} placeholderTextColor={C.dim} style={s.searchInput} accessibilityLabel="Search library" />
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel={`Filter${active ? `, ${active} on` : ''}`} accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((o) => !o)} style={[s.filterBtn, active || filtersOpen ? { borderColor: C.text } : null]}>
             <FilterIcon size={18} color={active ? C.text : C.muted} />
@@ -200,7 +222,7 @@ export default function LibraryScreen() {
       </View>
       {/* Every type in a small grid, so each one is one tap away. */}
       <View style={s.tabs} accessibilityRole="tablist">
-        {[TABS.slice(0, 4), TABS.slice(4)].map((row, r) => (
+        {(tabs.length > 4 ? [tabs.slice(0, 4), tabs.slice(4)] : [tabs]).map((row, r) => (
         <View key={r} style={s.tabRow}>
         {row.map((t) => {
           const on = tab === t.key;
@@ -220,10 +242,22 @@ export default function LibraryScreen() {
           <View style={s.chipRow}>
             {sortsFor(tab).map((o) => <Chip key={o.key} label={o.label} active={sortOn(tab, sort) === o.key} onPress={() => setSort(o.key)} />)}
           </View>
-          <Text style={[T.label, { marginTop: 6 }]}>PUBLISHER</Text>
-          <View style={s.chipRow}>
-            {PUBLISHERS.map((p) => <Chip key={p.key} label={p.label} dot={p.color} active={pubs.includes(p.key)} onPress={() => toggle(setPubs, p.key)} />)}
-          </View>
+          {mode === 'comic' ? (
+            <>
+              <Text style={[T.label, { marginTop: 6 }]}>PUBLISHER</Text>
+              <View style={s.chipRow}>
+                {PUBLISHERS.map((p) => <Chip key={p.key} label={p.label} dot={p.color} active={pubs.includes(p.key)} onPress={() => toggle(setPubs, p.key)} />)}
+              </View>
+            </>
+          ) : null}
+          {mode === 'book' ? (
+            <>
+              <Text style={[T.label, { marginTop: 6 }]}>ON YOUR SHELF</Text>
+              <View style={s.chipRow}>
+                <Chip label="Bought" active={bought} onPress={() => setBought((b) => !b)} />
+              </View>
+            </>
+          ) : null}
           <Text style={[T.label, { marginTop: 6 }]}>STATUS</Text>
           <View style={s.chipRow}>
             {(tab === 'issues' ? ISSUE_STATUSES : STATUSES).map((st) => <Chip key={st.key} label={st.label} active={statuses.includes(st.key)} onPress={() => toggle(setStatuses, st.key)} />)}
@@ -259,7 +293,7 @@ export default function LibraryScreen() {
       ) : active ? (
         <View style={s.activeRow}>
           <Text style={[T.small, { flex: 1 }]} numberOfLines={1}>
-            {[...(sort === 'status' ? [] : [SORTS.find((o) => o.key === sortOn(tab, sort))!.label]), ...PUBLISHERS.filter((p) => pubs.includes(p.key)).map((p) => p.label), ...[...STATUSES, ...ISSUE_STATUSES].filter((st) => statuses.includes(st.key)).map((st) => st.label), ...characters.filter((ch) => chars.includes(ch.name.toLowerCase())).map((ch) => ch.name), ...writerIndex.filter((w) => writers.includes(w.name.toLowerCase())).map((w) => w.name)].filter((v, i, all) => all.indexOf(v) === i).join(' · ')}
+            {[...(sort === 'status' ? [] : [SORTS.find((o) => o.key === sortOn(tab, sort))!.label]), ...PUBLISHERS.filter((p) => pubs.includes(p.key)).map((p) => p.label), ...[...STATUSES, ...ISSUE_STATUSES].filter((st) => statuses.includes(st.key)).map((st) => st.label), ...characters.filter((ch) => chars.includes(ch.name.toLowerCase())).map((ch) => ch.name), ...writerIndex.filter((w) => writers.includes(w.name.toLowerCase())).map((w) => w.name), ...(bought && mode === 'book' ? ['Bought'] : [])].filter((v, i, all) => all.indexOf(v) === i).join(' · ')}
           </Text>
           {chars.length === 1 && !writers.length ? (
             <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/character/[name]', params: { name: characters.find((ch) => ch.name.toLowerCase() === chars[0])?.name ?? chars[0] } })} hitSlop={8}>
@@ -325,11 +359,14 @@ export default function LibraryScreen() {
           columnWrapperStyle={{ gap: 12 }}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, gap: 18 }}
           ListFooterComponent={
-            tab === 'all' && query.trim() && (issues.length || seriesRows.length) ? (
+            query.trim() && ((tab === 'all' && (issues.length || seriesRows.length)) || elsewhere.length) ? (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                 <Text style={T.small}>Also matching:</Text>
-                {issues.length ? <Chip label={`${issues.length} issue${issues.length === 1 ? '' : 's'}`} onPress={() => setTab('issues')} /> : null}
-                {seriesRows.length ? <Chip label={`${seriesRows.length} series`} onPress={() => setTab('series')} /> : null}
+                {tab === 'all' && issues.length ? <Chip label={`${issues.length} ${issues.length === 1 ? WORDS[mode].issue : WORDS[mode].issues}`} onPress={() => setTab('issues')} /> : null}
+                {tab === 'all' && seriesRows.length ? <Chip label={`${seriesRows.length} series`} onPress={() => setTab('series')} /> : null}
+                {elsewhere.map(([f, n]) => (
+                  <Chip key={f} dot={WORDS[f].accent} label={`${n} in ${WORDS[f].name} ›`} onPress={() => setMode(f)} />
+                ))}
               </View>
             ) : undefined
           }

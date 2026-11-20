@@ -34,7 +34,12 @@ export function releaseRadar(lib: Library, today = todayKey(), recentDays = 21):
     const list = [...parents].sort((a, b) => RANK.indexOf(a!.kind) - RANK.indexOf(b!.kind))[0]!;
     const item = { issueId: issue.id, on: issue.release_on, listId: list.id };
     const day = startOf(issue.release_on);
-    if (day > today) coming.push(item);
+    // A manga you paused or that's on hiatus keeps what's out, but nothing shows as coming.
+    const series = lib.series.get(issue.series_id);
+    const held = !!series && (!!series.release_paused || series.release_status === 'hiatus');
+    if (day > today) {
+      if (!held) coming.push(item);
+    }
     else if (day >= since) outNow.push(item);
   }
   outNow.sort((a, b) => startOf(b.on).localeCompare(startOf(a.on)));

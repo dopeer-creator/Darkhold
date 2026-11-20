@@ -61,6 +61,11 @@ export const KIND_COLOR = {
 } as const;
 /** The type in a sentence: "New reading order", "Delete run only". */
 export const KIND_NAME: Record<Kind, string> = { crisis: 'reading order', run: 'run', event: 'event', era: 'era', arc: 'arc', edition: 'collected edition' };
+/** The type in a sentence, in the list's own mode: a book's run is a "book", its reading order a "book series". */
+export const kindName = (kind: Kind, format?: Collection['format']) =>
+  format === 'book' ? ({ run: 'book', event: 'book', crisis: 'book series' } as Partial<Record<Kind, string>>)[kind] ?? KIND_NAME[kind]
+  : format === 'manga' ? ({ run: 'manga', event: 'manga' } as Partial<Record<Kind, string>>)[kind] ?? KIND_NAME[kind]
+  : KIND_NAME[kind];
 /** What each type is for, shown when you pick one. */
 export const KIND_HINT: Record<Kind, string> = {
   crisis: 'You jump between books: a crossover with its tie-ins, or the road into a big event',
@@ -74,5 +79,12 @@ export const KIND_HINT: Record<Kind, string> = {
 // Collected editions are no longer offered: a book's contents fit a run, event or reading order. The kind stays for old data.
 export const KINDS: Kind[] = ['run', 'event', 'crisis', 'era'];
 /** A list's label: your own word if you gave one, else its type. */
-export const kindLabel = (c: Pick<Collection, 'kind' | 'label'>) => (c.label?.trim() ? c.label.trim().toUpperCase() : KIND_LABEL[c.kind]);
+export const kindLabel = (c: Pick<Collection, 'kind' | 'label'> & { format?: Collection['format'] }) =>
+  c.label?.trim() ? c.label.trim().toUpperCase() : (FORMAT_KIND_LABEL[c.format ?? 'comic']?.[c.kind] ?? KIND_LABEL[c.kind]);
+/** Books and manga call their lists by their own names: a book's chapters are a BOOK, a reading order of books a BOOK SERIES. */
+const FORMAT_KIND_LABEL: Record<string, Partial<Record<Kind, string>>> = {
+  comic: {},
+  book: { run: 'BOOK', crisis: 'BOOK SERIES', event: 'BOOK' },
+  manga: { run: 'MANGA', event: 'MANGA', edition: 'VOLUME' },
+};
 export const STATUS_LABEL = { not_started: 'Not started', planned: 'Plan to read', reading: 'Reading', on_hold: 'On hold', completed: 'Completed' } as const;

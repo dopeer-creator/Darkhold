@@ -5,7 +5,7 @@ import type { ExportFile } from '@/domain/importer';
 import { planImport } from '@/domain/importer';
 import { buildLibrary, canSlice, cannotNest, positionBetween, walk, type Library } from '@/domain/library';
 import type { BlockKind, ResolvedLine } from '@/domain/parser';
-import type { Collection, Entry, Issue, IssueStatus, Kind, Link, LinkKind, ReadLog, Review, Series, Verdict } from '@/domain/types';
+import type { Collection, Entry, Format, Issue, IssueStatus, Kind, Link, LinkKind, ReadLog, Review, Series, Verdict } from '@/domain/types';
 import { COLUMNS, putRow, TABLES, type Table } from './db';
 
 export const newId = () => randomUUID();
@@ -17,6 +17,13 @@ export const daysAgo = (n: number) => {
 };
 export const today = () => daysAgo(0);
 
+/** The mode new series and lists are made in. The store keeps it in step with the mode you picked. */
+let currentFormat: Format = 'comic';
+export const setCurrentFormat = (f: Format) => {
+  currentFormat = f;
+};
+export const getCurrentFormat = () => currentFormat;
+
 const live = <T>(db: SQLiteDatabase, table: Table) =>
   db.getAllAsync<T>(`SELECT ${COLUMNS[table].join(',')} FROM ${table} WHERE deleted_at IS NULL`);
 
@@ -27,9 +34,9 @@ export interface Snapshot {
 
 export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
   const [series, issues, collections, entries, links, reviews, readLog] = await Promise.all([
-    live<Series>(db, 'series'),
+    live<Series & { release_paused?: number | boolean }>(db, 'series'),
     live<Issue & { upcoming?: number | boolean }>(db, 'issues'),
-    live<Collection & { on_hold: number | boolean; ongoing: number | boolean; planned?: number | boolean; reading_now?: number | boolean }>(db, 'collections'),
+    live<Collection & { on_hold: number | boolean; ongoing: number | boolean; planned?: number | boolean; reading_now?: number | boolean; owned?: number | boolean }>(db, 'collections'),
     live<Entry & { optional?: number | boolean }>(db, 'entries'),
     live<Link>(db, 'links'),
     live<Review>(db, 'reviews'),
@@ -38,9 +45,9 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
   ]);
   return {
     lib: buildLibrary({
-      series,
+      series: series.map((x) => ({ ...x, release_paused: !!x.release_paused })),
       issues: issues.map((i) => ({ ...i, upcoming: !!i.upcoming })),
-      collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold, ongoing: !!c.ongoing, planned: !!c.planned, reading_now: !!c.reading_now })),
+      collections: collections.map((c) => ({ ...c, on_hold: !!c.on_hold, ongoing: !!c.ongoing, planned: !!c.planned, reading_now: !!c.reading_now, owned: !!c.owned })),
       entries: entries.map((e) => ({ ...e, optional: !!e.optional })),
       links,
       reviews,
@@ -157,7 +164,7 @@ export async function updateIssue(db: SQLiteDatabase, lib: Library, issueId: str
 function collectionRow(fields: Pick<Collection, 'kind' | 'title'> & Partial<Collection>): Collection {
   return {
     publisher: null, writer: null, artist: null, characters: null, start_year: null, end_year: null,
-    description: null, cover_path: null, on_hold: false, ongoing: false, planned: false, reading_now: false, label: null, rating: null, notes: null, ...fields, id: newId(), created_at: new Date().toISOString(),
+    description: null, cover_path: null, on_hold: false, ongoing: false, planned: false, reading_now: false, label: null, rating: null, notes: null, format: currentFormat, ...fields, id: newId(), created_at: new Date().toISOString(),
   };
 }
 
@@ -173,7 +180,7 @@ export async function updateCollection(db: SQLiteDatabase, lib: Library, id: str
   if (c) await putRow(db, 'collections', { ...c, ...patch });
 }
 
-async function appendEntry(
+export async function appendEntry(
   db: SQLiteDatabase,
   lib: Library,
   parentId: string,
@@ -230,7 +237,7 @@ function placer(lib: Library, parentId: string, afterEntryId: string | null | un
 }
 
 /** Puts an issue into a run or event next to its neighbours by number (#139 lands between #138 and #141), or at the end. */
-async function insertInOrder(db: SQLiteDatabase, lib: Library, listId: string, issueId: string, seriesId: string, number: string | null) {
+export async function insertInOrder(db: SQLiteDatabase, lib: Library, listId: string, issueId: string, seriesId: string, number: string | null) {
   const list = lib.children.get(listId) ?? [];
   if (list.some((e) => e.child_issue_id === issueId)) return;
   const n = number == null ? NaN : parseFloat(number);
@@ -326,7 +333,7 @@ export async function addIssueBlocks(db: SQLiteDatabase, lib: Library, parentId:
         let seriesId = line.series?.id ?? madeSeries.get(seriesKey);
         if (!seriesId) {
           seriesId = newId();
-          await putRow(db, 'series', { id: seriesId, title: line.seriesTitle, volume_year: line.volumeYear, publisher: publisher ?? parent?.publisher ?? null });
+          await putRow(db, 'series', { id: seriesId, title: line.seriesTitle, volume_year: line.volumeYear, publisher: publisher ?? parent?.publisher ?? null, format: parent?.format ?? currentFormat });
           madeSeries.set(seriesKey, seriesId);
         }
         for (let k = 0; k < line.numbers.length; k++) {

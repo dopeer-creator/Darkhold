@@ -1,15 +1,18 @@
 import type { Session } from '@supabase/supabase-js';
 import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 
 import { creditsSummary } from '@/domain/credits';
 import { collectionStatus, type Library } from '@/domain/library';
-import type { ReadLog } from '@/domain/types';
+import { scopeLibrary, scopeReadLog, WORDS, type Words } from '@/domain/modes';
+import { releaseRadar } from '@/domain/radar';
+import { FORMATS, type Format, type ReadLog } from '@/domain/types';
 import { fetchMissingCovers, fillDetails, getComicVineKey, setRequestGate } from '@/lib/comicvine';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
-import { TABLES } from './db';
-import { loadSnapshot, updateCollection, type Snapshot } from './repo';
+import { getMeta, setMeta, TABLES } from './db';
+import { loadSnapshot, setCurrentFormat, updateCollection, type Snapshot } from './repo';
+import { keepSchedules } from './schedule';
 import { syncNow } from './sync';
 
 export type SyncState = { state: 'idle' | 'syncing' | 'error'; message?: string; at?: string };
@@ -18,8 +21,16 @@ export type SyncState = { state: 'idle' | 'syncing' | 'error'; message?: string;
 export type Job = { kind: 'covers' | 'details'; busy: boolean; status: string; collectionId?: string };
 
 interface Store {
+  /** Everything in the mode you're in (Comics, Manga or Books Darkhold). */
   lib: Library;
   readLog: ReadLog[];
+  /** Every mode at once, for the few places that look across them (search hints, the avatar dot). */
+  fullLib: Library;
+  mode: Format;
+  setMode: (mode: Format) => void;
+  words: Words;
+  /** Unread issues or chapters out now, per mode: the avatar's dot for the modes you're not in. */
+  news: Record<Format, number>;
   ready: boolean;
   /** undefined while checking; null when signed out. */
   session: Session | null | undefined;
@@ -57,6 +68,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const jobRunning = useRef(false);
   const jobStop = useRef(false);
   const lastRefresh = useRef(0);
+  const [mode, setModeState] = useState<Format>('comic');
+
+  // The mode is this phone's choice, kept with the phone's copy of the library.
+  useEffect(() => {
+    getMeta(db, 'mode').then((m) => {
+      const f = (FORMATS as string[]).includes(m ?? '') ? (m as Format) : 'comic';
+      setCurrentFormat(f);
+      setModeState(f);
+    });
+  }, [db]);
+  const setMode = useCallback(
+    (f: Format) => {
+      setCurrentFormat(f);
+      setModeState(f);
+      setMeta(db, 'mode', f);
+    },
+    [db],
+  );
 
   // Comic Vine requests wait while the app is in the background and carry on when it's back in front.
   useEffect(() => {
@@ -122,6 +151,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await syncNow(db);
         setSync({ state: 'idle', at: new Date().toISOString() });
         await refresh();
+        // Manga schedules: the next chapter on Release radar, and AniList's word on a hiatus (once a day).
+        if (snapRef.current && (await keepSchedules(db, snapRef.current.lib))) {
+          await refresh();
+          again.current = true;
+        }
       } catch (e) {
         setSync({ state: 'error', message: e instanceof Error ? e.message : String(e) });
         break;
@@ -171,7 +205,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       };
       try {
         const current = snapRef.current ?? (await loadSnapshot(db));
-        const summary = await work(db, current.lib, progress, () => jobStop.current);
+        // Comic Vine jobs only ever look at comics.
+        const summary = await work(db, scopeLibrary(current.lib, 'comic'), progress, () => jobStop.current);
         setJob({ ...start, busy: false, status: summary });
       } catch (e) {
         setJob({ ...start, busy: false, status: e instanceof Error ? e.message : String(e) });
@@ -239,9 +274,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await refresh();
   }, [db, refresh]);
 
+  const fullLib = snap?.lib ?? EMPTY;
+  const scoped = useMemo(() => scopeLibrary(fullLib, mode), [fullLib, mode]);
+  const scopedLog = useMemo(() => scopeReadLog(scoped, snap?.readLog ?? []), [scoped, snap]);
+  const news = useMemo(() => {
+    const out = { comic: 0, manga: 0, book: 0 } as Record<Format, number>;
+    for (const f of FORMATS) out[f] = releaseRadar(f === mode ? scoped : scopeLibrary(fullLib, f)).outNow.length;
+    return out;
+  }, [fullLib, scoped, mode]);
+
   const value: Store = {
-    lib: snap?.lib ?? EMPTY,
-    readLog: snap?.readLog ?? [],
+    lib: scoped,
+    readLog: scopedLog,
+    fullLib,
+    mode,
+    setMode,
+    words: WORDS[mode],
+    news,
     ready: !!snap,
     session,
     sync,

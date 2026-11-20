@@ -1,6 +1,13 @@
 /** A list's type. 'crisis' is shown as "Reading order"; it keeps its old name in the database. */
 export type Kind = 'crisis' | 'run' | 'event' | 'era' | 'arc' | 'edition';
 export type IssueStatus = 'unread' | 'reading' | 'read';
+/** Which Darkhold this belongs to. Null or missing is a comic (everything from before books and manga). */
+export type Format = 'comic' | 'manga' | 'book';
+export const FORMATS: Format[] = ['comic', 'manga', 'book'];
+/** How often a manga's next chapter comes out, for Release radar. */
+export type ReleaseEvery = 'weekly' | 'biweekly' | 'monthly';
+/** A manga's status as AniList reports it (or as you set it). */
+export type ReleaseStatus = 'releasing' | 'hiatus' | 'finished';
 export type DatePrecision = 'day' | 'unknown';
 
 export interface Series {
@@ -12,6 +19,19 @@ export interface Series {
   cv_volume_id?: number | null;
   /** When the series was added (Supabase keeps the first value; older ones are a best guess). */
   created_at?: string | null;
+  format?: Format | null;
+  /** Manga: a repeating schedule for the next chapter (null = none). */
+  release_every?: ReleaseEvery | null;
+  /** Manga: the day the next chapter is expected ("2026-11-24"); moves on by itself. */
+  release_next?: string | null;
+  /** Manga: you paused the schedule. */
+  release_paused?: boolean;
+  /** Manga: releasing, on hiatus or finished (from AniList, or set by hand). */
+  release_status?: ReleaseStatus | null;
+  /** The AniList manga this series was matched to. */
+  anilist_id?: number | null;
+  /** The Open Library work this book was matched to ("/works/OL45883W"). */
+  ol_key?: string | null;
 }
 
 export interface Issue {
@@ -71,6 +91,10 @@ export interface Collection {
   label?: string | null;
   /** When the list was added (Supabase keeps the first value). Lists from before this existed have a best guess. */
   created_at?: string | null;
+  /** Comic (default), manga or book: which mode the list shows in. */
+  format?: Format | null;
+  /** Books: you have a physical copy (the Bought filter). */
+  owned?: boolean;
   rating: number | null;
   notes: string | null;
 }

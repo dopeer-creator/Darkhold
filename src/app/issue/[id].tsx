@@ -32,10 +32,11 @@ const STATUSES: { key: IssueStatus; label: string }[] = [
 /** One issue: status, when you read it (or "date unknown"), your review, characters, notes, cover, and where it appears. */
 export default function IssueScreen() {
   const { id, entry, parent } = useLocalSearchParams<{ id: string; entry?: string; parent?: string }>();
-  const { lib, act } = useStore();
+  const { lib, act, words } = useStore();
   const readTick = useReadTick();
   const db = useSQLiteContext();
   const issue = lib.issues.get(id);
+  const comic = (lib.series.get(issue?.series_id ?? '')?.format ?? 'comic') === 'comic';
   const [notes, setNotes] = useState(issue?.notes ?? '');
   const [link, setLink] = useState('');
   const [finding, setFinding] = useState('');
@@ -301,9 +302,9 @@ export default function IssueScreen() {
                 <ActivityIndicator color={C.dim} />
                 <Text style={T.small}>{finding}</Text>
               </View>
-            ) : (
+            ) : comic ? (
               <GhostButton label={hasKey ? 'Find cover on Comic Vine' : 'Set up Comic Vine covers'} onPress={findCover} />
-            )}
+            ) : null}
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TextInput value={link} onChangeText={setLink} placeholder="…or paste an image link" placeholderTextColor={C.faint} autoCapitalize="none" keyboardType="url" style={[s.input, { flex: 1 }]} accessibilityLabel="Cover image link" />
               <Pressable accessibilityRole="button" onPress={saveLink} disabled={!link.trim()} style={[s.smallBtn, !link.trim() ? { opacity: 0.4 } : null]}>
@@ -320,7 +321,7 @@ export default function IssueScreen() {
           <View style={{ gap: 8 }}>
             <SectionTitle
               right={
-                fill.busy ? (
+                !comic ? null : fill.busy ? (
                   <ActivityIndicator color={C.dim} />
                 ) : (
                   <Pressable accessibilityRole="button" onPress={() => fill.run([issue.id], undefined, true)} style={{ minHeight: 36, justifyContent: 'center' }}>
@@ -342,14 +343,14 @@ export default function IssueScreen() {
             {fill.status ? <Text style={T.tiny}>{fill.status}</Text> : null}
           </View>
 
-          {series && hasKey ? (
+          {series && hasKey && comic ? (
             <Pressable onPress={() => router.push({ pathname: '/covers', params: { series: series.id } })} style={{ paddingVertical: 4 }}>
               <Text style={[T.small, { color: C.dc }]}>Wrong covers for this series? Pick the right one on Comic Vine →</Text>
             </Pressable>
           ) : null}
 
           <View style={{ gap: 8 }}>
-            <SectionTitle>Edit issue</SectionTitle>
+            <SectionTitle>{comic ? 'Edit issue' : `Edit ${words.issue}`}</SectionTitle>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TextInput value={editTitle} onChangeText={setEditTitle} placeholder="Series" placeholderTextColor={C.faint} style={[s.input, { flex: 1 }]} accessibilityLabel="Series name" />
               <TextInput value={editYear} onChangeText={setEditYear} placeholder="Year" keyboardType="number-pad" maxLength={4} placeholderTextColor={C.faint} style={[s.input, { width: 76 }]} accessibilityLabel="Series start year" />

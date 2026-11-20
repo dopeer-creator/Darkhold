@@ -15,7 +15,7 @@ import { C, F, publisherColor, kindLabel } from '@/ui/theme';
 import { TopBar } from '@/ui/top-bar';
 
 export default function Home() {
-  const { lib, readLog, sync, ready, act, finished, dismissFinished } = useStore();
+  const { lib, readLog, sync, ready, act, finished, dismissFinished, words: w, mode } = useStore();
   const roots = useMemo(() => byLatestRead(lib, activeRoots(lib), readLog), [lib, readLog]);
   const totals = useMemo(() => stats(lib), [lib]);
   const empty = ready && lib.collections.size === 0 && lib.issues.size === 0;
@@ -40,7 +40,17 @@ export default function Home() {
           <Text style={[T.tiny, { color: C.indie, paddingHorizontal: 16 }]}>Not synced yet — your changes are safe on this phone. {sync.message}</Text>
         ) : null}
 
-        {empty ? (
+        {empty && mode !== 'comic' ? (
+          <View style={s.emptyCard}>
+            <Text style={[T.h1, { fontSize: 24 }]}>{mode === 'book' ? 'Start your bookshelf' : 'Start your manga shelf'}</Text>
+            <Text style={[T.small, { lineHeight: 20 }]}>
+              {mode === 'book'
+                ? 'Find a book on Open Library, add its chapters in one go, and tick them as you read.'
+                : 'Find a manga on AniList. Its volumes and chapters come from MangaDex, and you can set when new chapters come out.'}
+            </Text>
+            <PrimaryButton label={mode === 'book' ? 'Add a book' : 'Add a manga'} onPress={() => router.push('/add-work')} />
+          </View>
+        ) : empty ? (
           <View style={s.emptyCard}>
             <Text style={[T.h1, { fontSize: 24 }]}>Start your library</Text>
             <Text style={[T.small, { lineHeight: 20 }]}>
@@ -54,10 +64,10 @@ export default function Home() {
         {!empty ? (
           <View style={s.stats}>
             {[
-              [totals.issuesRead, 'Issues read'],
-              [totals.issuesLeft, 'Issues left'],
-              [totals.reading, 'Lists reading'],
-              [totals.completed, 'Lists finished'],
+              [totals.issuesRead, `${w.Issues} read`],
+              [totals.issuesLeft, `${w.Issues} left`],
+              [totals.reading, mode === 'book' ? 'Reading' : 'Lists reading'],
+              [totals.completed, mode === 'book' ? 'Finished' : 'Lists finished'],
             ].map(([n, label], i) => (
               <View key={label} style={[s.stat, i ? { borderLeftWidth: 1, borderLeftColor: C.border } : null]}>
                 <Text style={[s.statNum, T.num]}>{n}</Text>

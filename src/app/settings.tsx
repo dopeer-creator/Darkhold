@@ -19,10 +19,13 @@ import { BackIcon } from '@/ui/icons';
 import { GhostButton, SectionTitle, T } from '@/ui/parts';
 import { relativeDay } from '@/ui/format';
 import { C, F } from '@/ui/theme';
+import { SourcesSection } from '@/ui/sources-section';
+import { WORDS } from '@/domain/modes';
+import { FORMATS } from '@/domain/types';
 
 /** Profile and settings: who is signed in, sync, and signing out to switch accounts. */
 export default function Settings() {
-  const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, fillDetailsFor, stopJob } = useStore();
+  const { session, sync, syncNow, signOut, lib, readLog, job, findCovers: startCovers, fillDetailsFor, stopJob, mode, setMode } = useStore();
   const [backupStatus, setBackupStatus] = useState('');
   const [igId, setIgId] = useState('');
   const [savedIgId, setSavedIgId] = useState<string | null>(null);
@@ -162,6 +165,21 @@ export default function Settings() {
         </View>
 
         <View style={{ gap: 8 }}>
+          <SectionTitle>Mode</SectionTitle>
+          <View style={s.seg}>
+            {FORMATS.map((f) => (
+              <Pressable key={f} accessibilityRole="button" accessibilityState={{ selected: mode === f }} onPress={() => setMode(f)} style={[s.segBtn, mode === f ? s.segOn : null]}>
+                <Text style={[T.small, mode === f ? { color: C.onLight, fontFamily: F.semibold } : null]}>{WORDS[f].name}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={T.tiny}>The whole app shows one shelf at a time. Switch from the profile button on any page too.</Text>
+        </View>
+
+        {mode !== 'comic' ? <SourcesSection mode={mode} /> : null}
+
+        {mode === 'comic' ? (
+        <View style={{ gap: 8 }}>
           <SectionTitle>Covers</SectionTitle>
           {savedKey ? (
             <View style={s.row}>
@@ -212,6 +230,7 @@ export default function Settings() {
           {job?.kind === 'details' && !job.collectionId ? <Text style={T.tiny}>{job.busy ? `Finding credits · ${job.status}` : job.status}</Text> : null}
           {coverStatus ? <Text style={T.tiny}>{coverStatus}</Text> : null}
         </View>
+        ) : null}
 
         <View style={{ gap: 8 }}>
           <SectionTitle>Instagram stories</SectionTitle>
@@ -322,6 +341,9 @@ export default function Settings() {
 }
 
 const s = StyleSheet.create({
+  seg: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  segBtn: { flex: 1, minHeight: 40, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  segOn: { backgroundColor: C.text },
   top: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingTop: 4 },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   title: { fontFamily: F.condBold, fontSize: 24, color: C.text },

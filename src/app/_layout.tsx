@@ -51,6 +51,8 @@ export default function RootLayout() {
             <Stack.Screen name="person/[name]" />
             <Stack.Screen name="people" />
             <Stack.Screen name="radar" />
+            <Stack.Screen name="add-work" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="add-chapters" options={{ presentation: 'modal' }} />
           </Stack>
           <JobBanner />
         </StoreProvider>

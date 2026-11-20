@@ -10,7 +10,7 @@ import { CloseIcon } from '@/ui/icons';
 import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { TagEditor } from '@/ui/tag-editor';
 import { Checkbox, Chip, PrimaryButton, T } from '@/ui/parts';
-import { C, F, KIND_HINT, KIND_LABEL, KIND_NAME, KINDS } from '@/ui/theme';
+import { C, F, KIND_HINT, KIND_LABEL, kindName, KINDS } from '@/ui/theme';
 
 const PUBLISHERS = ['DC', 'Marvel', 'Image', 'Dark Horse', 'IDW', 'Boom!'];
 const PLACEHOLDER: Record<Kind, string> = {
@@ -26,8 +26,9 @@ export default function NewCollection() {
 
 function CollectionForm() {
   const params = useLocalSearchParams<{ kind?: Kind; parent?: string; edit?: string }>();
-  const { lib, act } = useStore();
+  const { lib, act, mode } = useStore();
   const editing = params.edit ? lib.collections.get(params.edit) : undefined;
+  const format = editing?.format ?? mode;
   const [kind, setKind] = useState<Kind>(editing?.kind ?? params.kind ?? 'run');
   const parent = params.parent ? lib.collections.get(params.parent) : undefined;
   const [f, setF] = useState<Partial<Collection>>(editing ?? { publisher: parent?.publisher ?? null });
@@ -57,18 +58,18 @@ function CollectionForm() {
         <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => router.back()} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
           <CloseIcon />
         </Pressable>
-        <Text style={s.title}>{editing ? `Edit ${KIND_NAME[kind]}` : `New ${KIND_NAME[kind]}`}</Text>
+        <Text style={s.title}>{editing ? `Edit ${kindName(kind, format)}` : `New ${kindName(kind, format)}`}</Text>
       </View>
       <KeyboardScroll contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           {parent ? <Text style={T.small}>Goes inside {parent.title}</Text> : null}
           <View style={{ gap: 8 }}>
             <Text style={T.label}>TYPE</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {KINDS.map((k) => (
-                <Chip key={k} label={KIND_NAME[k][0].toUpperCase() + KIND_NAME[k].slice(1)} active={kind === k} onPress={() => setKind(k)} />
+              {(format && format !== 'comic' ? (['crisis'] as Kind[]) : KINDS).map((k) => (
+                <Chip key={k} label={kindName(k, format)[0].toUpperCase() + kindName(k, format).slice(1)} active={kind === k} onPress={() => setKind(k)} />
               ))}
             </View>
-            <Text style={T.tiny}>{KIND_HINT[kind]}. You can change it any time.</Text>
+            <Text style={T.tiny}>{format === 'book' ? 'Books in reading order, like The Witcher or Harry Potter. Add each book inside it' : format === 'manga' ? 'Several manga in reading order' : KIND_HINT[kind]}. You can change it any time.</Text>
           </View>
           <Field label="Name" value={f.title} onChange={set('title')} placeholder={PLACEHOLDER[kind]} autoFocus={!editing} />
           <Field label="Your own label (optional)" value={f.label} onChange={set('label')} placeholder={`Shown instead of ${KIND_LABEL[kind]}, e.g. SAGA`} />
@@ -106,7 +107,7 @@ function CollectionForm() {
           <Field label="Cover image link (optional)" value={f.cover_path} onChange={set('cover_path')} placeholder="Blank = first issue's cover" url />
           <Field label="Notes" value={f.notes} onChange={set('notes')} multiline />
           {error ? <Text style={[T.small, { color: C.indie }]}>{error}</Text> : null}
-          <PrimaryButton label={editing ? 'Save' : `Create ${KIND_NAME[kind]}`} onPress={save} />
+          <PrimaryButton label={editing ? 'Save' : `Create ${kindName(kind, format)}`} onPress={save} />
         </KeyboardScroll>
     </SafeAreaView>
   );

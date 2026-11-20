@@ -1,3 +1,4 @@
+import { titleFor } from './modes';
 import type { Collection, CollectionStatus, Entry, Issue, Kind, Link, LinkKind, ReadLog, Review, Series } from './types';
 
 /** Types whose lines show which run or event each issue belongs to, worked out automatically. */
@@ -312,8 +313,8 @@ export function issueTitle(lib: Library, issueId: string): string {
   if (!issue) return '';
   const series = lib.series.get(issue.series_id);
   const name = series ? series.title : 'Unknown series';
-  if (issue.number == null) return issue.label ?? name;
-  return `${name} #${issue.number}`;
+  if (issue.number == null) return issue.label ? (series?.format === 'book' ? `${name} · ${issue.label}` : issue.label) : name;
+  return titleFor(name, series?.format ?? 'comic', issue.number);
 }
 
 /** A position that sorts between two neighbours, so reordering touches one row. */
