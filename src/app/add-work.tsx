@@ -163,7 +163,8 @@ export default function AddWork() {
         await patchRow(d, 'series', sid, f.source === 'anilist' ? { anilist_id: Number(f.id), release_status: f.status } : f.source === 'openlibrary' ? { ol_key: f.id } : ol ? { ol_key: ol.key } : {});
       }
     });
-    router.back();
+    if (router.canGoBack()) router.back();
+    else router.replace(`/collection/${matching.id}`);
   };
 
   const sections = (): WorkSection[] | string => {

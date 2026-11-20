@@ -138,19 +138,21 @@ export function BookPanel({ id, accent }: { id: string; accent: string }) {
         </SectionTitle>
         {notes.length ? (
           notes.map((n) => (
-            <Pressable key={n.id} accessibilityRole="button" onPress={() => router.push({ pathname: '/page-note', params: { list: id, note: n.id } })} style={[s.note, { borderLeftColor: accent }]}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            // The star sits beside the note, not inside it: a button can't hold another button.
+            <View key={n.id} style={[s.note, { borderLeftColor: accent, flexDirection: 'row', gap: 8 }]}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Edit note${n.page != null ? ` on page ${n.page}` : ''}`} onPress={() => router.push({ pathname: '/page-note', params: { list: id, note: n.id } })} style={{ flex: 1 }}>
                 <Text style={[T.label, { color: accent }]}>{n.page != null ? `PAGE ${n.page}` : 'NOTE'}</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={n.starred ? 'Unstar note' : 'Star note: shows on your review'}
-                  onPress={() => act((db) => savePageNote(db, { ...n, starred: !n.starred }))}
-                  hitSlop={12}>
-                  <Text style={{ fontSize: 16, color: n.starred ? '#E8C48A' : C.faint }}>{n.starred ? '★' : '☆'}</Text>
-                </Pressable>
-              </View>
-              <Text style={[T.body, { fontSize: 14, lineHeight: 20, marginTop: 4 }]}>{n.body}</Text>
-            </Pressable>
+                <Text style={[T.body, { fontSize: 14, lineHeight: 20, marginTop: 4 }]}>{n.body}</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={n.starred ? 'Unstar note' : 'Star note: shows on your review'}
+                onPress={() => act((db) => savePageNote(db, { ...n, starred: !n.starred }))}
+                hitSlop={12}
+                style={{ minWidth: 32, alignItems: 'flex-end' }}>
+                <Text style={{ fontSize: 16, color: n.starred ? '#E8C48A' : C.faint }}>{n.starred ? '★' : '☆'}</Text>
+              </Pressable>
+            </View>
           ))
         ) : (
           <Text style={[T.tiny, { paddingVertical: 6 }]}>Pin a thought or a quote to a page. Starred notes show on your review.</Text>

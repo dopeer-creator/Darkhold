@@ -8,9 +8,16 @@ import { C, F, publisherColor, tintFor } from './theme';
 /**
  * Comic Vine serves every cover in several sizes at the same address with a different folder
  * ("/scale_medium/" → "/scale_small/"). Small list thumbnails load the small file, which takes a
- * fraction of the space in the phone's picture cache; big covers keep the saved size. Other links are left alone.
+ * fraction of the space in the phone's picture cache; big covers keep the saved size. Apple Books covers work
+ * the same way with a size in the link. Other links are left alone.
  */
 export function sizedCover(uri: string, width: number): string {
+  // Apple Books covers come in any size by changing the box in the link: small tiles load a small file.
+  if (/mzstatic\.com\/image\/thumb\//.test(uri)) {
+    // The cover's height on a sharp (3x) phone screen, rounded up to 100 px.
+    const box = Math.min(1400, Math.ceil((width * 1.5 * 3) / 100) * 100);
+    return uri.replace(/\/\d+x\d+bb\.(jpg|png)$/, `/${box}x${box}bb.jpg`);
+  }
   if (!/comicvine\.gamespot\.com\/a\/uploads\//.test(uri)) return uri;
   // Measured on one cover: original-size medium 317 KB, small 157 KB, avatar 15 KB.
   const size = width <= 44 ? 'scale_avatar' : width <= 130 ? 'scale_small' : null;

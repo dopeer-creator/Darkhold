@@ -46,7 +46,7 @@ export default function Home() {
             <Text style={[T.h1, { fontSize: 24 }]}>{mode === 'book' ? 'Start your bookshelf' : 'Start your manga shelf'}</Text>
             <Text style={[T.small, { lineHeight: 20 }]}>
               {mode === 'book'
-                ? 'Find a book on Open Library, add its chapters in one go, and tick them as you read.'
+                ? 'Find a book on Apple Books or Open Library, then log the page you’re on as you read.'
                 : 'Find a manga on AniList. Its volumes and chapters come from MangaDex, and you can set when new chapters come out.'}
             </Text>
             <PrimaryButton label={mode === 'book' ? 'Add a book' : 'Add a manga'} onPress={() => router.push('/add-work')} />

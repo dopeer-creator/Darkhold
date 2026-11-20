@@ -48,11 +48,12 @@ export default function PageNoteScreen() {
           <TextInput value={page} onChangeText={(x) => setPage(x.replace(/[^0-9]/g, ''))} keyboardType="number-pad" accessibilityLabel="Page" placeholder="—" placeholderTextColor={C.faint} style={[s.input, { width: 90, textAlign: 'center' }]} />
         </View>
         <TextInput value={body} onChangeText={(x) => { setBody(x); setError(''); }} multiline autoFocus={!had} accessibilityLabel="Note" placeholder="A thought, or a line you want to keep" placeholderTextColor={C.faint} style={[s.input, { minHeight: 120, textAlignVertical: 'top', paddingTop: 10 }]} />
-        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: starred }} onPress={() => setStarred((x) => !x)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 }}>
-          <Checkbox checked={starred} label="Star" onPress={() => setStarred((x) => !x)} />
-          <Text style={T.body}>Star it</Text>
-          <Text style={[T.tiny, { flex: 1 }]}> · shows on your review as a favourite quote</Text>
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 }}>
+          <Checkbox checked={starred} label="Star it: shows on your review as a favourite quote" onPress={() => setStarred((x) => !x)} />
+          <Text style={[T.body, { flex: 1 }]} onPress={() => setStarred((x) => !x)}>
+            Star it<Text style={T.tiny}> · shows on your review as a favourite quote</Text>
+          </Text>
+        </View>
         {error ? <Text style={[T.small, { color: C.danger }]}>{error}</Text> : null}
         <PrimaryButton label="Save note" onPress={save} />
         {had ? (
