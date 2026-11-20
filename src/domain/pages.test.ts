@@ -104,3 +104,21 @@ describe('the page you started tracking at', () => {
     expect(readingSpan(make({ logs: [{ ...log('s', 'tg', '2026-11-01', 267), start: true }, log('n', 'tg', '2026-11-18', 454)], read: true }), 'tg').start).toBe('2026-11-18');
   });
 });
+
+describe('a book series cover', () => {
+  it('is its first book’s cover', async () => {
+    const { coverFor } = await import('./library');
+    const lib = buildLibrary({
+      series: [{ id: 's', title: 'Dune', volume_year: null, publisher: null, format: 'book' }],
+      issues: [whole('w1', 's'), whole('w2', 's')],
+      collections: [book('saga', { kind: 'crisis' }), book('dune', { cover_path: 'https://x/dune.jpg' }), book('messiah', { cover_path: 'https://x/messiah.jpg' })],
+      entries: [
+        { id: 'e1', parent_id: 'dune', position: 1, child_issue_id: 'w1', child_collection_id: null, via_collection_id: null, note: null },
+        { id: 'e2', parent_id: 'messiah', position: 1, child_issue_id: 'w2', child_collection_id: null, via_collection_id: null, note: null },
+        { id: 'e3', parent_id: 'saga', position: 1, child_issue_id: null, child_collection_id: 'dune', via_collection_id: null, note: null },
+        { id: 'e4', parent_id: 'saga', position: 2, child_issue_id: null, child_collection_id: 'messiah', via_collection_id: null, note: null },
+      ],
+    });
+    expect(coverFor(lib, 'saga')).toBe('https://x/dune.jpg');
+  });
+});

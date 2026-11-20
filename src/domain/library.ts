@@ -413,6 +413,11 @@ export function coverFor(lib: Library, collectionId: string): string | null {
     const cover = lib.issues.get(s.issueId)?.cover_path;
     if (cover) return cover;
   }
+  // Books keep their cover on the book, not its one line: a book series wears its first book's cover.
+  for (const e of lib.children.get(collectionId) ?? []) {
+    const cover = e.child_collection_id && lib.collections.has(e.child_collection_id) ? coverFor(lib, e.child_collection_id) : null;
+    if (cover) return cover;
+  }
   return null;
 }
 
