@@ -6,19 +6,23 @@ import { getMeta, setMeta } from '@/store/db';
 /**
  * Where books and manga get their covers and details. None needs a key:
  * AniList (manga details and status), MangaDex (which chapters are in which volume),
- * Open Library (books) and Google Books (a backup for books, with an optional key for more requests).
+ * Apple Books (book covers, sharp ones), Open Library (page counts and details) and
+ * Google Books (off unless you switch it on; an optional key gives it more requests).
  */
 
-export type SourceKey = 'anilist' | 'mangadex' | 'hiatus' | 'googlebooks';
-/** Each source is on until you switch it off in Profile. */
-export const sourceOn = async (db: SQLiteDatabase, key: SourceKey) => (await getMeta(db, `src:${key}`)) !== 'off';
+export type SourceKey = 'anilist' | 'mangadex' | 'hiatus' | 'googlebooks' | 'apple';
+/** Each source is on until you switch it off in Profile, except Google Books: off until you switch it on. */
+export const sourceOn = async (db: SQLiteDatabase, key: SourceKey) => {
+  const v = await getMeta(db, `src:${key}`);
+  return key === 'googlebooks' ? v === 'on' : v !== 'off';
+};
 export const setSourceOn = (db: SQLiteDatabase, key: SourceKey, on: boolean) => setMeta(db, `src:${key}`, on ? 'on' : 'off');
 export const getGoogleBooksKey = (db: SQLiteDatabase) => getMeta(db, 'gb:key');
 export const setGoogleBooksKey = (db: SQLiteDatabase, key: string) => setMeta(db, 'gb:key', key.trim());
 
 /** One search result, the same shape for every source. */
 export interface Found {
-  source: 'anilist' | 'openlibrary' | 'googlebooks';
+  source: 'anilist' | 'openlibrary' | 'googlebooks' | 'apple';
   id: string;
   title: string;
   /** Author, or the mangaka's story credit. */
@@ -148,6 +152,26 @@ export async function mangaVolumes(mangaDex: string): Promise<{ volume: string |
   return out.filter((v) => v.chapters.length).sort((a, b) => (a.volume == null ? 1 : b.volume == null ? -1 : num(a.volume) - num(b.volume)));
 }
 
+/** A source's name as the app shows it. */
+export const sourceName = (s: Found['source']) => ({ anilist: 'AniList', openlibrary: 'Open Library', googlebooks: 'Google Books', apple: 'Apple Books' })[s];
+
+// ---- Apple Books -----------------------------------------------------------------------------------------
+
+/**
+ * Apple Books' public search (no key, about 20 searches a minute): the sharpest free covers, about 1400 px tall.
+ * It only knows books sold as e-books, and has no page counts (those come from Open Library).
+ */
+export async function searchAppleBooks(q: string): Promise<Found[]> {
+  const d = await getJson(`https://itunes.apple.com/search?media=ebook&entity=ebook&limit=12&term=${encodeURIComponent(q)}`);
+  type Raw = { trackId: number; trackName: string; artistName?: string; releaseDate?: string; artworkUrl100?: string; description?: string };
+  return ((d.results ?? []) as Raw[]).map((b) => ({
+    source: 'apple', id: String(b.trackId), title: b.trackName, writer: b.artistName ?? null, artist: null,
+    year: b.releaseDate ? parseInt(b.releaseDate, 10) || null : null,
+    cover: b.artworkUrl100 ? b.artworkUrl100.replace(/\/\d+x\d+bb\.(jpg|png)$/, '/1400x1400bb.jpg') : null,
+    publisher: null, description: clean(b.description), chapters: null, volumes: null, status: null, pages: null,
+  }));
+}
+
 // ---- Open Library and Google Books -----------------------------------------------------------------------
 
 export async function searchOpenLibrary(q: string): Promise<Found[]> {
@@ -158,6 +182,19 @@ export async function searchOpenLibrary(q: string): Promise<Found[]> {
     cover: b.cover_i ? `https://covers.openlibrary.org/b/id/${b.cover_i}-L.jpg` : null, publisher: b.publisher?.[0] ?? null, description: null,
     chapters: null, volumes: null, status: null, pages: b.number_of_pages_median ?? null,
   }));
+}
+
+/** The Open Library work for a title and author: its key, first year and usual page count (for a book found elsewhere). */
+export async function openLibraryMatch(title: string, author: string | null): Promise<{ key: string; year: number | null; pages: number | null } | null> {
+  try {
+    const found = await searchOpenLibrary(`${title} ${author ?? ''}`.trim());
+    const norm = (t: string) => t.toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, '');
+    const words = norm(title.replace(/\(.*?\)|:.*$/g, '')).split(' ').filter((w) => w.length > 2);
+    const hit = found.find((f) => words.every((w) => norm(f.title).includes(w))) ?? null;
+    return hit ? { key: hit.id, year: hit.year, pages: hit.pages && hit.pages > 1 ? hit.pages : null } : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A book's blurb from Open Library, when it has one. */
@@ -181,10 +218,17 @@ export async function searchGoogleBooks(q: string, key: string | null): Promise<
   }));
 }
 
-/** Books from Open Library, then Google Books when it's on. One source failing still shows the other. */
+/** Books from Apple Books (best covers), then Open Library, then Google Books when it's on. One source failing still shows the others. */
 export async function searchBooks(db: SQLiteDatabase, q: string): Promise<{ found: Found[]; errors: string[] }> {
   const errors: string[] = [];
   const found: Found[] = [];
+  if (await sourceOn(db, 'apple')) {
+    try {
+      found.push(...(await searchAppleBooks(q)));
+    } catch (e) {
+      errors.push(`Apple Books: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   try {
     found.push(...(await searchOpenLibrary(q)));
   } catch (e) {

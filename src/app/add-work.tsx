@@ -11,7 +11,7 @@ import { loadSnapshot, setIssueStatus, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { createWork, parseChapterRange, type WorkSection } from '@/store/works';
 import { logPage } from '@/store/pages';
-import { mangaVolumes, openLibraryDescription, searchBooks, searchManga, searchMangaDex, sourceOn, type DexChoice, type Found } from '@/lib/sources';
+import { mangaVolumes, openLibraryDescription, openLibraryMatch, searchBooks, searchManga, searchMangaDex, sourceName, sourceOn, type DexChoice, type Found } from '@/lib/sources';
 import { CloseIcon } from '@/ui/icons';
 import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { Checkbox, Chip, GhostButton, PrimaryButton, T } from '@/ui/parts';
@@ -44,6 +44,8 @@ export default function AddWork() {
   const [year, setYear] = useState('');
   const [range, setRange] = useState('');
   const [pages, setPages] = useState('');
+  /** The Open Library work behind a book picked from Apple Books (for its page count and later lookups). */
+  const [olKey, setOlKey] = useState<string | null>(null);
   const [seriesName, setSeriesName] = useState('');
   const [owned, setOwned] = useState(false);
   const [read, setRead] = useState<Read>('none');
@@ -85,6 +87,18 @@ export default function AddWork() {
     setArtist(f.artist ?? '');
     setYear(f.year ? String(f.year) : '');
     if (format === 'book') setPages(f.pages && f.pages > 1 ? String(f.pages) : '');
+    setOlKey(f.source === 'openlibrary' ? f.id : null);
+    if (format === 'book' && f.source !== 'openlibrary') {
+      // Apple and Google have the cover; Open Library has the page count and the first year it came out.
+      setBusy('Finding the page count…');
+      const ol = await openLibraryMatch(f.title, f.writer);
+      setBusy('');
+      if (ol) {
+        setOlKey(ol.key);
+        if (ol.pages && !(f.pages && f.pages > 1)) setPages(String(ol.pages));
+        if (ol.year) setYear(String(ol.year));
+      }
+    }
     if (format === 'manga' && f.chapters) setRange(`1-${f.chapters}`);
     if (format === 'manga' && (await sourceOn(db, 'mangadex'))) {
       setBusy('Looking on MangaDex…');
@@ -136,15 +150,17 @@ export default function AddWork() {
     if (!matching) return;
     setBusy('Saving…');
     const description = f.description ?? (f.source === 'openlibrary' ? await openLibraryDescription(f.id) : null);
+    const ol = format === 'book' && f.source !== 'openlibrary' && !matching.pages_total ? await openLibraryMatch(f.title, f.writer) : null;
+    const pageCount = f.pages && f.pages > 1 ? f.pages : (ol?.pages ?? null);
     await act(async (d, l) => {
       await updateCollection(d, l, matching.id, {
         cover_path: f.cover ?? matching.cover_path, writer: matching.writer ?? f.writer, artist: matching.artist ?? f.artist,
         start_year: matching.start_year ?? f.year, description: matching.description ?? description, publisher: matching.publisher ?? f.publisher,
-        ...(format === 'book' && !matching.pages_total && f.pages && f.pages > 1 ? { pages_total: f.pages } : {}),
+        ...(format === 'book' && !matching.pages_total && pageCount ? { pages_total: pageCount } : {}),
       });
       const seriesIds = new Set([...(l.children.get(matching.id) ?? [])].map((e) => (e.child_issue_id ? l.issues.get(e.child_issue_id)?.series_id : null)).filter((x): x is string => !!x));
       for (const sid of seriesIds) {
-        await patchRow(d, 'series', sid, f.source === 'anilist' ? { anilist_id: Number(f.id), release_status: f.status } : f.source === 'openlibrary' ? { ol_key: f.id } : {});
+        await patchRow(d, 'series', sid, f.source === 'anilist' ? { anilist_id: Number(f.id), release_status: f.status } : f.source === 'openlibrary' ? { ol_key: f.id } : ol ? { ol_key: ol.key } : {});
       }
     });
     router.back();
@@ -184,7 +200,7 @@ export default function AddWork() {
       const listId = await createWork(d, l, {
         format, title: t, writer: writer.trim() || null, artist: artist.trim() || null, year: /^\d{4}$/.test(year) ? Number(year) : null,
         publisher: picked?.publisher ?? null, cover: picked?.cover ?? null, description, anilistId: picked?.source === 'anilist' ? Number(picked.id) : null,
-        olKey: picked?.source === 'openlibrary' ? picked.id : null, releaseStatus: picked?.status ?? null, sections: secs, seriesName: seriesName.trim() || null,
+        olKey: format === 'book' ? olKey : null, releaseStatus: picked?.status ?? null, sections: secs, seriesName: seriesName.trim() || null,
       });
       const fresh = (await loadSnapshot(d)).lib;
       if (owned || pageCount) await updateCollection(d, fresh, listId, { owned, pages_total: pageCount });
@@ -206,7 +222,7 @@ export default function AddWork() {
   };
 
   const heading = matching ? `Find ${format === 'book' ? 'book' : 'manga'} details` : format === 'book' ? 'Add a book' : 'Add a manga';
-  const sourceLabel = format === 'book' ? 'OPEN LIBRARY AND GOOGLE BOOKS' : 'ANILIST';
+  const sourceLabel = format === 'book' ? 'APPLE BOOKS AND OPEN LIBRARY' : 'ANILIST';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
@@ -246,7 +262,7 @@ export default function AddWork() {
                   <Text style={T.bodyMedium} numberOfLines={2}>{f.title}</Text>
                   <Text style={T.tiny} numberOfLines={1}>{[f.writer, f.year].filter(Boolean).join(' · ')}</Text>
                   <Text style={[T.tiny, { color: C.faint }]}>
-                    {f.source === 'anilist' ? `AniList${f.status ? ` · ${f.status}` : ''}${f.chapters ? ` · ${f.chapters} ch` : ''}` : f.source === 'openlibrary' ? `Open Library${f.pages && f.pages > 1 ? ` · ${f.pages} pages` : ''}` : `Google Books${f.pages && f.pages > 1 ? ` · ${f.pages} pages` : ''}`}
+                    {f.source === 'anilist' ? `AniList${f.status ? ` · ${f.status}` : ''}${f.chapters ? ` · ${f.chapters} ch` : ''}` : `${sourceName(f.source)}${f.pages && f.pages > 1 ? ` · ${f.pages} pages` : ''}`}
                   </Text>
                 </View>
               </Pressable>
@@ -259,7 +275,7 @@ export default function AddWork() {
               <View style={s.result}>
                 {picked.cover ? <Image source={{ uri: picked.cover }} style={s.thumb} contentFit="cover" /> : null}
                 <View style={{ flex: 1 }}>
-                  <Text style={T.tiny}>From {picked.source === 'anilist' ? 'AniList' : picked.source === 'openlibrary' ? 'Open Library' : 'Google Books'}</Text>
+                  <Text style={T.tiny}>From {sourceName(picked.source)}{format === 'book' && picked.source !== 'openlibrary' && olKey ? ' · pages from Open Library' : ''}</Text>
                   <Pressable onPress={() => { setManual(false); setPicked(null); setVolumes(null); setDexChoices([]); setDex(null); setVolumeNote(''); }}><Text style={[T.small, { color: C.dc }]}>Pick another</Text></Pressable>
                 </View>
               </View>

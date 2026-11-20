@@ -14,8 +14,9 @@ const ROWS: Record<Exclude<Format, 'comic'>, { key: SourceKey | 'openlibrary'; n
     { key: 'hiatus', name: 'Check for hiatus', what: 'Once a day, ask AniList about each manga with a schedule, and pause or resume it.' },
   ],
   book: [
-    { key: 'openlibrary', name: 'Open Library', what: 'Search by title, author or ISBN; covers, author, year, publisher and blurb. No key needed. Always on.' },
-    { key: 'googlebooks', name: 'Google Books', what: 'A backup for covers and page counts Open Library is missing. Works without a key for light use.' },
+    { key: 'apple', name: 'Apple Books', what: 'Sharp covers and blurbs, listed first when you search. Only books sold as e-books. No key needed.' },
+    { key: 'openlibrary', name: 'Open Library', what: 'Page counts, first year and publisher, and covers for books Apple doesn’t have. No key needed. Always on.' },
+    { key: 'googlebooks', name: 'Google Books', what: 'Off unless you want it. A key gives it more searches.' },
   ],
 };
 

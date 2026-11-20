@@ -67,7 +67,7 @@ export interface Words {
 export const WORDS: Record<Format, Words> = {
   comic: { brand: '', issue: 'issue', issues: 'issues', Issue: 'Issue', Issues: 'Issues', short: (n) => `#${n}`, writer: 'Writer', source: 'Comic Vine', accent: '#E0564F', name: 'Comics' },
   manga: { brand: 'Manga', issue: 'chapter', issues: 'chapters', Issue: 'Chapter', Issues: 'Chapters', short: (n) => `Ch. ${n}`, writer: 'Mangaka', source: 'AniList', accent: '#E07BB0', name: 'Manga' },
-  book: { brand: 'Books', issue: 'chapter', issues: 'chapters', Issue: 'Chapter', Issues: 'Chapters', short: (n) => `Chapter ${n}`, writer: 'Author', source: 'Open Library', accent: '#4FB3A5', name: 'Books' },
+  book: { brand: 'Books', issue: 'chapter', issues: 'chapters', Issue: 'Chapter', Issues: 'Chapters', short: (n) => `Chapter ${n}`, writer: 'Author', source: 'Apple Books', accent: '#4FB3A5', name: 'Books' },
 };
 
 /** An issue's name in its own mode's words: "Batman #12", "Chainsaw Man Ch. 18", "Dune · Chapter 13". */
