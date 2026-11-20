@@ -5,7 +5,7 @@ import type { Library } from '@/domain/library';
 import type { Format, Issue, ReleaseEvery, ReleaseStatus, Series } from '@/domain/types';
 import { patchRow, putRow } from './db';
 import { nextOnOrAfter, stepDay } from '@/domain/chapters';
-import { appendEntry, createCollection, insertInOrder, newId, today } from './repo';
+import { appendEntry, createCollection, insertInOrder, newId, removeEntries, today } from './repo';
 
 export { nextOnOrAfter, parseChapterRange, stepDay } from '@/domain/chapters';
 
@@ -81,6 +81,15 @@ export async function addChapters(db: SQLiteDatabase, lib: Library, listId: stri
   const fresh = numbers.filter((n) => !have.has(n));
   if (!fresh.length) return 0;
   await db.withTransactionAsync(async () => {
+    // A book added as one "Whole book" line gets its chapters now: that line goes (unless it was ticked).
+    const whole = (lib.children.get(listId) ?? []).filter((e) => {
+      const i = e.child_issue_id ? lib.issues.get(e.child_issue_id) : undefined;
+      return i && i.number == null && i.label === 'Whole book' && i.status !== 'read';
+    });
+    if (whole.length) {
+      await removeEntries(db, whole.map((e) => e.id));
+      lib.children.set(listId, (lib.children.get(listId) ?? []).filter((e) => !whole.includes(e)));
+    }
     if (heading) await appendEntry(db, lib, listId, { heading });
     for (const n of fresh) {
       const issue = chapterRow(seriesId, n, null);
