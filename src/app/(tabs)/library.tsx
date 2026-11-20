@@ -4,6 +4,7 @@ import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindow
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { collectionStatus, coverFor, isNested, issueTitle, progress, rootsWithStatus, walk } from '@/domain/library';
+import { isPageBook, shelfProgress } from '@/domain/pages';
 import { allCharacters, splitTags } from '@/domain/characters';
 import { splitNames } from '@/domain/credits';
 import { peopleIndex, personLists } from '@/domain/people';
@@ -51,7 +52,7 @@ const SORTS = [
 type SortKey = (typeof SORTS)[number]['key'];
 /** Books and manga only have their own kinds of list, and call issues chapters. */
 const MODE_TABS: Record<Exclude<Format, 'comic'>, { key: TabKey; label: string }[]> = {
-  book: [{ key: 'all', label: 'All' }, { key: 'run', label: 'Books' }, { key: 'crisis', label: 'Book series' }, { key: 'issues', label: 'Chapters' }],
+  book: [{ key: 'all', label: 'All' }, { key: 'run', label: 'Books' }, { key: 'crisis', label: 'Book series' }],
   manga: [{ key: 'all', label: 'All' }, { key: 'run', label: 'Manga' }, { key: 'crisis', label: 'Reading orders' }, { key: 'issues', label: 'Chapters' }],
 };
 const PLACEHOLDER: Record<Format, string> = { comic: 'Search lists, “green lantern 63”, writers…', book: 'Search books, authors…', manga: 'Search manga, mangaka…' };
@@ -168,7 +169,7 @@ export default function LibraryScreen() {
       .filter((c) => charOk(c.characters))
       .filter((c) => !writers.length || writerLists.has(c.id))
       .filter((c) => !ws.length || byPerson.has(c.id) || hasAll(ws, [c.title, c.writer, c.artist, c.characters, c.publisher, kindLabel(c)].join(' ').toLowerCase()))
-      .map((c) => ({ c, p: progress(lib, c.id), st: collectionStatus(lib, c.id), by: byPerson.get(c.id) ? { ...byPerson.get(c.id)!, who } : null }))
+      .map((c) => ({ c, p: progress(lib, c.id), sp: shelfProgress(lib, c.id, WORDS[mode].issues), st: collectionStatus(lib, c.id), by: byPerson.get(c.id) ? { ...byPerson.get(c.id)!, who } : null }))
       .sort((a, b) => (b.by?.n ?? 0) - (a.by?.n ?? 0) || order(sort, a, b) || a.c.title.localeCompare(b.c.title));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lib, tab, query, pubs, statuses, chars, writers, writerLists, writerIndex, artistIndex, sort, homeRoots, bought, mode]);
@@ -362,7 +363,7 @@ export default function LibraryScreen() {
             query.trim() && ((tab === 'all' && (issues.length || seriesRows.length)) || elsewhere.length) ? (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                 <Text style={T.small}>Also matching:</Text>
-                {tab === 'all' && issues.length ? <Chip label={`${issues.length} ${issues.length === 1 ? WORDS[mode].issue : WORDS[mode].issues}`} onPress={() => setTab('issues')} /> : null}
+                {tab === 'all' && issues.length > 0 && mode !== 'book' ? <Chip label={`${issues.length} ${issues.length === 1 ? WORDS[mode].issue : WORDS[mode].issues}`} onPress={() => setTab('issues')} /> : null}
                 {tab === 'all' && seriesRows.length ? <Chip label={`${seriesRows.length} series`} onPress={() => setTab('series')} /> : null}
                 {elsewhere.map(([f, n]) => (
                   <Chip key={f} dot={WORDS[f].accent} label={`${n} in ${WORDS[f].name} ›`} onPress={() => setMode(f)} />
@@ -376,14 +377,14 @@ export default function LibraryScreen() {
                 <Cover title={item.c.title} publisher={item.c.publisher} width={tile} done={item.st === 'completed'} uri={coverFor(lib, item.c.id)} />
                 <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[item.c.kind] }]}>{kindLabel(item.c)}</Text>
                 <Text numberOfLines={2} style={[T.bodyMedium, { fontSize: 13, lineHeight: 16 }]}>{item.c.title}</Text>
-                <Bar read={item.p.read} total={item.p.total} color={publisherColor(item.c.publisher)} height={3} />
+                <Bar read={item.sp.read} total={item.sp.total} color={mode === 'comic' ? publisherColor(item.c.publisher) : WORDS[mode].accent} height={3} />
                 {item.by ? (
                   <Text style={[T.tiny, T.num, { fontSize: 11, color: C.dc }]} numberOfLines={2}>
                     {item.by.n} by {item.by.who} · {item.by.read} read
                   </Text>
                 ) : null}
                 <Text style={[T.tiny, T.num, { fontSize: 11 }]}>
-                  {item.st === 'completed' ? 'Completed' : item.st === 'on_hold' ? `On hold · ${item.p.read} / ${item.p.total}` : item.p.total ? `${item.p.read} / ${item.p.total}` : 'No issues yet'}
+                  {item.st === 'completed' ? 'Completed' : isPageBook(item.c) ? `${item.st === 'on_hold' ? 'On hold · ' : ''}${item.sp.label}` : item.st === 'on_hold' ? `On hold · ${item.p.read} / ${item.p.total}` : item.p.total ? `${item.p.read} / ${item.p.total}` : `No ${WORDS[mode].issues} yet`}
                 </Text>
               </Pressable>
             ) : (

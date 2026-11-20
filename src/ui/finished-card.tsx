@@ -10,10 +10,11 @@ import { C, F, publisherColor } from '@/ui/theme';
  * Pops in when a list you were reading is finished and glows for a moment. It offers a review right
  * there; once saved it shows the verdict with View, Edit and Add to story. Stays until you close it.
  */
-export function FinishedCard({ title, publisher, issues, review, onOpen, onClose, onSave, onView, onStory }: {
+export function FinishedCard({ title, publisher, issues, book, review, onOpen, onClose, onSave, onView, onStory }: {
   title: string;
   publisher: string | null;
   issues: number;
+  book?: boolean;
   review?: Review;
   onOpen: () => void;
   onClose: () => void;
@@ -55,7 +56,7 @@ export function FinishedCard({ title, publisher, issues, review, onOpen, onClose
               <Stars score={review.score} size={14} />
             </View>
           ) : (
-            <Text style={T.tiny}>All {issues} issue{issues === 1 ? '' : 's'} read. Nice one.</Text>
+            <Text style={T.tiny}>{book ? 'Finished the book. Nice one.' : `All ${issues} issue${issues === 1 ? '' : 's'} read. Nice one.`}</Text>
           )}
           {review?.body && !writing ? <Text style={[T.small, { marginTop: 4 }]} numberOfLines={2}>“{review.body}”</Text> : null}
         </View>

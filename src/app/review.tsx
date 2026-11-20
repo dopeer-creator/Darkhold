@@ -9,7 +9,8 @@ import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
 import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { Cover, PrimaryButton, T } from '@/ui/parts';
-import { ButtonRow, ReviewForm, ReviewSummary } from '@/ui/review';
+import { BookReviewExtras, ButtonRow, ReviewForm, ReviewSummary } from '@/ui/review';
+import { isPageBook } from '@/domain/pages';
 import { rangesLine, readHeadline, reviewTarget, StoryCard, type ReviewTarget } from '@/ui/story-card';
 import { StoryShareSheet } from '@/ui/story-share';
 import { C, F } from '@/ui/theme';
@@ -20,7 +21,7 @@ import { C, F } from '@/ui/theme';
  */
 export default function ReviewScreen() {
   const params = useLocalSearchParams<{ collection?: string; issue?: string; edit?: string; share?: string }>();
-  const { lib, act } = useStore();
+  const { lib, act, words } = useStore();
   const key = params.collection ?? params.issue ?? '';
   const target = reviewTarget(lib, key);
   const review = lib.reviews.get(key);
@@ -38,6 +39,7 @@ export default function ReviewScreen() {
   // Lists are reviewed (and shown off) once they're finished: an unfinished one can't get a new review or be shared.
   const left = target.read ? target.read.total - target.read.count : 0;
   const unfinished = left > 0;
+  const book = !!params.collection && isPageBook(lib.collections.get(key));
 
   const open = () => (params.collection ? router.push(`/collection/${params.collection}`) : router.push({ pathname: '/issue/[id]', params: { id: key } }));
   const remove = () =>
@@ -70,8 +72,8 @@ export default function ReviewScreen() {
 
           {unfinished && !review ? (
             <View style={{ gap: 12 }}>
-              <Text style={T.body}>Finish this list to review it. {left} issue{left === 1 ? '' : 's'} left.</Text>
-              <PrimaryButton label="Open the list" onPress={open} />
+              <Text style={T.body}>{book ? 'Finish the book to review it.' : `Finish this list to review it. ${left} issue${left === 1 ? '' : 's'} left.`}</Text>
+              <PrimaryButton label={book ? 'Open the book' : 'Open the list'} onPress={open} />
             </View>
           ) : editing || !review ? (
             <ReviewForm
@@ -79,10 +81,12 @@ export default function ReviewScreen() {
               onSave={(f) => act((d, l) => saveReview(d, l, params.collection ? { collection_id: key } : { issue_id: key }, f)).then(() => setEditing(false))}
               onCancel={review ? () => setEditing(false) : () => router.back()}
               onDelete={review ? remove : undefined}
+              book={book}
             />
           ) : (
             <>
               <ReviewSummary review={review} big />
+              {book ? <BookReviewExtras id={key} review={review} accent={words.accent} /> : null}
               <ButtonRow
                 items={
                   unfinished

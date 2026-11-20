@@ -3,8 +3,9 @@ import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { activeRoots, byLatestRead, connections, coverFor, issueTitle, nextUp, progress, shownProgress, rootsWithStatus, stats } from '@/domain/library';
-import { saveReview, startReading } from '@/store/repo';
+import { activeRoots, byLatestRead, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats } from '@/domain/library';
+import { isPageBook, pagesSince, shelfProgress } from '@/domain/pages';
+import { daysAgo, saveReview, startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { FinishedCard } from '@/ui/finished-card';
 import { KeyboardScroll } from '@/ui/keyboard-scroll';
@@ -64,8 +65,15 @@ export default function Home() {
         {!empty ? (
           <View style={s.stats}>
             {[
-              [totals.issuesRead, `${w.Issues} read`],
-              [totals.issuesLeft, `${w.Issues} left`],
+              ...(mode === 'book'
+                ? [
+                    [pagesSince(lib, daysAgo(6)), 'Pages this week'],
+                    [planned.length, 'Plan to read'],
+                  ]
+                : [
+                    [totals.issuesRead, `${w.Issues} read`],
+                    [totals.issuesLeft, `${w.Issues} left`],
+                  ]),
               [totals.reading, mode === 'book' ? 'Reading' : 'Lists reading'],
               [totals.completed, mode === 'book' ? 'Finished' : 'Lists finished'],
             ].map(([n, label], i) => (
@@ -86,6 +94,7 @@ export default function Home() {
               title={c.title}
               publisher={c.publisher}
               issues={progress(lib, id).total}
+              book={isPageBook(c)}
               review={lib.reviews.get(id)}
               onOpen={() => router.push(`/collection/${id}`)}
               onClose={() => dismissFinished(id)}
@@ -104,7 +113,8 @@ export default function Home() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 16, paddingTop: 8 }} snapToInterval={312} decelerationRate="fast">
               {roots.map((id) => {
                 const c = lib.collections.get(id)!;
-                const p = shownProgress(lib, id);
+                const p = shelfProgress(lib, id, w.issues);
+                const book = isPageBook(c);
                 const next = nextUp(lib, id);
                 const nextIn = next ? lib.collections.get(next.via ?? next.path[next.path.length - 1]) : undefined;
                 const color = publisherColor(c.publisher);
@@ -115,16 +125,20 @@ export default function Home() {
                       <View style={{ flex: 1, gap: 4 }}>
                         <Text style={[T.label, { color: c.reread_since ? '#E8C48A' : color }]}>{c.reread_since ? 'REREADING · ' : ''}{kindLabel(c)}{c.publisher ? ` · ${c.publisher.toUpperCase()}` : ''}</Text>
                         <Text numberOfLines={2} style={s.cardTitle}>{c.title}</Text>
-                        <Text style={[T.small, T.num]}>{p.read} / {p.total} issues</Text>
+                        <Text style={[T.small, T.num]}>{p.label}</Text>
                         <View style={{ marginTop: 4 }}><Bar read={p.read} total={p.total} color={color} /></View>
                       </View>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                       <View style={{ flex: 1 }}>
-                        <Text numberOfLines={1} style={T.tiny}>Next up{nextIn && nextIn.id !== id ? ` · ${nextIn.title}` : ''}</Text>
-                        <Text numberOfLines={1} style={[T.bodyMedium, { fontSize: 14 }]}>{next ? issueTitle(lib, next.issueId) : 'Add issues to continue'}</Text>
+                        <Text numberOfLines={1} style={T.tiny}>{book ? 'Read some more?' : `Next up${nextIn && nextIn.id !== id ? ` · ${nextIn.title}` : ''}`}</Text>
+                        <Text numberOfLines={1} style={[T.bodyMedium, { fontSize: 14 }]}>{book ? (p.read ? `You're on page ${p.read}` : 'Log your first pages') : next ? issueTitle(lib, next.issueId) : 'Add issues to continue'}</Text>
                       </View>
-                      <PrimaryButton label="Continue" icon="play" onPress={() => router.push(`/collection/${id}?focus=next`)} style={{ height: 44 }} />
+                      {book ? (
+                        <PrimaryButton label="Update page" onPress={() => router.push({ pathname: '/update-page', params: { list: id } })} style={{ height: 44 }} />
+                      ) : (
+                        <PrimaryButton label="Continue" icon="play" onPress={() => router.push(`/collection/${id}?focus=next`)} style={{ height: 44 }} />
+                      )}
                     </View>
                   </Pressable>
                 );
@@ -155,13 +169,13 @@ export default function Home() {
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
             <SectionLink label="On hold" more={`All ${onHold.length} ›`} onPress={() => openLibrary('on_hold')} />
             {onHold.slice(0, SHOWN).map((c, i, shown) => {
-              const p = progress(lib, c.id);
+              const p = shelfProgress(lib, c.id, w.issues);
               return (
                 <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={[s.row, i < shown.length - 1 ? s.rowLine : null]}>
                   <Cover title={c.title} publisher={c.publisher} width={36} uri={coverFor(lib, c.id)} />
                   <View style={{ flex: 1 }}>
                     <Text numberOfLines={1} style={T.bodyMedium}>{c.title}</Text>
-                    <Text numberOfLines={1} style={[T.tiny, T.num]}>{kindLabel(c)} · {p.read} / {p.total} read</Text>
+                    <Text numberOfLines={1} style={[T.tiny, T.num]}>{kindLabel(c)} · {p.label}</Text>
                   </View>
                   <Pressable accessibilityRole="button" accessibilityLabel={`Resume ${c.title}`} onPress={() => act((db, l) => startReading(db, l, c.id))} style={s.resume}>
                     <Text style={[T.small, { color: C.text }]}>Resume</Text>
@@ -187,7 +201,7 @@ export default function Home() {
                   <Pressable key={c.id} accessibilityRole="button" onPress={() => router.push(`/collection/${c.id}`)} style={{ width: 76, gap: 4 }}>
                     <Cover title={c.title} publisher={c.publisher} width={76} uri={coverFor(lib, c.id)} />
                     <Text numberOfLines={2} style={[T.tiny, { color: C.text, fontFamily: F.medium, fontSize: 12, lineHeight: 15 }]}>{c.title}</Text>
-                    <Text numberOfLines={1} style={[T.tiny, T.num, { fontSize: 11 }]}>{after ? `After ${after}` : `${total} issue${total === 1 ? '' : 's'}`}</Text>
+                    <Text numberOfLines={1} style={[T.tiny, T.num, { fontSize: 11 }]}>{after ? `After ${after}` : isPageBook(c) ? (c.pages_total ? `${c.pages_total} pages` : c.writer ?? 'Book') : mode === 'book' && c.kind === 'crisis' ? `${total} book${total === 1 ? '' : 's'}` : `${total} ${total === 1 ? w.issue : w.issues}`}</Text>
                   </Pressable>
                 );
               })}

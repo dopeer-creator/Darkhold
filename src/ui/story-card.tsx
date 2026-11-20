@@ -1,3 +1,4 @@
+import { isPageBook } from '@/domain/pages';
 import { Image } from 'expo-image';
 import type { ComponentRef, Ref } from 'react';
 import { Text, View } from 'react-native';
@@ -19,11 +20,12 @@ export interface ReviewTarget {
   meta: string;
   cover: string | null;
   /** For a list: how many of its counted issues you read, and which, as ranges per series. */
-  read?: { count: number; total: number; ranges: string[] };
+  read?: { count: number; total: number; ranges: string[]; headline?: string };
 }
 
 /** "Read 59 issues:" (or "Read 24 of 59 issues:"), the colon leading into the list of what they were. */
 export const readHeadline = (r: NonNullable<ReviewTarget['read']>) =>
+  r.headline ??
   `${r.count === r.total ? `Read ${r.total} issue${r.total === 1 ? '' : 's'}` : `Read ${r.count} of ${r.total} issues`}${r.ranges.length ? ':' : ''}`;
 
 /** The ranges as one line that fits about `room` characters, ending "+N more" when some don't fit. */
@@ -56,7 +58,10 @@ export function reviewTarget(lib: Library, key: string): ReviewTarget | null {
       creators: [writers, years].filter(Boolean).join(' · '),
       meta: finished ? `Finished ${finished}` : '',
       cover: coverFor(lib, c.id),
-      read: { count: p.read, total: p.total, ranges: readRanges(lib, c.id) },
+      // A book read by page counts as one whole: "Read 454 pages" rather than its one line.
+      read: isPageBook(c)
+        ? { count: finishedOn(lib, c.id) ? 1 : 0, total: 1, ranges: [], headline: c.pages_total ? `Read ${c.pages_total} pages` : 'Read the whole book' }
+        : { count: p.read, total: p.total, ranges: readRanges(lib, c.id) },
     };
   }
   const i = lib.issues.get(key);

@@ -10,6 +10,7 @@ import { patchRow } from '@/store/db';
 import { loadSnapshot, setIssueStatus, updateCollection } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { createWork, parseChapterRange, type WorkSection } from '@/store/works';
+import { logPage } from '@/store/pages';
 import { mangaVolumes, openLibraryDescription, searchBooks, searchManga, searchMangaDex, sourceOn, type DexChoice, type Found } from '@/lib/sources';
 import { CloseIcon } from '@/ui/icons';
 import { KeyboardScroll } from '@/ui/keyboard-scroll';
@@ -42,9 +43,7 @@ export default function AddWork() {
   const [artist, setArtist] = useState('');
   const [year, setYear] = useState('');
   const [range, setRange] = useState('');
-  const [prologue, setPrologue] = useState(false);
-  const [epilogue, setEpilogue] = useState(false);
-  const [wholeBook, setWholeBook] = useState(false);
+  const [pages, setPages] = useState('');
   const [seriesName, setSeriesName] = useState('');
   const [owned, setOwned] = useState(false);
   const [read, setRead] = useState<Read>('none');
@@ -85,6 +84,7 @@ export default function AddWork() {
     setWriter(f.writer ?? '');
     setArtist(f.artist ?? '');
     setYear(f.year ? String(f.year) : '');
+    if (format === 'book') setPages(f.pages && f.pages > 1 ? String(f.pages) : '');
     if (format === 'manga' && f.chapters) setRange(`1-${f.chapters}`);
     if (format === 'manga' && (await sourceOn(db, 'mangadex'))) {
       setBusy('Looking on MangaDex…');
@@ -140,6 +140,7 @@ export default function AddWork() {
       await updateCollection(d, l, matching.id, {
         cover_path: f.cover ?? matching.cover_path, writer: matching.writer ?? f.writer, artist: matching.artist ?? f.artist,
         start_year: matching.start_year ?? f.year, description: matching.description ?? description, publisher: matching.publisher ?? f.publisher,
+        ...(format === 'book' && !matching.pages_total && f.pages && f.pages > 1 ? { pages_total: f.pages } : {}),
       });
       const seriesIds = new Set([...(l.children.get(matching.id) ?? [])].map((e) => (e.child_issue_id ? l.issues.get(e.child_issue_id)?.series_id : null)).filter((x): x is string => !!x));
       for (const sid of seriesIds) {
@@ -150,10 +151,9 @@ export default function AddWork() {
   };
 
   const sections = (): WorkSection[] | string => {
-    if (format === 'book' && wholeBook) return [{ heading: null, chapters: [{ number: null, label: 'Whole book' }] }];
+    // A book is read by page: one line stands for the whole book, and pages track where you are.
+    if (format === 'book') return [{ heading: null, chapters: [{ number: null, label: 'Whole book' }] }];
     const numbers = parseChapterRange(range);
-    const extrasFront = prologue ? [{ number: null, label: 'Prologue' }] : [];
-    const extrasBack = epilogue ? [{ number: null, label: 'Epilogue' }] : [];
     if (format === 'manga' && volumes && useVolumes) {
       const inVols = new Set(volumes.flatMap((v) => v.chapters));
       const out: WorkSection[] = volumes.map((v) => ({
@@ -166,7 +166,7 @@ export default function AddWork() {
       return out;
     }
     if (!numbers.length) return `Type the ${w.issues}, like 1-48.`;
-    return [{ heading: null, chapters: [...extrasFront, ...numbers.map((n) => ({ number: n })), ...extrasBack] }];
+    return [{ heading: null, chapters: numbers.map((n) => ({ number: n })) }];
   };
 
   const save = async () => {
@@ -174,6 +174,10 @@ export default function AddWork() {
     if (!t) return setError('Give it a title first.');
     const secs = sections();
     if (typeof secs === 'string') return setError(secs);
+    const pageCount = pages.trim() ? parseInt(pages, 10) : null;
+    if (format === 'book' && pageCount != null && (Number.isNaN(pageCount) || pageCount < 1)) return setError('Enter the page count as a number.');
+    const upToPage = parseInt(upTo, 10);
+    if (format === 'book' && read === 'upto' && (Number.isNaN(upToPage) || upToPage < 1 || (pageCount != null && upToPage > pageCount))) return setError(pageCount ? `Enter a page from 1 to ${pageCount}.` : 'Enter the page you’re on.');
     setBusy('Adding…');
     const description = picked?.description ?? (picked?.source === 'openlibrary' ? await openLibraryDescription(picked.id) : null);
     const id = await act(async (d, l) => {
@@ -183,8 +187,11 @@ export default function AddWork() {
         olKey: picked?.source === 'openlibrary' ? picked.id : null, releaseStatus: picked?.status ?? null, sections: secs, seriesName: seriesName.trim() || null,
       });
       const fresh = (await loadSnapshot(d)).lib;
-      if (owned) await updateCollection(d, fresh, listId, { owned: true });
-      if (read !== 'none') {
+      if (owned || pageCount) await updateCollection(d, fresh, listId, { owned, pages_total: pageCount });
+      if (format === 'book' && read === 'upto') {
+        const after = (await loadSnapshot(d)).lib;
+        await logPage(d, after, listId, upToPage, undefined, { start: true });
+      } else if (read !== 'none') {
         const limit = read === 'upto' ? parseFloat(upTo) : Infinity;
         for (const e of fresh.children.get(listId) ?? []) {
           const issue = e.child_issue_id ? fresh.issues.get(e.child_issue_id) : undefined;
@@ -262,7 +269,14 @@ export default function AddWork() {
             {format === 'manga' ? <Field label="Art (if someone else)" value={artist} onChange={setArtist} /> : null}
             <Field label="Year" value={year} onChange={setYear} numeric />
 
-            <Text style={T.label}>CHAPTERS</Text>
+            {format === 'book' ? (
+              <>
+                <Field label="Pages in your copy" value={pages} onChange={setPages} numeric placeholder="Optional, add it later" />
+                <Field label="Part of a series (optional)" value={seriesName} onChange={setSeriesName} placeholder="The Witcher" />
+                <View style={s.row}><Checkbox checked={owned} label="Bought" onPress={() => setOwned((x) => !x)} /><Text style={T.body}>I have a physical copy</Text></View>
+              </>
+            ) : null}
+            {format === 'manga' ? <Text style={T.label}>CHAPTERS</Text> : null}
             {format === 'manga' && busy ? <ActivityIndicator color={C.dim} /> : null}
             {format === 'manga' && volumes ? (
               <View style={s.note}>
@@ -298,31 +312,23 @@ export default function AddWork() {
               </View>
             ) : null}
             {format === 'manga' && !volumes && volumeNote ? <Text style={T.tiny}>{volumeNote}</Text> : null}
-            {!(format === 'book' && wholeBook) ? (
-              <Field label={format === 'manga' && volumes && useVolumes ? 'More chapters past MangaDex (optional)' : `${w.Issues}, like 1-48`} value={range} onChange={setRange} />
-            ) : null}
-            {format === 'book' ? (
-              <>
-                <View style={s.row}><Checkbox checked={prologue} label="Prologue" onPress={() => setPrologue((x) => !x)} /><Text style={T.body}>Also a Prologue</Text></View>
-                <View style={s.row}><Checkbox checked={epilogue} label="Epilogue" onPress={() => setEpilogue((x) => !x)} /><Text style={T.body}>Also an Epilogue</Text></View>
-                <View style={s.row}><Checkbox checked={wholeBook} label="No chapters" onPress={() => setWholeBook((x) => !x)} /><Text style={T.body}>No chapters: one line for the whole book</Text></View>
-                <Field label="Part of a series (optional)" value={seriesName} onChange={setSeriesName} placeholder="The Witcher" />
-                <View style={s.row}><Checkbox checked={owned} label="Bought" onPress={() => setOwned((x) => !x)} /><Text style={T.body}>I have a physical copy</Text></View>
-              </>
+            {format === 'manga' ? (
+              <Field label={volumes && useVolumes ? 'More chapters past MangaDex (optional)' : `${w.Issues}, like 1-48`} value={range} onChange={setRange} />
             ) : null}
 
             <Text style={T.label}>ALREADY READ</Text>
             <View style={s.chips}>
               <Chip label="Not yet" active={read === 'none'} onPress={() => setRead('none')} />
-              <Chip label="All of it" active={read === 'all'} onPress={() => setRead('all')} />
-              <Chip label="Up to a chapter" active={read === 'upto'} onPress={() => setRead('upto')} />
+              <Chip label={format === 'book' ? 'Finished it' : 'All of it'} active={read === 'all'} onPress={() => setRead('all')} />
+              <Chip label={format === 'book' ? 'Up to a page' : 'Up to a chapter'} active={read === 'upto'} onPress={() => setRead('upto')} />
             </View>
-            {read === 'upto' ? <Field label="Read up to chapter" value={upTo} onChange={setUpTo} numeric /> : null}
-            {read !== 'none' ? <Text style={T.tiny}>Marked read with the date unknown. Change any day later from History.</Text> : null}
+            {read === 'upto' ? <Field label={format === 'book' ? 'I’m on page' : 'Read up to chapter'} value={upTo} onChange={setUpTo} numeric /> : null}
+            {read === 'all' ? <Text style={T.tiny}>Marked read with the date unknown. Change the day later from History.</Text> : null}
+            {read === 'upto' ? <Text style={T.tiny}>{format === 'book' ? 'Logged as today’s page, and the book goes to Reading.' : 'Marked read with the date unknown. Change any day later from History.'}</Text> : null}
 
             {error ? <Text style={[T.small, { color: C.indie }]}>{error}</Text> : null}
             <PrimaryButton label={busy || (format === 'book' ? 'Add book' : 'Add manga')} onPress={save} disabled={!!busy} />
-            <Text style={[T.tiny, { textAlign: 'center' }]}>Goes to Plan to read, like everything else.</Text>
+            <Text style={[T.tiny, { textAlign: 'center' }]}>{read === 'none' ? 'Goes to Plan to read, like everything else.' : ' '}</Text>
           </>
         )}
       </KeyboardScroll>

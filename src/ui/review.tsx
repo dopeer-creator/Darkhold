@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
 
 import { clampScore, formatScore, parseScore, suggestedVerdict, VERDICTS, verdictLabel } from '@/domain/reviews';
-import type { Review, Verdict } from '@/domain/types';
+import type { Pace, Review, Verdict } from '@/domain/types';
+import { bookProgress, MOODS, PACES, readingSpan, splitMoods } from '@/domain/pages';
 import { reviewDay } from '@/domain/library';
 import { useStore } from '@/store/store';
 import { relativeDay } from '@/ui/format';
@@ -92,18 +93,20 @@ function ScoreSlider({ value, onChange }: { value: number; onChange: (n: number)
   );
 }
 
-export type ReviewFields = { verdict: Verdict; score: number | null; body: string | null };
+export type ReviewFields = { verdict: Verdict; score: number | null; body: string | null; moods?: string | null; pace?: Pace | null };
 
 /**
  * Verdict, score and words. The verdict follows the score until you tap one yourself; after that
  * your pick stays even if you move the score.
  */
-export function ReviewForm({ initial, onSave, onCancel, onDelete, saveLabel = 'Save review' }: { initial?: Review; onSave: (f: ReviewFields) => void; onCancel?: () => void; onDelete?: () => void; saveLabel?: string }) {
+export function ReviewForm({ initial, onSave, onCancel, onDelete, saveLabel = 'Save review', book }: { initial?: Review; onSave: (f: ReviewFields) => void; onCancel?: () => void; onDelete?: () => void; saveLabel?: string; book?: boolean }) {
   const start = initial?.score ?? 7.5;
   const [score, setScore] = useState(start);
   const [scoreText, setScoreText] = useState(formatScore(start));
   const [picked, setPicked] = useState<Verdict | null>(initial && initial.verdict !== suggestedVerdict(start) ? initial.verdict : null);
   const [body, setBody] = useState(initial?.body ?? '');
+  const [moods, setMoods] = useState<string[]>(splitMoods(initial?.moods));
+  const [pace, setPace] = useState<Pace | null>(initial?.pace ?? null);
   const [error, setError] = useState('');
   const verdict = picked ?? suggestedVerdict(score);
 
@@ -121,7 +124,7 @@ export function ReviewForm({ initial, onSave, onCancel, onDelete, saveLabel = 'S
   };
   const save = () => {
     if (parseScore(scoreText) == null) return setError('Enter a score from 0 to 10, up to two decimals');
-    onSave({ verdict, score, body: body.trim() || null });
+    onSave({ verdict, score, body: body.trim() || null, ...(book ? { moods: moods.join(', ') || null, pace } : {}) });
   };
 
   return (
@@ -168,6 +171,32 @@ export function ReviewForm({ initial, onSave, onCancel, onDelete, saveLabel = 'S
         accessibilityLabel="Your review"
         style={s.bodyBox}
       />
+      {book ? (
+        <>
+          <Text style={[T.label, { marginTop: 4 }]}>MOOD · PICK A FEW</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {MOODS.map((m) => {
+              const on = moods.includes(m);
+              return (
+                <Pressable key={m} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setMoods((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))} style={[s.chip, on ? { borderColor: C.text, backgroundColor: C.surface2 } : null]}>
+                  <Text style={[T.small, on ? { color: C.text, fontFamily: F.medium } : null]}>{m}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={[T.label, { marginTop: 4 }]}>PACE</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {PACES.map((p) => {
+              const on = pace === p.key;
+              return (
+                <Pressable key={p.key} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setPace(on ? null : p.key)} style={[s.chip, on ? { borderColor: C.text, backgroundColor: C.surface2 } : null]}>
+                  <Text style={[T.small, on ? { color: C.text, fontFamily: F.medium } : null]}>{p.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
       <PrimaryButton label={saveLabel} onPress={save} />
       {onCancel || onDelete ? (
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 24 }}>
@@ -213,6 +242,76 @@ export function ReviewSummary({ review, lines, big }: { review: Review; lines?: 
   );
 }
 
+const shortDay = (day: string) => {
+  const d = new Date(`${day}T12:00:00`);
+  return `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })}`;
+};
+
+/** Under a book's review: mood and pace, starred notes as favourite quotes, and how the reading went. */
+export function BookReviewExtras({ id, review, accent }: { id: string; review: Review; accent: string }) {
+  const { lib } = useStore();
+  const c = lib.collections.get(id);
+  if (!c) return null;
+  const paceLabel = review.pace ? (PACES.find((p) => p.key === review.pace)?.label ?? null) : null;
+  const quotes = (lib.pageNotes.get(id) ?? []).filter((n) => n.starred);
+  const span = readingSpan(lib, id);
+  const pages = bookProgress(lib, id).total;
+  const copy = [c.edition, c.owned ? 'on your shelf' : null].filter(Boolean).join(', ');
+  const moods = splitMoods(review.moods);
+  return (
+    <View style={{ gap: 18 }}>
+      {moods.length || paceLabel ? (
+        <View style={{ gap: 8 }}>
+          <Text style={T.label}>MOOD AND PACE</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {moods.map((t) => (
+              <View key={t} style={s.tag}>
+                <Text style={[T.small, { color: C.text }]}>{t}</Text>
+              </View>
+            ))}
+            {paceLabel ? (
+              <View style={[s.tag, { borderColor: accent }]}>
+                <Text style={[T.small, { color: accent }]}>{paceLabel}</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+      {quotes.length ? (
+        <View style={{ gap: 8 }}>
+          <Text style={T.label}>FAVOURITE QUOTES</Text>
+          {quotes.map((q) => (
+            <View key={q.id} style={[s.quote, { borderLeftColor: accent }]}>
+              <Text style={[T.body, { fontSize: 14, lineHeight: 20, fontStyle: 'italic' }]}>{q.body}</Text>
+              {q.page != null ? <Text style={[T.label, { color: accent, marginTop: 4 }]}>PAGE {q.page}</Text> : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {span.days || pages ? (
+        <View style={{ gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {span.days ? <Fact n={span.days} label={span.days === 1 ? 'day to read' : 'days to read'} /> : null}
+            {pages ? <Fact n={pages} label="pages" /> : null}
+          </View>
+          <Text style={T.tiny}>
+            {[span.start && span.end ? `${shortDay(span.start)} → ${shortDay(span.end)}` : null, copy ? copy.charAt(0).toUpperCase() + copy.slice(1) : null].filter(Boolean).join(' · ')}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function Fact({ n, label }: { n: number; label: string }) {
+  return (
+    <View style={s.fact}>
+      <Text style={{ fontFamily: F.condBold, fontSize: 22, color: C.text }}>{n}</Text>
+      <Text style={[T.tiny, { fontSize: 11 }]}>{label}</Text>
+    </View>
+  );
+}
+
 /** A row of small buttons (View, Edit, Add to story); the last can be the bright one. */
 export function ButtonRow({ items }: { items: { label: string; onPress: () => void; strong?: boolean }[] }) {
   return (
@@ -236,5 +335,8 @@ const s = StyleSheet.create({
   scoreBox: { width: 72, height: 44, borderRadius: 10, backgroundColor: C.sunken, borderWidth: 1, borderColor: C.borderStrong, color: C.text, fontFamily: F.semibold, fontSize: 16, textAlign: 'center' },
   bodyBox: { minHeight: 96, borderRadius: 12, backgroundColor: C.sunken, borderWidth: 1, borderColor: C.borderStrong, color: C.text, fontFamily: F.sans, fontSize: 14, padding: 12, textAlignVertical: 'top' },
   textBtn: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 8 },
+  tag: { borderWidth: 1, borderColor: C.borderStrong, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
+  quote: { backgroundColor: C.surface, borderLeftWidth: 3, padding: 12 },
+  fact: { flex: 1, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 10 },
   rowBtn: { flex: 1, minHeight: 40, borderRadius: 10, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
 });

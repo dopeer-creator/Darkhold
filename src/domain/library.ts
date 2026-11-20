@@ -1,5 +1,5 @@
 import { titleFor } from './modes';
-import type { Collection, CollectionStatus, Entry, Issue, Kind, Link, LinkKind, ReadLog, Review, Series } from './types';
+import type { Collection, CollectionStatus, Entry, Issue, Kind, Link, LinkKind, PageLog, PageNote, ReadLog, Review, Series } from './types';
 
 /** Types whose lines show which run or event each issue belongs to, worked out automatically. */
 export const READING_KINDS: Kind[] = ['crisis', 'era'];
@@ -23,6 +23,10 @@ export interface Library {
   reviews: Map<string, Review>;
   /** Each issue's rereads (history lines after the first read), oldest first. */
   rereads: Map<string, { id: string; day: string }[]>;
+  /** Books: the page you reached each day, by book, oldest first. */
+  pageLog: Map<string, PageLog[]>;
+  /** Books: notes on pages, by book, in page order. */
+  pageNotes: Map<string, PageNote[]>;
 }
 
 export function buildLibrary(rows: {
@@ -33,7 +37,15 @@ export function buildLibrary(rows: {
   links?: Link[];
   reviews?: Review[];
   readLog?: ReadLog[];
+  pageLog?: PageLog[];
+  pageNotes?: PageNote[];
 }): Library {
+  const pageLog = new Map<string, PageLog[]>();
+  for (const l of rows.pageLog ?? []) pageLog.set(l.collection_id, [...(pageLog.get(l.collection_id) ?? []), { ...l, page: Number(l.page) }]);
+  for (const list of pageLog.values()) list.sort((a, b) => a.read_on.localeCompare(b.read_on) || a.page - b.page);
+  const pageNotes = new Map<string, PageNote[]>();
+  for (const n of rows.pageNotes ?? []) pageNotes.set(n.collection_id, [...(pageNotes.get(n.collection_id) ?? []), { ...n, starred: !!n.starred }]);
+  for (const list of pageNotes.values()) list.sort((a, b) => (a.page ?? Infinity) - (b.page ?? Infinity) || (a.created_at ?? '').localeCompare(b.created_at ?? ''));
   const rereads = new Map<string, { id: string; day: string }[]>();
   for (const l of rows.readLog ?? []) {
     if (!l.reread || !l.read_on) continue;
@@ -85,6 +97,8 @@ export function buildLibrary(rows: {
     links: rows.links ?? [],
     reviews,
     rereads,
+    pageLog,
+    pageNotes,
   };
 }
 
@@ -313,7 +327,8 @@ export function issueTitle(lib: Library, issueId: string): string {
   if (!issue) return '';
   const series = lib.series.get(issue.series_id);
   const name = series ? series.title : 'Unknown series';
-  if (issue.number == null) return issue.label ? (series?.format === 'book' ? `${name} · ${issue.label}` : issue.label) : name;
+  // A book read by page is one "Whole book" line: it goes by the book's title alone.
+  if (issue.number == null) return issue.label && issue.label !== 'Whole book' ? (series?.format === 'book' ? `${name} · ${issue.label}` : issue.label) : name;
   return titleFor(name, series?.format ?? 'comic', issue.number);
 }
 

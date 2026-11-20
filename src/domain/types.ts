@@ -95,6 +95,10 @@ export interface Collection {
   format?: Format | null;
   /** Books: you have a physical copy (the Bought filter). */
   owned?: boolean;
+  /** Books: pages in your copy, for page progress. Null until you know it. */
+  pages_total?: number | null;
+  /** Books: which copy you read ("Paperback", "Hardcover", "E-book"). */
+  edition?: string | null;
   rating: number | null;
   notes: string | null;
 }
@@ -160,6 +164,32 @@ export interface Review {
   body: string | null;
   /** The day you wrote it ("2026-11-10"). */
   reviewed_on: string | null;
+  /** Books: mood words, comma-separated ("Dark, Reflective"). */
+  moods?: string | null;
+  /** Books: how it read. */
+  pace?: Pace | null;
+}
+
+export type Pace = 'slow' | 'medium' | 'fast';
+
+/** Books: on this day you got to this page (one line per book per day). */
+export interface PageLog {
+  id: string;
+  collection_id: string;
+  read_on: string;
+  page: number;
+  /** Where you already were when you started tracking the book: not counted as pages read. */
+  start?: boolean;
+}
+
+/** Books: a note pinned to a page. Starred notes show on your review as favourite quotes. */
+export interface PageNote {
+  id: string;
+  collection_id: string;
+  page: number | null;
+  body: string;
+  starred?: boolean;
+  created_at?: string | null;
 }
 
 export type CollectionStatus = 'not_started' | 'planned' | 'reading' | 'on_hold' | 'completed';

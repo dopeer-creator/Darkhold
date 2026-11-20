@@ -39,6 +39,8 @@ export function scopeLibrary(lib: Library, mode: Format): Library {
     links: lib.links.filter((l) => end(l.from_collection_id, l.from_issue_id) && end(l.to_collection_id, l.to_issue_id)),
     reviews: new Map([...lib.reviews].filter(([k]) => inScope(k))),
     rereads: new Map([...lib.rereads].filter(([k]) => issues.has(k))),
+    pageLog: new Map([...lib.pageLog].filter(([k]) => collections.has(k))),
+    pageNotes: new Map([...lib.pageNotes].filter(([k]) => collections.has(k))),
   };
 }
 

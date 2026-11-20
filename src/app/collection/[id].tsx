@@ -23,6 +23,7 @@ import { C, F, KIND_COLOR, KIND_LABEL, kindLabel, kindName, publisherColor, STAT
 import { useReadTick } from '@/ui/read-again';
 import { ReleasesCard } from '@/ui/releases-card';
 import { formatOf } from '@/domain/modes';
+import { BookPanel } from '@/ui/book-progress';
 
 const ROW_LIMIT = 8;
 
@@ -93,10 +94,19 @@ export default function CollectionScreen() {
   const credits = creditsSummary(lib, c.id);
   const writerNames = c.writer ? splitNames(c.writer) : credits.mainWriters;
   const artistNames = c.artist ? splitNames(c.artist) : credits.mainArtists;
+  // A book is read by page: no chapter list, no order to edit.
+  const isBook = fmt === 'book' && c.kind !== 'crisis';
   const optionItems: { label: string; go: () => void; danger?: boolean }[] = [
-    { label: 'Fill writer & artist details', go: () => fill.run(allIssues, c.id) },
-    { label: 'Mark as read…', go: () => router.push({ pathname: '/mark/[id]', params: { id: c.id } }) },
-    { label: 'Edit order', go: () => setEditing(true) },
+    ...(isBook
+      ? [
+          ...(status === 'completed' ? [] : [{ label: 'Mark finished…', go: () => router.push({ pathname: '/update-page', params: { list: c.id, finish: '1' } }) }]),
+          { label: 'Your copy (pages, kind)…', go: () => router.push({ pathname: '/book-copy', params: { list: c.id } }) },
+        ]
+      : [
+          { label: 'Fill writer & artist details', go: () => fill.run(allIssues, c.id) },
+          { label: 'Mark as read…', go: () => router.push({ pathname: '/mark/[id]', params: { id: c.id } }) },
+          { label: 'Edit order', go: () => setEditing(true) },
+        ]),
     ...(status === 'completed' ? [] : [{ label: status === 'on_hold' ? 'Resume reading' : 'Put on hold', go: () => act((db, l) => (status === 'on_hold' ? startReading(db, l, c.id) : updateCollection(db, l, c.id, { on_hold: true, reading_now: false }))) }]),
     ...(status === 'reading' && !c.reread_since ? [{ label: 'Stop reading', go: () => act((db, l) => stopReading(db, l, c.id)) }] : []),
     ...(status === 'completed' ? [{ label: 'Start a reread', go: () => act((db, l) => startReread(db, l, c.id)) }] : []),
@@ -225,6 +235,14 @@ export default function CollectionScreen() {
               ))}
             </View>
           ) : null}
+          {isBook ? (
+            <View style={{ paddingHorizontal: 16, paddingTop: 6 }}>
+              {status === 'completed' ? (
+                <ReviewStrip review={lib.reviews.get(c.id)} kind="book" issues="pages" onView={() => router.push({ pathname: '/review', params: { collection: c.id } })} onWrite={() => router.push({ pathname: '/review', params: { collection: c.id, edit: '1' } })} />
+              ) : null}
+              <BookPanel id={c.id} accent={color} />
+            </View>
+          ) : (
           <View style={{ paddingHorizontal: 16, paddingTop: 18 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Text style={T.num}>
@@ -257,6 +275,7 @@ export default function CollectionScreen() {
             ) : null}
             {last ? <Text style={[T.tiny, { textAlign: 'center', marginTop: 8 }]}>Last read: {issueTitle(lib, last.issueId)}</Text> : null}
           </View>
+          )}
 
           {fmt === 'manga' && workSeries ? (
             <View style={{ paddingHorizontal: 16, paddingTop: 22, gap: 8 }}>
@@ -269,6 +288,7 @@ export default function CollectionScreen() {
             <ConnectionsBlock collectionId={c.id} />
           </View>
 
+          {isBook ? null : (
           <View style={{ paddingHorizontal: 16, paddingTop: 22 }}>
             <SectionTitle
               right={
@@ -334,6 +354,7 @@ export default function CollectionScreen() {
               )}
             </View>
           </View>
+          )}
         </View>
       </ScrollView>
       {readTick.sheet}
@@ -909,7 +930,7 @@ const s = StyleSheet.create({
 });
 
 /** On a finished list, where the Continue button was: your review in one line with View, or a button to write one. */
-function ReviewStrip({ review, kind, issues, onView, onWrite, onAdd }: { review?: Review; kind: string; issues: string; onView: () => void; onWrite: () => void; onAdd: () => void }) {
+function ReviewStrip({ review, kind, issues, onView, onWrite, onAdd }: { review?: Review; kind: string; issues: string; onView: () => void; onWrite: () => void; onAdd?: () => void }) {
   return (
     <View style={{ marginTop: 14, gap: 8 }}>
       {review ? (
@@ -927,9 +948,11 @@ function ReviewStrip({ review, kind, issues, onView, onWrite, onAdd }: { review?
       ) : (
         <PrimaryButton label={"Review this " + kind} onPress={onWrite} />
       )}
-      <Pressable accessibilityRole="button" onPress={onAdd} style={{ alignSelf: 'center', minHeight: 32, justifyContent: 'center' }}>
-        <Text style={T.tiny}>All read · add more {issues}</Text>
-      </Pressable>
+      {onAdd ? (
+        <Pressable accessibilityRole="button" onPress={onAdd} style={{ alignSelf: 'center', minHeight: 32, justifyContent: 'center' }}>
+          <Text style={T.tiny}>All read · add more {issues}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

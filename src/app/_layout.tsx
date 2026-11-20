@@ -53,6 +53,9 @@ export default function RootLayout() {
             <Stack.Screen name="radar" />
             <Stack.Screen name="add-work" options={{ presentation: 'modal' }} />
             <Stack.Screen name="add-chapters" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="update-page" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="page-note" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="book-copy" options={{ presentation: 'modal' }} />
           </Stack>
           <JobBanner />
         </StoreProvider>

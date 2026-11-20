@@ -5,7 +5,7 @@ import type { ExportFile } from '@/domain/importer';
 import { planImport } from '@/domain/importer';
 import { buildLibrary, canSlice, cannotNest, positionBetween, walk, type Library } from '@/domain/library';
 import type { BlockKind, ResolvedLine } from '@/domain/parser';
-import type { Collection, Entry, Format, Issue, IssueStatus, Kind, Link, LinkKind, ReadLog, Review, Series, Verdict } from '@/domain/types';
+import type { Collection, Entry, Format, Issue, IssueStatus, Kind, Link, LinkKind, PageLog, PageNote, ReadLog, Review, Series, Verdict } from '@/domain/types';
 import { COLUMNS, putRow, TABLES, type Table } from './db';
 
 export const newId = () => randomUUID();
@@ -33,7 +33,7 @@ export interface Snapshot {
 }
 
 export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
-  const [series, issues, collections, entries, links, reviews, readLog] = await Promise.all([
+  const [series, issues, collections, entries, links, reviews, readLog, pageLog, pageNotes] = await Promise.all([
     live<Series & { release_paused?: number | boolean }>(db, 'series'),
     live<Issue & { upcoming?: number | boolean }>(db, 'issues'),
     live<Collection & { on_hold: number | boolean; ongoing: number | boolean; planned?: number | boolean; reading_now?: number | boolean; owned?: number | boolean }>(db, 'collections'),
@@ -42,6 +42,8 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
     live<Review>(db, 'reviews'),
     // With updated_at: the moment it was ticked, so same-day reads come out newest first.
     db.getAllAsync<ReadLog & { updated_at: string | null; reread?: number | boolean }>(`SELECT ${COLUMNS.read_log.join(',')}, updated_at FROM read_log WHERE deleted_at IS NULL`),
+    live<PageLog & { start?: number | boolean }>(db, 'page_log'),
+    live<PageNote & { starred?: number | boolean }>(db, 'page_notes'),
   ]);
   return {
     lib: buildLibrary({
@@ -52,6 +54,8 @@ export async function loadSnapshot(db: SQLiteDatabase): Promise<Snapshot> {
       links,
       reviews,
       readLog: readLog.map((l) => ({ ...l, reread: !!l.reread })),
+      pageLog: pageLog.map((l) => ({ ...l, start: !!l.start })),
+      pageNotes: pageNotes.map((n) => ({ ...n, starred: !!n.starred })),
     }),
     readLog: readLog
       .sort((a, b) => (b.read_on ?? '').localeCompare(a.read_on ?? '') || (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
@@ -627,7 +631,7 @@ export async function saveReview(
   db: SQLiteDatabase,
   lib: Library,
   target: { collection_id?: string | null; issue_id?: string | null },
-  fields: { verdict: Verdict; score: number | null; body: string | null },
+  fields: { verdict: Verdict; score: number | null; body: string | null; moods?: string | null; pace?: Review['pace'] },
 ) {
   const key = target.collection_id ?? target.issue_id;
   if (!key) return;
@@ -640,6 +644,8 @@ export async function saveReview(
     score: fields.score,
     body: fields.body?.trim() || null,
     reviewed_on: had?.reviewed_on ?? today(),
+    moods: fields.moods === undefined ? (had?.moods ?? null) : fields.moods,
+    pace: fields.pace === undefined ? (had?.pace ?? null) : fields.pace,
   });
 }
 
