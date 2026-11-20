@@ -18,7 +18,7 @@ export const COLUMNS: Record<Table, string[]> = {
 /** Yes/no columns: stored as 0/1 here, true/false in Supabase. */
 export const BOOLEAN_COLUMNS = new Set(['on_hold', 'ongoing', 'planned', 'reading_now', 'optional', 'upcoming', 'reread', 'release_paused', 'owned']);
 
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 /** Columns added after the first version, by schema version. */
 const ADDED: Record<number, [Table, string, string][]> = {
@@ -76,6 +76,8 @@ const ADDED: Record<number, [Table, string, string][]> = {
     ['collections', 'format', 'TEXT'],
     ['collections', 'owned', 'INTEGER NOT NULL DEFAULT 0'],
   ],
+  // 14: nothing new; see AFTER.
+  14: [],
 };
 
 /** Extra one-off work for a version, run inside the same transaction. */
@@ -98,6 +100,9 @@ const AFTER: Record<number, string[]> = {
   11: ["DELETE FROM meta WHERE key = 'pulled:collections'"],
   // Series and issues fetched again so their added dates arrive.
   12: ["DELETE FROM meta WHERE key = 'pulled:series'", "DELETE FROM meta WHERE key = 'pulled:issues'"],
+  // Books and manga downloaded by an older version arrived without their mode and showed up as comics:
+  // fetch series and lists again so each lands on its own shelf.
+  14: ["DELETE FROM meta WHERE key = 'pulled:series'", "DELETE FROM meta WHERE key = 'pulled:collections'"],
 };
 
 /**
