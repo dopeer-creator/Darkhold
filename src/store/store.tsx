@@ -270,7 +270,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
-    for (const t of [...TABLES, 'meta']) await db.runAsync(`DELETE FROM ${t}`);
+    for (const t of TABLES) await db.runAsync(`DELETE FROM ${t}`);
+    // The library and sync markers go; this phone's own settings stay (your Comic Vine and Google Books keys,
+    // which sources are on, and the mode), so signing back in doesn't mean typing keys again.
+    await db.runAsync("DELETE FROM meta WHERE key NOT IN ('comicvine_key', 'gb:key', 'mode') AND key NOT LIKE 'src:%'");
     await refresh();
   }, [db, refresh]);
 
