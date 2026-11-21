@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { issueTitle, notOutYet } from '@/domain/library';
 import type { Issue, IssueStatus } from '@/domain/types';
 import { findVolume, getComicVineKey, volumeCovers } from '@/lib/comicvine';
+import { WIKIS, wikiFor } from '@/lib/wikis';
 import { daysAgo, logReread, removeReread, saveReview, mergeSeries, moveIssue, removeEntry, setIssueStatus, setOptional, setReadDate, setRelease, today, updateIssue, updateSeries } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { BackIcon } from '@/ui/icons';
@@ -126,13 +127,18 @@ export default function IssueScreen() {
     }
   };
 
-  /** Tapping the cover: look this issue up, or choose the right Comic Vine series for every issue in it. */
+  // Marvel and DC issues can also take a full-size cover (or a variant) from their wiki, no key needed.
+  const wiki = series ? wikiFor(series.publisher) : null;
+  const wikiCover = () => router.push({ pathname: '/wiki-cover', params: { issue: issue.id } });
+
+  /** Tapping the cover: look this issue up, pick a wiki cover, or choose the right Comic Vine series for every issue in it. */
   const changeCover = () => {
-    if (!hasKey) return router.push('/settings');
+    if (!hasKey && !wiki) return router.push('/settings');
     Alert.alert('Change cover', 'You can also paste an image link under Cover, further down.', [
       { text: 'Cancel', style: 'cancel' },
-      ...(series ? [{ text: 'Pick the series', onPress: () => router.push({ pathname: '/covers', params: { series: series.id } }) }] : []),
-      { text: 'Find this issue', onPress: findCover },
+      ...(wiki && issue.number != null ? [{ text: `From the ${WIKIS[wiki].name}`, onPress: wikiCover }] : []),
+      ...(series && hasKey ? [{ text: 'Pick the series', onPress: () => router.push({ pathname: '/covers', params: { series: series.id } }) }] : []),
+      ...(hasKey ? [{ text: 'Find on Comic Vine', onPress: findCover }] : []),
     ]);
   };
 
@@ -303,7 +309,10 @@ export default function IssueScreen() {
                 <Text style={T.small}>{finding}</Text>
               </View>
             ) : comic ? (
-              <GhostButton label={hasKey ? 'Find cover on Comic Vine' : 'Set up Comic Vine covers'} onPress={findCover} />
+              <>
+                <GhostButton label={hasKey ? 'Find cover on Comic Vine' : 'Set up Comic Vine covers'} onPress={findCover} />
+                {issue.number != null ? <GhostButton label={`Find cover on the ${WIKIS[wiki ?? 'marvel'].name}${wiki ? '' : ' or DC wiki'}`} onPress={wikiCover} /> : null}
+              </>
             ) : null}
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TextInput value={link} onChangeText={setLink} placeholder="…or paste an image link" placeholderTextColor={C.faint} autoCapitalize="none" keyboardType="url" style={[s.input, { flex: 1 }]} accessibilityLabel="Cover image link" />

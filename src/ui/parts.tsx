@@ -18,6 +18,11 @@ export function sizedCover(uri: string, width: number): string {
     const box = Math.min(1400, Math.ceil((width * 1.5 * 3) / 100) * 100);
     return uri.replace(/\/\d+x\d+bb\.(jpg|png)$/, `/${box}x${box}bb.jpg`);
   }
+  // Marvel and DC wiki images are full size: ask Fandom for one as wide as the cover is on a sharp (3x) screen.
+  if (/static\.wikia\.nocookie\.net\/.+\/revision\/latest(\?|$)/.test(uri)) {
+    const px = Math.ceil((width * 3) / 100) * 100;
+    return uri.replace(/\/revision\/latest(\?|$)/, `/revision/latest/scale-to-width-down/${px}$1`);
+  }
   if (!/comicvine\.gamespot\.com\/a\/uploads\//.test(uri)) return uri;
   // Measured on one cover: original-size medium 317 KB, small 157 KB, avatar 15 KB.
   const size = width <= 44 ? 'scale_avatar' : width <= 130 ? 'scale_small' : null;

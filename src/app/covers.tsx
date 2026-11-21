@@ -5,14 +5,19 @@ import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextIn
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getComicVineKey, searchVolumes, applyVolumeToSeries, volumesNamed, type VolumeChoice } from '@/lib/comicvine';
-import { updateCollection } from '@/store/repo';
+import { searchWikiCovers, seriesVolumes, volumeCovers as wikiVolumeCovers, WIKIS, wikiFor, type Wiki, type WikiCover } from '@/lib/wikis';
+import { setMeta } from '@/store/db';
+import { updateCollection, updateIssue } from '@/store/repo';
 import { useStore } from '@/store/store';
 import { CloseIcon, SearchIcon } from '@/ui/icons';
 import { Chip, Cover, GhostButton, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
 
+/** Covers worth replacing when a whole series takes the wiki's: none yet, or ones found automatically (not pasted by hand). */
+const replaceable = (uri: string | null) => !uri || /comicvine\.gamespot\.com|static\.wikia\.nocookie\.net/.test(uri);
+
 /**
- * Pick covers from Comic Vine by looking at them.
+ * Pick covers from Comic Vine, or the Marvel or DC wiki (full size, no key), by looking at them.
  *   ?collection=<id>  choose a cover for a run, event or crisis (a trade paperback or omnibus works well)
  *   ?series=<id>      choose which Comic Vine series this is; all its issues take their covers from it
  */
@@ -25,10 +30,40 @@ export default function CoverPicker() {
   const [key, setKey] = useState<string | null | undefined>(undefined);
   const [query, setQuery] = useState(collection?.title ?? series?.title ?? '');
   const [results, setResults] = useState<VolumeChoice[] | null>(null);
+  const publisher = collection?.publisher ?? series?.publisher ?? null;
+  const [source, setSource] = useState<'cv' | Wiki>('cv');
+  const [wikiResults, setWikiResults] = useState<(WikiCover & { volume?: string })[] | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const { width } = useWindowDimensions();
   const tile = Math.floor((Math.min(width, 600) - 32 - 24) / 3);
+
+  const runWiki = async (w: Wiki, q: string) => {
+    setBusy(`Searching the ${WIKIS[w].name}…`);
+    setError('');
+    setWikiResults(null);
+    try {
+      const found = series ? await seriesVolumes(w, q, series.volume_year ?? null) : await searchWikiCovers(w, q);
+      setWikiResults(found);
+      if (!found.length) setError(series ? `The ${WIKIS[w].name} has no series called “${q}”. Check the spelling, or try the other wiki.` : 'Nothing found. Try fewer words.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy('');
+    }
+  };
+  const search = (q: string) => {
+    if (!q) return;
+    if (source === 'cv') return key ? run(key, q, false) : undefined;
+    return runWiki(source, q);
+  };
+  const switchTo = (next: 'cv' | Wiki) => {
+    setSource(next);
+    setError('');
+    const q = query.trim() || collection?.title || series?.title || '';
+    if (next === 'cv') return key ? run(key, q, !!series && q === series.title) : undefined;
+    return runWiki(next, q);
+  };
 
   const run = async (k: string, q: string, exact: boolean) => {
     setBusy('Searching Comic Vine…');
@@ -49,8 +84,14 @@ export default function CoverPicker() {
     getComicVineKey(db).then((k) => {
       if (!alive) return;
       setKey(k);
-      // Start with the obvious search so there is something to pick from straight away.
+      // Start with the obvious search so there is something to pick from straight away: Comic Vine when
+      // there's a key, else the publisher's wiki.
+      const w = wikiFor(publisher);
       if (k && (collection || series)) run(k, collection?.title ?? series!.title, !!series);
+      else if (!k && w && (collection || series)) {
+        setSource(w);
+        runWiki(w, collection?.title ?? series!.title);
+      }
     });
     return () => {
       alive = false;
@@ -79,6 +120,39 @@ export default function CoverPicker() {
     }
   };
 
+  const chooseWiki = async (c: WikiCover & { volume?: string }) => {
+    if (source === 'cv') return;
+    if (collection) {
+      await act((d, l) => updateCollection(d, l, collection.id, { cover_path: c.image }));
+      router.back();
+      return;
+    }
+    if (series && c.volume) {
+      setBusy('Getting covers…');
+      try {
+        const mine = [...lib.issues.values()].filter((i) => i.series_id === series.id && i.number != null);
+        const covers = await wikiVolumeCovers(source, c.volume, mine.map((i) => i.number!));
+        let n = 0;
+        await act(async (d, l) => {
+          for (const i of mine) {
+            const url = covers.get(i.number!);
+            if (url && replaceable(i.cover_path)) {
+              await updateIssue(d, l, i.id, { cover_path: url });
+              n++;
+            }
+          }
+        });
+        await setMeta(db, `wiki:volume:${series.id}`, `${source}|${c.volume}`);
+        Alert.alert('Covers updated', `${n} issue${n === 1 ? '' : 's'} of ${series.title} now use full-size covers from ${c.volume}. Covers you pasted yourself were kept.`);
+        router.back();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy('');
+      }
+    }
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
       <View style={s.top}>
@@ -91,11 +165,16 @@ export default function CoverPicker() {
         {collection
           ? `For ${collection.title}. A trade paperback or omnibus cover works well.`
           : series
-            ? `Pick the Comic Vine series for ${series.title}${series.volume_year ? ` (${series.volume_year})` : ''}. Every issue in it takes its cover from there.`
+            ? `Pick the ${source === 'cv' ? 'Comic Vine series' : `${WIKIS[source].name} volume`} for ${series.title}${series.volume_year ? ` (${series.volume_year})` : ''}. Every issue in it takes its cover from there.`
             : ''}
       </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingTop: 12 }}>
+        {(['cv', 'marvel', 'dc'] as const).map((k) => (
+          <Chip key={k} label={k === 'cv' ? 'Comic Vine' : WIKIS[k].name} active={source === k} onPress={() => switchTo(k)} />
+        ))}
+      </View>
 
-      {key === null ? (
+      {source === 'cv' && key === null ? (
         <View style={{ padding: 16, gap: 12 }}>
           <Text style={T.body}>Add your Comic Vine key in Profile first.</Text>
           <GhostButton label="Open Profile" onPress={() => router.replace('/settings')} />
@@ -107,14 +186,14 @@ export default function CoverPicker() {
             <TextInput
               value={query}
               onChangeText={setQuery}
-              onSubmitEditing={() => key && query.trim() && run(key, query.trim(), false)}
+              onSubmitEditing={() => search(query.trim())}
               returnKeyType="search"
-              placeholder="Search Comic Vine"
+              placeholder={source === 'cv' ? 'Search Comic Vine' : `Search the ${WIKIS[source].name}`}
               placeholderTextColor={C.dim}
               style={s.input}
-              accessibilityLabel="Search Comic Vine"
+              accessibilityLabel={source === 'cv' ? 'Search Comic Vine' : `Search the ${WIKIS[source].name}`}
             />
-            <Pressable accessibilityRole="button" onPress={() => key && query.trim() && run(key, query.trim(), false)} style={{ paddingHorizontal: 8, minHeight: 44, justifyContent: 'center' }}>
+            <Pressable accessibilityRole="button" onPress={() => search(query.trim())} style={{ paddingHorizontal: 8, minHeight: 44, justifyContent: 'center' }}>
               <Text style={[T.small, { color: C.text }]}>Search</Text>
             </Pressable>
           </View>
@@ -127,12 +206,12 @@ export default function CoverPicker() {
                   active={query === q}
                   onPress={() => {
                     setQuery(q);
-                    if (key) run(key, q, false);
+                    search(q);
                   }}
                 />
               ))}
             </View>
-          ) : series ? (
+          ) : series && source === 'cv' ? (
             <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
               <Chip label={`Exactly "${series.title}"`} active={false} onPress={() => key && run(key, series.title, true)} />
             </View>
@@ -144,6 +223,22 @@ export default function CoverPicker() {
             </View>
           ) : null}
           {error ? <Text style={[T.small, { color: C.indie, paddingHorizontal: 16 }]}>{error}</Text> : null}
+          {source !== 'cv' ? (
+            <FlatList
+              data={wikiResults ?? []}
+              numColumns={3}
+              keyExtractor={(c) => c.title}
+              columnWrapperStyle={{ gap: 12 }}
+              contentContainerStyle={{ padding: 16, gap: 16 }}
+              renderItem={({ item }) => (
+                <Pressable accessibilityRole="button" accessibilityLabel={`Use ${item.label}`} onPress={() => chooseWiki(item)} style={{ width: tile, gap: 4 }}>
+                  <Cover title={item.label} publisher={publisher} width={tile} uri={item.image} />
+                  <Text style={[T.bodyMedium, { fontSize: 12, lineHeight: 15 }]} numberOfLines={2}>{item.label}</Text>
+                  {item.year ? <Text style={[T.tiny, { fontSize: 11 }]}>{item.year}</Text> : null}
+                </Pressable>
+              )}
+            />
+          ) : (
           <FlatList
             data={results ?? []}
             numColumns={3}
@@ -160,6 +255,7 @@ export default function CoverPicker() {
               </Pressable>
             )}
           />
+          )}
           {collection?.cover_path ? (
             <View style={{ padding: 16, paddingTop: 0 }}>
               <GhostButton label="Use its first issue's cover instead" onPress={() => act((d, l) => updateCollection(d, l, collection.id, { cover_path: null })).then(() => router.back())} />
