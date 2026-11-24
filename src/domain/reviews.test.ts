@@ -57,8 +57,11 @@ describe('when a list was finished', () => {
     expect(finishedOn(lib, 'c')).toBe('2026-11-05');
   });
 
-  it('counts an undated first read on its earliest reread, and has no day while unread or never dated', () => {
-    expect(finishedOn(rows([read('1', '2026-11-02'), read('2', null)], [reread('r1', '2', '2026-11-20'), reread('r2', '2', '2026-11-09')]), 'c')).toBe('2026-11-09');
+  it('never counts a reread as finishing, and has no day while unread or never dated', () => {
+    // Issue 2 was read long ago (date unknown) and reread on the 9th and 20th: the list was finished on the 2nd at the latest.
+    expect(finishedOn(rows([read('1', '2026-11-02'), read('2', null)], [reread('r1', '2', '2026-11-20'), reread('r2', '2', '2026-11-09')]), 'c')).toBe('2026-11-02');
+    // Rereading the last issues of a run finished on unknown dates doesn't finish it today.
+    expect(finishedOn(rows([read('1', null), read('2', null)], [reread('r1', '2', '2026-11-23')]), 'c')).toBeNull();
     expect(finishedOn(rows([read('1', '2026-11-02'), issue('2', 'unread')]), 'c')).toBeNull();
     expect(finishedOn(rows([read('1', null), read('2', null)]), 'c')).toBeNull();
   });
