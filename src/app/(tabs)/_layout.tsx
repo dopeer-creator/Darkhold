@@ -1,7 +1,7 @@
-import { Redirect, router } from 'expo-router';
+import { Redirect, router, usePathname } from 'expo-router';
 import { TabList, Tabs, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
-import { forwardRef, type ComponentRef, type ComponentType } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { forwardRef, useEffect, useRef, useState, type ComponentRef, type ComponentType, type ReactNode } from 'react';
+import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabaseConfigured } from '@/lib/supabase';
@@ -24,6 +24,47 @@ const TabButton = forwardRef<ComponentRef<typeof View>, TabTriggerSlotProps & { 
   );
 });
 
+/** The tabs in the order a swipe moves through them (the + button isn't a tab). */
+const ORDER = ['/', '/library', '/history', '/reviews'] as const;
+
+/**
+ * Swipe sideways anywhere on a tab to move to the next one, like turning pages: drag left for the tab to the
+ * right (Home → Library → History → Reviews), right to go back. Things that scroll sideways themselves
+ * (Continue reading, filter chips, the score slider) keep the swipe: the phone gives it to them first.
+ */
+function SwipeTabs({ children }: { children: ReactNode }) {
+  const path = usePathname();
+  const pathRef = useRef<string>(path);
+  useEffect(() => {
+    pathRef.current = path;
+  }, [path]);
+  const [x] = useState(() => new Animated.Value(0));
+  // The handlers read the ref only while a finger is down, never during render.
+  // eslint-disable-next-line react-hooks/refs
+  const [pan] = useState(() => {
+    const settle = () => Animated.spring(x, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 20 }).start();
+    return PanResponder.create({
+      // Clearly sideways and far enough to mean it: up-and-down scrolling never turns the page.
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+      onPanResponderMove: (_e, g) => x.setValue(Math.max(-60, Math.min(60, g.dx * 0.35))),
+      onPanResponderRelease: (_e, g) => {
+        const at = ORDER.indexOf(pathRef.current as (typeof ORDER)[number]);
+        const step = g.dx < -70 || g.vx < -0.6 ? 1 : g.dx > 70 || g.vx > 0.6 ? -1 : 0;
+        const next = at >= 0 ? ORDER[at + step] : undefined;
+        if (step && next) router.navigate(next);
+        settle();
+      },
+      onPanResponderTerminate: settle,
+      onPanResponderTerminationRequest: () => true,
+    });
+  });
+  return (
+    <Animated.View {...pan.panHandlers} style={{ flex: 1, transform: [{ translateX: x }] }}>
+      {children}
+    </Animated.View>
+  );
+}
+
 export default function TabsLayout() {
   const { session } = useStore();
   const insets = useSafeAreaInsets();
@@ -32,7 +73,9 @@ export default function TabsLayout() {
 
   return (
     <Tabs style={{ flex: 1 }}>
-      <TabSlot style={{ flex: 1 }} />
+      <SwipeTabs>
+        <TabSlot style={{ flex: 1 }} />
+      </SwipeTabs>
       <TabList style={{ display: 'none' }}>
         <TabTrigger name="index" href="/" />
         <TabTrigger name="library" href="/library" />
