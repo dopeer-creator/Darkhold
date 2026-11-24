@@ -73,6 +73,12 @@ function CollectionForm() {
           </View>
           <Field label="Name" value={f.title} onChange={set('title')} placeholder={PLACEHOLDER[kind]} autoFocus={!editing} />
           <Field label="Your own label (optional)" value={f.label} onChange={set('label')} placeholder={`Shown instead of ${KIND_LABEL[kind]}, e.g. SAGA`} />
+          {(kind === 'crisis' || kind === 'era') && format !== 'book' && format !== 'manga' ? (
+            <View style={{ gap: 6 }}>
+              <Field label="Tree name (optional)" value={f.tree_name} onChange={set('tree_name')} placeholder="Spider-Man" />
+              <Text style={T.tiny}>Shows this reading order, and every reading order that follows it, as a map under Library › Trees.</Text>
+            </View>
+          ) : null}
           <View style={{ gap: 8 }}>
             <Text style={T.label}>PUBLISHER</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>

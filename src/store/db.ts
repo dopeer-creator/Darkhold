@@ -8,7 +8,7 @@ export type Table = (typeof TABLES)[number];
 export const COLUMNS: Record<Table, string[]> = {
   series: ['id', 'title', 'volume_year', 'publisher', 'cv_volume_id', 'created_at', 'format', 'release_every', 'release_next', 'release_paused', 'release_status', 'anilist_id', 'ol_key'],
   issues: ['id', 'series_id', 'number', 'label', 'status', 'completed_at', 'date_precision', 'rating', 'notes', 'cover_path', 'pub_year', 'story_title', 'writers', 'artists', 'cover_date', 'cv_issue_id', 'upcoming', 'release_on', 'characters', 'created_at'],
-  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes', 'label', 'planned', 'reading_now', 'reread_since', 'created_at', 'format', 'owned', 'pages_total', 'edition'],
+  collections: ['id', 'kind', 'title', 'publisher', 'writer', 'artist', 'characters', 'start_year', 'end_year', 'description', 'cover_path', 'on_hold', 'ongoing', 'rating', 'notes', 'label', 'planned', 'reading_now', 'reread_since', 'created_at', 'format', 'owned', 'pages_total', 'edition', 'tree_name'],
   entries: ['id', 'parent_id', 'position', 'child_issue_id', 'child_collection_id', 'via_collection_id', 'heading', 'note', 'optional'],
   read_log: ['id', 'issue_id', 'read_on', 'date_precision', 'rating', 'note', 'reread'],
   links: ['id', 'kind', 'from_collection_id', 'from_issue_id', 'to_collection_id', 'to_issue_id', 'note'],
@@ -20,7 +20,7 @@ export const COLUMNS: Record<Table, string[]> = {
 /** Yes/no columns: stored as 0/1 here, true/false in Supabase. */
 export const BOOLEAN_COLUMNS = new Set(['on_hold', 'ongoing', 'planned', 'reading_now', 'optional', 'upcoming', 'reread', 'release_paused', 'owned', 'starred', 'start']);
 
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 /** Columns added after the first version, by schema version. */
 const ADDED: Record<number, [Table, string, string][]> = {
@@ -89,6 +89,8 @@ const ADDED: Record<number, [Table, string, string][]> = {
   ],
   // 16: the page you were on when you started tracking a book (not counted as pages read).
   16: [['page_log', 'start', 'INTEGER NOT NULL DEFAULT 0']],
+  // 17: a reading order's tree name (it shows as a tree in the Library).
+  17: [['collections', 'tree_name', 'TEXT']],
 };
 
 /** Extra one-off work for a version, run inside the same transaction. */
@@ -124,6 +126,8 @@ const AFTER: Record<number, string[]> = {
     "DELETE FROM meta WHERE key = 'pulled:reviews'",
   ],
   16: ["DELETE FROM meta WHERE key = 'pulled:page_log'"],
+  // Lists fetched again so their tree names arrive.
+  17: ["DELETE FROM meta WHERE key = 'pulled:collections'"],
 };
 
 /**

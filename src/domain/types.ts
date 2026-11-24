@@ -99,6 +99,8 @@ export interface Collection {
   pages_total?: number | null;
   /** Books: which copy you read ("Paperback", "Hardcover", "E-book"). */
   edition?: string | null;
+  /** Set on a reading order to show it, and every reading order that follows it, as a tree with this name. */
+  tree_name?: string | null;
   rating: number | null;
   notes: string | null;
 }

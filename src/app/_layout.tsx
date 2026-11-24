@@ -44,6 +44,7 @@ export default function RootLayout() {
               <Stack.Screen name="mark/[id]" options={{ presentation: 'modal' }} />
               <Stack.Screen name="covers" options={{ presentation: 'modal' }} />
               <Stack.Screen name="series/[id]" />
+              <Stack.Screen name="tree/[id]" />
               <Stack.Screen name="heading" options={{ presentation: 'modal' }} />
               <Stack.Screen name="part-of" options={{ presentation: 'modal' }} />
               <Stack.Screen name="connect" options={{ presentation: 'modal' }} />
