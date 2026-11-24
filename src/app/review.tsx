@@ -14,6 +14,7 @@ import { isPageBook } from '@/domain/pages';
 import { rangesLine, readHeadline, reviewTarget, StoryCard, type ReviewTarget } from '@/ui/story-card';
 import { StoryShareSheet } from '@/ui/story-share';
 import { C, F } from '@/ui/theme';
+import { useCoverViewer } from '@/ui/cover-viewer';
 
 /**
  * Your review of a list (?collection=<id>) or an issue (?issue=<id>). ?edit=1 opens the form,
@@ -22,6 +23,7 @@ import { C, F } from '@/ui/theme';
 export default function ReviewScreen() {
   const params = useLocalSearchParams<{ collection?: string; issue?: string; edit?: string; share?: string }>();
   const { lib, act, words } = useStore();
+  const showCover = useCoverViewer();
   const key = params.collection ?? params.issue ?? '';
   const target = reviewTarget(lib, key);
   const review = lib.reviews.get(key);
@@ -56,7 +58,7 @@ export default function ReviewScreen() {
         </Pressable>
       </View>
       <KeyboardScroll contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 18, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
-          <Pressable accessibilityRole="link" onPress={open} style={{ flexDirection: 'row', gap: 14 }}>
+          <Pressable accessibilityRole="link" onPress={open} onLongPress={() => showCover(target.cover, target.title)} style={{ flexDirection: 'row', gap: 14 }}>
             <Cover title={target.title} publisher={target.publisher} width={84} uri={target.cover} />
             <View style={{ flex: 1, gap: 4, paddingTop: 2 }}>
               <Text style={[T.label, { color: C.muted }]}>{target.kind}</Text>

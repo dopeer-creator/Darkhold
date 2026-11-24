@@ -11,6 +11,7 @@ import { migrate } from '@/store/db';
 import { StoreProvider } from '@/store/store';
 import { JobBanner } from '@/ui/job-banner';
 import { C } from '@/ui/theme';
+import { CoverViewerProvider } from '@/ui/cover-viewer';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -28,37 +29,39 @@ export default function RootLayout() {
     <ThemeProvider value={theme}>
       <SQLiteProvider databaseName="darkhold.db" onInit={migrate}>
         <StoreProvider>
-          <StatusBar style="light" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg } }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="collection/[id]" />
-            <Stack.Screen name="add" options={{ presentation: 'transparentModal', animation: 'fade' }} />
-            <Stack.Screen name="new" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="add-issues" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="link" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="login" />
-            <Stack.Screen name="settings" />
-            <Stack.Screen name="issue/[id]" />
-            <Stack.Screen name="mark/[id]" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="covers" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="series/[id]" />
-            <Stack.Screen name="heading" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="part-of" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="connect" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="merge-series" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="review" />
-            <Stack.Screen name="character/[name]" />
-            <Stack.Screen name="person/[name]" />
-            <Stack.Screen name="people" />
-            <Stack.Screen name="radar" />
-            <Stack.Screen name="add-work" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="add-chapters" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="update-page" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="page-note" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="book-copy" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="wiki-cover" options={{ presentation: 'modal' }} />
-          </Stack>
-          <JobBanner />
+          <CoverViewerProvider>
+            <StatusBar style="light" />
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg } }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="collection/[id]" />
+              <Stack.Screen name="add" options={{ presentation: 'transparentModal', animation: 'fade' }} />
+              <Stack.Screen name="new" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="add-issues" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="link" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="login" />
+              <Stack.Screen name="settings" />
+              <Stack.Screen name="issue/[id]" />
+              <Stack.Screen name="mark/[id]" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="covers" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="series/[id]" />
+              <Stack.Screen name="heading" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="part-of" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="connect" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="merge-series" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="review" />
+              <Stack.Screen name="character/[name]" />
+              <Stack.Screen name="person/[name]" />
+              <Stack.Screen name="people" />
+              <Stack.Screen name="radar" />
+              <Stack.Screen name="add-work" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="add-chapters" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="update-page" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="page-note" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="book-copy" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="wiki-cover" options={{ presentation: 'modal' }} />
+            </Stack>
+            <JobBanner />
+          </CoverViewerProvider>
         </StoreProvider>
       </SQLiteProvider>
     </ThemeProvider>

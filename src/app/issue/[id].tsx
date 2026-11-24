@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { issueTitle, notOutYet } from '@/domain/library';
+import { issueTitle, notOutYet, issueCover } from '@/domain/library';
 import type { Issue, IssueStatus } from '@/domain/types';
 import { findVolume, getComicVineKey, volumeCovers } from '@/lib/comicvine';
 import { WIKIS, wikiFor } from '@/lib/wikis';
@@ -23,6 +23,7 @@ import { ButtonRow, ReviewForm, ReviewSummary } from '@/ui/review';
 import { TagEditor } from '@/ui/tag-editor';
 import { C, F, KIND_COLOR, kindLabel } from '@/ui/theme';
 import { useReadTick } from '@/ui/read-again';
+import { useCoverViewer } from '@/ui/cover-viewer';
 
 const STATUSES: { key: IssueStatus; label: string }[] = [
   { key: 'unread', label: 'Unread' },
@@ -34,6 +35,7 @@ const STATUSES: { key: IssueStatus; label: string }[] = [
 export default function IssueScreen() {
   const { id, entry, parent } = useLocalSearchParams<{ id: string; entry?: string; parent?: string }>();
   const { lib, act, words } = useStore();
+  const showCover = useCoverViewer();
   const readTick = useReadTick();
   const db = useSQLiteContext();
   const issue = lib.issues.get(id);
@@ -151,8 +153,8 @@ export default function IssueScreen() {
       </View>
       <KeyboardScroll contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 22, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
           <View style={{ flexDirection: 'row', gap: 16 }}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Change cover" onPress={changeCover}>
-              <Cover title={series?.title ?? title} publisher={series?.publisher ?? null} width={108} mark={issue.number ?? '?'} uri={issue.cover_path} />
+            <Pressable accessibilityRole="button" accessibilityLabel="Change cover" accessibilityHint="Hold to see it big" onPress={changeCover} onLongPress={() => showCover(issueCover(lib, issue.id), title)}>
+              <Cover title={series?.title ?? title} publisher={series?.publisher ?? null} width={108} mark={issue.number ?? '?'} uri={issueCover(lib, issue.id)} />
               <Text style={[T.tiny, { textAlign: 'center', marginTop: 4, fontSize: 11 }]}>Change cover</Text>
             </Pressable>
             <View style={{ flex: 1, gap: 6, paddingTop: 4 }}>

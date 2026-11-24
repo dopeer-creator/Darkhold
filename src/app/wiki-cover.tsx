@@ -11,6 +11,7 @@ import { issueCovers, seriesVolumes, WIKIS, wikiFor, type Wiki, type WikiCover }
 import { CloseIcon } from '@/ui/icons';
 import { Chip, Cover, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
+import { useCoverViewer } from '@/ui/cover-viewer';
 
 /** The wiki volume picked for a series ("marvel|Daredevil Vol 8"), so the next issue goes straight there. */
 const volumeKey = (seriesId: string) => `wiki:volume:${seriesId}`;
@@ -22,6 +23,7 @@ const volumeKey = (seriesId: string) => `wiki:volume:${seriesId}`;
 export default function WikiCoverScreen() {
   const { issue: issueId } = useLocalSearchParams<{ issue: string }>();
   const { lib, act } = useStore();
+  const showCover = useCoverViewer();
   const db = useSQLiteContext();
   const issue = lib.issues.get(issueId);
   const series = issue ? lib.series.get(issue.series_id) : undefined;
@@ -114,7 +116,7 @@ export default function WikiCoverScreen() {
         columnWrapperStyle={{ gap: 12 }}
         contentContainerStyle={{ padding: 16, gap: 16 }}
         renderItem={({ item }) => (
-          <Pressable accessibilityRole="button" accessibilityLabel={`Use ${item.label}`} onPress={() => choose(item)} style={{ width: tile, gap: 4 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Use ${item.label}`} onPress={() => choose(item)} onLongPress={() => showCover(item.image, item.label)} style={{ width: tile, gap: 4 }}>
             <Cover title={series.title} publisher={series.publisher} width={tile} uri={item.image} />
             <Text style={[T.tiny, { fontSize: 11, color: item.label === 'Main cover' ? C.text : C.dim }]} numberOfLines={2}>{item.label}</Text>
           </Pressable>

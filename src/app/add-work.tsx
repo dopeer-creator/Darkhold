@@ -16,6 +16,7 @@ import { CloseIcon } from '@/ui/icons';
 import { KeyboardScroll } from '@/ui/keyboard-scroll';
 import { Checkbox, Chip, GhostButton, PrimaryButton, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
+import { useCoverViewer } from '@/ui/cover-viewer';
 
 type Read = 'none' | 'all' | 'upto';
 
@@ -27,6 +28,7 @@ type Read = 'none' | 'all' | 'upto';
 export default function AddWork() {
   const db = useSQLiteContext();
   const { mode, act, lib } = useStore();
+  const showCover = useCoverViewer();
   const { match } = useLocalSearchParams<{ match?: string }>();
   const matching = match ? lib.collections.get(match) : undefined;
   const format = mode === 'manga' ? 'manga' : 'book';
@@ -257,7 +259,7 @@ export default function AddWork() {
             {error ? <Text style={[T.small, { color: C.indie }]}>{error}</Text> : null}
             {results?.length === 0 ? <Text style={T.small}>Nothing found. Try fewer words, or type it in yourself.</Text> : null}
             {(results ?? []).map((f) => (
-              <Pressable key={`${f.source}:${f.id}`} accessibilityRole="button" onPress={() => pick(f)} style={({ pressed }) => [s.result, pressed ? { opacity: 0.75 } : null]}>
+              <Pressable key={`${f.source}:${f.id}`} accessibilityRole="button" onPress={() => pick(f)} onLongPress={() => showCover(f.cover, f.title)} style={({ pressed }) => [s.result, pressed ? { opacity: 0.75 } : null]}>
                 {f.cover ? <Image source={{ uri: f.cover }} style={s.thumb} contentFit="cover" /> : <View style={[s.thumb, { backgroundColor: C.surface2 }]} />}
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={T.bodyMedium} numberOfLines={2}>{f.title}</Text>

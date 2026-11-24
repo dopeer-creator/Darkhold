@@ -24,12 +24,14 @@ import { useReadTick } from '@/ui/read-again';
 import { ReleasesCard } from '@/ui/releases-card';
 import { formatOf } from '@/domain/modes';
 import { BookPanel } from '@/ui/book-progress';
+import { useCoverViewer } from '@/ui/cover-viewer';
 
 const ROW_LIMIT = 8;
 
 export default function CollectionScreen() {
   const { id, focus } = useLocalSearchParams<{ id: string; focus?: string }>();
   const { lib, act, words } = useStore();
+  const showCover = useCoverViewer();
   const readTick = useReadTick();
   const c = lib.collections.get(id);
   const p = shownProgress(lib, id);
@@ -187,7 +189,7 @@ export default function CollectionScreen() {
         contentContainerStyle={{ paddingBottom: 48 }}>
         <View ref={contentRef} collapsable={false}>
           <View style={s.hero}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Choose a cover" onPress={() => (fmt === 'comic' ? router.push({ pathname: '/covers', params: { collection: c.id } }) : router.push({ pathname: '/add-work', params: { match: c.id } }))}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Choose a cover" accessibilityHint="Hold to see it big" onLongPress={() => showCover(coverFor(lib, c.id), c.title)} onPress={() => (fmt === 'comic' ? router.push({ pathname: '/covers', params: { collection: c.id } }) : router.push({ pathname: '/add-work', params: { match: c.id } }))}>
               <Cover title={c.title} publisher={c.publisher} width={108} uri={coverFor(lib, c.id)} />
               <Text style={[T.tiny, { textAlign: 'center', marginTop: 4, fontSize: 11 }]}>Change cover</Text>
             </Pressable>

@@ -12,6 +12,7 @@ import { useStore } from '@/store/store';
 import { CloseIcon, SearchIcon } from '@/ui/icons';
 import { Chip, Cover, GhostButton, T } from '@/ui/parts';
 import { C, F } from '@/ui/theme';
+import { useCoverViewer } from '@/ui/cover-viewer';
 
 /** Covers worth replacing when a whole series takes the wiki's: none yet, or ones found automatically (not pasted by hand). */
 const replaceable = (uri: string | null) => !uri || /comicvine\.gamespot\.com|static\.wikia\.nocookie\.net/.test(uri);
@@ -24,6 +25,7 @@ const replaceable = (uri: string | null) => !uri || /comicvine\.gamespot\.com|st
 export default function CoverPicker() {
   const { collection: collectionId, series: seriesId } = useLocalSearchParams<{ collection?: string; series?: string }>();
   const { lib, act } = useStore();
+  const showCover = useCoverViewer();
   const db = useSQLiteContext();
   const collection = collectionId ? lib.collections.get(collectionId) : undefined;
   const series = seriesId ? lib.series.get(seriesId) : undefined;
@@ -231,7 +233,7 @@ export default function CoverPicker() {
               columnWrapperStyle={{ gap: 12 }}
               contentContainerStyle={{ padding: 16, gap: 16 }}
               renderItem={({ item }) => (
-                <Pressable accessibilityRole="button" accessibilityLabel={`Use ${item.label}`} onPress={() => chooseWiki(item)} style={{ width: tile, gap: 4 }}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Use ${item.label}`} onPress={() => chooseWiki(item)} onLongPress={() => showCover(item.image, item.label)} style={{ width: tile, gap: 4 }}>
                   <Cover title={item.label} publisher={publisher} width={tile} uri={item.image} />
                   <Text style={[T.bodyMedium, { fontSize: 12, lineHeight: 15 }]} numberOfLines={2}>{item.label}</Text>
                   {item.year || item.issues ? (
@@ -250,7 +252,7 @@ export default function CoverPicker() {
             columnWrapperStyle={{ gap: 12 }}
             contentContainerStyle={{ padding: 16, gap: 16 }}
             renderItem={({ item }) => (
-              <Pressable accessibilityRole="button" accessibilityLabel={`${item.name} ${item.startYear ?? ''}`} onPress={() => choose(item)} style={{ width: tile, gap: 4 }}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`${item.name} ${item.startYear ?? ''}`} onPress={() => choose(item)} onLongPress={() => showCover(item.image, item.name)} style={{ width: tile, gap: 4 }}>
                 <Cover title={item.name} publisher={item.publisher} width={tile} uri={item.image} />
                 <Text style={[T.bodyMedium, { fontSize: 12, lineHeight: 15 }]} numberOfLines={2}>{item.name}</Text>
                 <Text style={[T.tiny, { fontSize: 11 }]} numberOfLines={1}>
