@@ -18,10 +18,8 @@ import { C, F, KIND_COLOR, publisherColor, kindLabel } from '@/ui/theme';
 import { TopBar } from '@/ui/top-bar';
 import { useReadTick } from '@/ui/read-again';
 import { useCoverViewer } from '@/ui/cover-viewer';
-import { buildTree, trees as allTrees, type Tree } from '@/domain/trees';
-import { TreeCard, TreesEmpty } from '@/ui/tree-thumb';
 
-type TabKey = 'all' | Kind | 'series' | 'issues' | 'trees';
+type TabKey = 'all' | Kind | 'series' | 'issues';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'run', label: 'Runs' },
@@ -30,7 +28,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'crisis', label: 'Reading orders' },
   { key: 'series', label: 'Series' },
   { key: 'issues', label: 'Issues' },
-  { key: 'trees', label: 'Trees' },
 ];
 const PUBLISHERS = [
   { key: 'dc', label: 'DC', color: C.dc, test: (p: string | null) => /^dc\b/i.test(p ?? '') },
@@ -85,7 +82,6 @@ export default function LibraryScreen() {
   const counts = useMemo(() => {
     const m = new Map<string, number>([['all', [...lib.collections.keys()].filter((id) => !isNested(lib, id)).length], ['series', lib.series.size], ['issues', lib.issues.size]]);
     for (const c of lib.collections.values()) m.set(c.kind, (m.get(c.kind) ?? 0) + 1);
-    m.set('trees', allTrees(lib).length);
     return m;
   }, [lib]);
   const [query, setQuery] = useState('');
@@ -211,16 +207,6 @@ export default function LibraryScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lib, tab, query, pubs, statuses, chars, writers, sort]);
 
-  // Trees: each one drawn from its reading orders, matching the search by name.
-  const treeRows = useMemo(() => {
-    if (tab !== 'trees') return [];
-    const ws = words(query);
-    return allTrees(lib)
-      .filter((t) => !ws.length || hasAll(ws, t.name.toLowerCase()))
-      .map((t) => buildTree(lib, t.id))
-      .filter((t): t is Tree => !!t);
-  }, [lib, tab, query]);
-
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: C.bg }}>
       <TopBar title="Library" />
@@ -328,16 +314,7 @@ export default function LibraryScreen() {
         <View style={{ height: 12 }} />
       )}
 
-      {tab === 'trees' ? (
-        <FlatList
-          key="trees"
-          data={treeRows}
-          keyExtractor={(t) => t.id}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, gap: 12 }}
-          ListEmptyComponent={query.trim() ? <Text style={[T.small, { paddingTop: 24 }]}>No trees match.</Text> : <TreesEmpty />}
-          renderItem={({ item }) => <TreeCard tree={item} width={Math.min(width, 600) - 32} />}
-        />
-      ) : tab === 'series' ? (
+      {tab === 'series' ? (
         <FlatList
           key="series"
           data={seriesRows}

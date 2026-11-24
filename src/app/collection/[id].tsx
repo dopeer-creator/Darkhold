@@ -25,7 +25,6 @@ import { ReleasesCard } from '@/ui/releases-card';
 import { formatOf } from '@/domain/modes';
 import { BookPanel } from '@/ui/book-progress';
 import { useCoverViewer } from '@/ui/cover-viewer';
-import { treeIndex } from '@/domain/trees';
 
 const ROW_LIMIT = 8;
 
@@ -114,7 +113,6 @@ export default function CollectionScreen() {
     ...(status === 'reading' && !c.reread_since ? [{ label: 'Stop reading', go: () => act((db, l) => stopReading(db, l, c.id)) }] : []),
     ...(status === 'completed' ? [{ label: 'Start a reread', go: () => act((db, l) => startReread(db, l, c.id)) }] : []),
     ...(c.reread_since ? [{ label: 'Stop the reread', go: () => act((db, l) => stopReread(db, l, c.id)) }] : []),
-    ...(treeIndex(lib).has(c.id) ? [{ label: 'Open as a tree', go: () => router.push({ pathname: '/tree/[id]', params: { id: treeIndex(lib).get(c.id)! } }) }] : []),
     { label: 'Connect to another list or issue…', go: () => router.push({ pathname: '/connect', params: { collection: c.id } }) },
     fmt === 'comic'
       ? { label: 'Choose a cover…', go: () => router.push({ pathname: '/covers', params: { collection: c.id } }) }
