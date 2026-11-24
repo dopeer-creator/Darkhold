@@ -234,7 +234,11 @@ export default function CoverPicker() {
                 <Pressable accessibilityRole="button" accessibilityLabel={`Use ${item.label}`} onPress={() => chooseWiki(item)} style={{ width: tile, gap: 4 }}>
                   <Cover title={item.label} publisher={publisher} width={tile} uri={item.image} />
                   <Text style={[T.bodyMedium, { fontSize: 12, lineHeight: 15 }]} numberOfLines={2}>{item.label}</Text>
-                  {item.year ? <Text style={[T.tiny, { fontSize: 11 }]}>{item.year}</Text> : null}
+                  {item.year || item.issues ? (
+                    <Text style={[T.tiny, { fontSize: 11 }]} numberOfLines={1}>
+                      {[item.year, item.issues ? `${item.issues} issue${item.issues === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ')}
+                    </Text>
+                  ) : null}
                 </Pressable>
               )}
             />

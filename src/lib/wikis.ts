@@ -27,9 +27,11 @@ export interface WikiCover {
   label: string;
   image: string;
   year: number | null;
+  /** For a volume: how many issues the wiki lists in it. */
+  issues?: number | null;
 }
 
-type Page = { title: string; missing?: string; original?: { source: string }; categories?: { title: string }[]; imageinfo?: { url: string }[] };
+type Page = { title: string; missing?: string; original?: { source: string }; categories?: { title: string }[]; imageinfo?: { url: string }[]; categoryinfo?: { pages: number } };
 
 async function ask(wiki: Wiki, params: Record<string, string>): Promise<{ query?: { pages?: Record<string, Page>; search?: { title: string }[] } }> {
   const url = `https://${WIKIS[wiki].host}/api.php?format=json&origin=*&${new URLSearchParams(params).toString()}`;
@@ -59,13 +61,25 @@ async function fileUrls(wiki: Wiki, files: string[]): Promise<Map<string, string
   return out;
 }
 
+/** How many issues each volume has: the wiki files every issue of "Daredevil Vol 8" under that category. */
+async function issueCounts(wiki: Wiki, volumes: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  for (let i = 0; i < volumes.length; i += 50) {
+    const d = await ask(wiki, { action: 'query', prop: 'categoryinfo', titles: volumes.slice(i, i + 50).map((v) => `Category:${v}`).join('|') });
+    for (const p of pagesOf(d)) if (p.categoryinfo?.pages) out.set(p.title.replace(/^Category:/, ''), p.categoryinfo.pages);
+  }
+  return out;
+}
+
 /** Search the wiki (a trade, an omnibus, an issue) and get each page's main cover. */
 export async function searchWikiCovers(wiki: Wiki, query: string): Promise<WikiCover[]> {
   const d = await ask(wiki, { action: 'query', generator: 'search', gsrsearch: query, gsrnamespace: '0', gsrlimit: '30', prop: 'pageimages|categories', piprop: 'original', cllimit: 'max' });
   // Comics and collected editions are all "… Vol N" pages; characters and creators aren't, and their pictures aren't covers.
   const pages = pagesOf(d).filter((p) => p.original?.source && / Vol \d+/.test(p.title));
   const main = await fileUrls(wiki, pages.map((p) => fileFor(p.title)));
-  return pages.map((p) => ({ title: p.title, label: p.title, image: main.get(fileFor(p.title)) ?? p.original!.source, year: releaseYear(p) }));
+  // A volume page ("Daredevil Vol 8", no issue number) gets its issue count, like Comic Vine's series do.
+  const counts = await issueCounts(wiki, pages.filter((p) => / Vol \d+$/.test(p.title)).map((p) => p.title));
+  return pages.map((p) => ({ title: p.title, label: p.title, image: main.get(fileFor(p.title)) ?? p.original!.source, year: releaseYear(p), issues: counts.get(p.title) ?? null }));
 }
 
 /**
@@ -77,8 +91,12 @@ export async function seriesVolumes(wiki: Wiki, title: string, year: number | nu
   const d = await ask(wiki, { action: 'query', prop: 'categories', cllimit: 'max', titles: names.map((n) => `${n} 1`).join('|') });
   const found = pagesOf(d).filter((p) => p.missing === undefined);
   const covers = await fileUrls(wiki, found.map((p) => fileFor(p.title)));
+  const counts = await issueCounts(wiki, found.map((p) => p.title.replace(/ 1$/, '')));
   const out = found
-    .map((p) => ({ volume: p.title.replace(/ 1$/, ''), title: p.title, label: p.title.replace(/ 1$/, ''), image: covers.get(fileFor(p.title)) ?? '', year: releaseYear(p) }))
+    .map((p) => {
+      const volume = p.title.replace(/ 1$/, '');
+      return { volume, title: p.title, label: volume, image: covers.get(fileFor(p.title)) ?? '', year: releaseYear(p), issues: counts.get(volume) ?? null };
+    })
     .filter((v) => v.image);
   return out.sort((a, b) => (year == null ? 0 : Math.abs((a.year ?? 9999) - year) - Math.abs((b.year ?? 9999) - year)) || a.volume.localeCompare(b.volume, undefined, { numeric: true }));
 }

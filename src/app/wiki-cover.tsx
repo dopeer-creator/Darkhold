@@ -26,7 +26,7 @@ export default function WikiCoverScreen() {
   const issue = lib.issues.get(issueId);
   const series = issue ? lib.series.get(issue.series_id) : undefined;
   const [wiki, setWiki] = useState<Wiki>(wikiFor(series?.publisher) ?? 'marvel');
-  const [volumes, setVolumes] = useState<{ volume: string; year: number | null }[]>([]);
+  const [volumes, setVolumes] = useState<{ volume: string; year: number | null; issues: number | null }[]>([]);
   const [volume, setVolume] = useState<string | null>(null);
   const [covers, setCovers] = useState<WikiCover[] | null>(null);
   const [busy, setBusy] = useState('');
@@ -41,7 +41,7 @@ export default function WikiCoverScreen() {
     try {
       setBusy(`Looking on the ${WIKIS[w].name}…`);
       const vols = await seriesVolumes(w, series.title, series.volume_year ?? null);
-      setVolumes(vols.map((v) => ({ volume: v.volume, year: v.year })));
+      setVolumes(vols.map((v) => ({ volume: v.volume, year: v.year, issues: v.issues ?? null })));
       const chosen = vol && vols.some((v) => v.volume === vol) ? vol : (vols[0]?.volume ?? null);
       setVolume(chosen);
       if (!chosen) return setError(`The ${WIKIS[w].name} has no series called “${series.title}”. Try the other wiki, or Comic Vine.`);
@@ -96,7 +96,7 @@ export default function WikiCoverScreen() {
       {volumes.length > 1 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingTop: 10 }} style={{ flexGrow: 0 }}>
           {volumes.map((v) => (
-            <Chip key={v.volume} label={`${v.volume.replace(`${series.title} `, '')}${v.year ? ` · ${v.year}` : ''}`} active={volume === v.volume} onPress={() => load(wiki, v.volume)} />
+            <Chip key={v.volume} label={[v.volume.replace(`${series.title} `, ''), v.year, v.issues ? `${v.issues} issues` : null].filter(Boolean).join(' · ')} active={volume === v.volume} onPress={() => load(wiki, v.volume)} />
           ))}
         </ScrollView>
       ) : null}
