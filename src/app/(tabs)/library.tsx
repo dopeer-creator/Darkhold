@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { collectionStatus, coverFor, isNested, issueTitle, progress, rootsWithStatus, walk } from '@/domain/library';
+import { collectionStatus, coverFor, isNested, issueTitle, progress, rootsWithStatus, walk, issueCover } from '@/domain/library';
 import { isPageBook, shelfProgress } from '@/domain/pages';
 import { allCharacters, splitTags } from '@/domain/characters';
 import { splitNames } from '@/domain/credits';
@@ -17,6 +17,7 @@ import { Bar, Checkbox, Chip, Cover, T } from '@/ui/parts';
 import { C, F, KIND_COLOR, publisherColor, kindLabel } from '@/ui/theme';
 import { TopBar } from '@/ui/top-bar';
 import { useReadTick } from '@/ui/read-again';
+import { useCoverViewer } from '@/ui/cover-viewer';
 
 type TabKey = 'all' | Kind | 'series' | 'issues';
 const TABS: { key: TabKey; label: string }[] = [
@@ -73,6 +74,7 @@ const ISSUE_STATUS: Record<string, (s: string) => boolean> = { issue_read: (s) =
 
 export default function LibraryScreen() {
   const { lib, fullLib, mode, setMode } = useStore();
+  const showCover = useCoverViewer();
   const tabs = mode === 'comic' ? TABS : MODE_TABS[mode];
   const readTick = useReadTick();
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('all');
@@ -182,7 +184,7 @@ export default function LibraryScreen() {
       const st = stats.get(i.series_id) ?? { read: 0, total: 0, cover: null };
       st.total++;
       if (i.status === 'read') st.read++;
-      st.cover ??= i.cover_path;
+      st.cover ??= issueCover(lib, i.id);
       stats.set(i.series_id, st);
     }
     return [...lib.series.values()]
@@ -373,7 +375,7 @@ export default function LibraryScreen() {
           }
           renderItem={({ item }) =>
             item ? (
-              <Pressable onPress={() => router.push(`/collection/${item.c.id}`)} style={{ width: tile, gap: 6 }}>
+              <Pressable onPress={() => router.push(`/collection/${item.c.id}`)} onLongPress={() => showCover(coverFor(lib, item.c.id), item.c.title)} style={{ width: tile, gap: 6 }}>
                 <Cover title={item.c.title} publisher={item.c.publisher} width={tile} done={item.st === 'completed'} uri={coverFor(lib, item.c.id)} />
                 <Text style={[T.label, { fontSize: 10, color: KIND_COLOR[item.c.kind] }]}>{kindLabel(item.c)}</Text>
                 <Text numberOfLines={2} style={[T.bodyMedium, { fontSize: 13, lineHeight: 16 }]}>{item.c.title}</Text>

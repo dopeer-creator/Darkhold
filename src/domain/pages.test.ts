@@ -122,3 +122,16 @@ describe('a book series cover', () => {
     expect(coverFor(lib, 'saga')).toBe('https://x/dune.jpg');
   });
 });
+
+describe('a book line’s cover', () => {
+  it('is its book’s cover, so History matches the Library', async () => {
+    const { issueCover } = await import('./library');
+    const lib = buildLibrary({
+      series: [{ id: 's', title: 'White Nights', volume_year: null, publisher: null, format: 'book' }],
+      issues: [whole('w', 's', { cover_path: 'https://old/openlibrary.jpg' })],
+      collections: [book('wn', { cover_path: 'https://new/apple.jpg' })],
+      entries: [{ id: 'e', parent_id: 'wn', position: 1, child_issue_id: 'w', child_collection_id: null, via_collection_id: null, note: null }],
+    });
+    expect(issueCover(lib, 'w')).toBe('https://new/apple.jpg');
+  });
+});

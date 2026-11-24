@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { activeRoots, byLatestRead, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats } from '@/domain/library';
+import { activeRoots, byLatestRead, connections, coverFor, issueTitle, nextUp, progress, rootsWithStatus, stats, issueCover } from '@/domain/library';
 import { isPageBook, pagesSince, shelfProgress } from '@/domain/pages';
 import { daysAgo, saveReview, startReading } from '@/store/repo';
 import { useStore } from '@/store/store';
@@ -14,9 +14,11 @@ import { Bar, Cover, GhostButton, PrimaryButton, SectionTitle, T } from '@/ui/pa
 import { relativeDay } from '@/ui/format';
 import { C, F, publisherColor, kindLabel } from '@/ui/theme';
 import { TopBar } from '@/ui/top-bar';
+import { useCoverViewer } from '@/ui/cover-viewer';
 
 export default function Home() {
   const { lib, readLog, sync, ready, act, finished, dismissFinished, words: w, mode } = useStore();
+  const showCover = useCoverViewer();
   const roots = useMemo(() => byLatestRead(lib, activeRoots(lib), readLog), [lib, readLog]);
   const totals = useMemo(() => stats(lib), [lib]);
   const empty = ready && lib.collections.size === 0 && lib.issues.size === 0;
@@ -30,7 +32,7 @@ export default function Home() {
     const issue = lib.issues.get(l.issue_id);
     const parent = lib.parents.get(l.issue_id)?.[0];
     const coll = parent ? lib.collections.get(parent) : undefined;
-    return { id: l.id, issueId: l.issue_id, title: issueTitle(lib, l.issue_id), number: issue?.number ?? '', where: coll ? `${kindLabel(coll)[0]}${kindLabel(coll).slice(1).toLowerCase()} · ${coll.title}` : '', publisher: coll?.publisher ?? null, seriesTitle: issue ? (lib.series.get(issue.series_id)?.title ?? '') : '', day: l.read_on, cover: issue?.cover_path ?? null };
+    return { id: l.id, issueId: l.issue_id, title: issueTitle(lib, l.issue_id), number: issue?.number ?? '', where: coll ? `${kindLabel(coll)[0]}${kindLabel(coll).slice(1).toLowerCase()} · ${coll.title}` : '', publisher: coll?.publisher ?? null, seriesTitle: issue ? (lib.series.get(issue.series_id)?.title ?? '') : '', day: l.read_on, cover: issueCover(lib, l.issue_id) };
   });
 
   return (
@@ -119,7 +121,7 @@ export default function Home() {
                 const nextIn = next ? lib.collections.get(next.via ?? next.path[next.path.length - 1]) : undefined;
                 const color = publisherColor(c.publisher);
                 return (
-                  <Pressable key={id} onPress={() => router.push(`/collection/${id}`)} style={s.card}>
+                  <Pressable key={id} onPress={() => router.push(`/collection/${id}`)} onLongPress={() => showCover(coverFor(lib, id), c.title)} style={s.card}>
                     <View style={{ flexDirection: 'row', gap: 12 }}>
                       <Cover title={c.title} publisher={c.publisher} width={72} uri={coverFor(lib, id)} />
                       <View style={{ flex: 1, gap: 4 }}>
@@ -151,7 +153,7 @@ export default function Home() {
           <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
             <SectionLink label="Recently read" more="History ›" onPress={() => router.navigate('/history')} />
             {recent.map((r, i) => (
-              <Pressable key={r.id} onPress={() => router.push(`/issue/${r.issueId}`)} style={[s.row, i < recent.length - 1 ? s.rowLine : null]}>
+              <Pressable key={r.id} onPress={() => router.push(`/issue/${r.issueId}`)} onLongPress={() => showCover(r.cover, r.title)} style={[s.row, i < recent.length - 1 ? s.rowLine : null]}>
                 <Cover title={r.seriesTitle} publisher={r.publisher} width={36} mark={r.number} uri={r.cover} />
                 <View style={{ flex: 1 }}>
                   <Text numberOfLines={1} style={T.bodyMedium}>{r.title}</Text>
@@ -171,7 +173,7 @@ export default function Home() {
             {onHold.slice(0, SHOWN).map((c, i, shown) => {
               const p = shelfProgress(lib, c.id, w.issues);
               return (
-                <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} style={[s.row, i < shown.length - 1 ? s.rowLine : null]}>
+                <Pressable key={c.id} onPress={() => router.push(`/collection/${c.id}`)} onLongPress={() => showCover(coverFor(lib, c.id), c.title)} style={[s.row, i < shown.length - 1 ? s.rowLine : null]}>
                   <Cover title={c.title} publisher={c.publisher} width={36} uri={coverFor(lib, c.id)} />
                   <View style={{ flex: 1 }}>
                     <Text numberOfLines={1} style={T.bodyMedium}>{c.title}</Text>
@@ -198,7 +200,7 @@ export default function Home() {
                 const after = before?.collectionId ? lib.collections.get(before.collectionId)?.title : before?.issueId ? issueTitle(lib, before.issueId) : null;
                 const total = progress(lib, c.id).total;
                 return (
-                  <Pressable key={c.id} accessibilityRole="button" onPress={() => router.push(`/collection/${c.id}`)} style={{ width: 76, gap: 4 }}>
+                  <Pressable key={c.id} accessibilityRole="button" onPress={() => router.push(`/collection/${c.id}`)} onLongPress={() => showCover(coverFor(lib, c.id), c.title)} style={{ width: 76, gap: 4 }}>
                     <Cover title={c.title} publisher={c.publisher} width={76} uri={coverFor(lib, c.id)} />
                     <Text numberOfLines={2} style={[T.tiny, { color: C.text, fontFamily: F.medium, fontSize: 12, lineHeight: 15 }]}>{c.title}</Text>
                     <Text numberOfLines={1} style={[T.tiny, T.num, { fontSize: 11 }]}>{after ? `After ${after}` : isPageBook(c) ? (c.pages_total ? `${c.pages_total} pages` : c.writer ?? 'Book') : mode === 'book' && c.kind === 'crisis' ? `${total} book${total === 1 ? '' : 's'}` : `${total} ${total === 1 ? w.issue : w.issues}`}</Text>

@@ -4,7 +4,7 @@ import type { ComponentRef, Ref } from 'react';
 import { Text, View } from 'react-native';
 
 import { creditsSummary } from '@/domain/credits';
-import { coverFor, finishedOn, issueTitle, progress, readRanges, type Library } from '@/domain/library';
+import { coverFor, finishedOn, issueTitle, progress, readRanges, type Library, issueCover } from '@/domain/library';
 import { formatScore, verdictLabel } from '@/domain/reviews';
 import type { Review } from '@/domain/types';
 import { sizedCover } from '@/ui/parts';
@@ -73,7 +73,7 @@ export function reviewTarget(lib: Library, key: string): ReviewTarget | null {
     publisher: series?.publisher ?? null,
     creators: [i.writers, i.story_title].filter(Boolean).join(' · '),
     meta: i.completed_at ? `Read ${monthYear(i.completed_at)}` : 'Read',
-    cover: i.cover_path,
+    cover: issueCover(lib, i.id),
   };
 }
 

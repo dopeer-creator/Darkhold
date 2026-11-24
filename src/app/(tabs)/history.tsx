@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { issueTitle, type Library } from '@/domain/library';
+import { issueTitle, type Library, issueCover } from '@/domain/library';
 import type { ReadLog } from '@/domain/types';
 import { today } from '@/store/repo';
 import { useStore } from '@/store/store';
@@ -235,7 +235,7 @@ function DayRow({ lib, log }: { lib: Library; log: ReadLog }) {
   const parentTitle = parent ? lib.collections.get(parent)?.title : null;
   return (
     <Pressable onPress={() => router.push({ pathname: '/issue/[id]', params: parent ? { id: issue.id, parent } : { id: issue.id } })} style={s.row}>
-      <Cover title={series?.title ?? ''} publisher={series?.publisher ?? null} width={38} mark={issue.number ?? '?'} uri={issue.cover_path} />
+      <Cover title={series?.title ?? ''} publisher={series?.publisher ?? null} width={38} mark={issue.number ?? '?'} uri={issueCover(lib, issue.id)} />
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={T.bodyMedium} numberOfLines={2}>{issueTitle(lib, issue.id)}</Text>
         <Text numberOfLines={1} style={T.tiny}>

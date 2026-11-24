@@ -394,6 +394,22 @@ export function moveUnits(units: Unit[], picked: number[], slot: number): string
   return [...rest.slice(0, at), ...moving, ...rest.slice(at)].flatMap((u) => u.entryIds);
 }
 
+/**
+ * The picture for one issue line. A book read by page keeps its cover on the book, not on its single
+ * "Whole book" line, so that line shows its book's cover: History and Recently read then match the Library.
+ */
+export function issueCover(lib: Library, issueId: string): string | null {
+  const issue = lib.issues.get(issueId);
+  if (!issue) return null;
+  if (lib.series.get(issue.series_id)?.format === 'book') {
+    for (const p of lib.parents.get(issueId) ?? []) {
+      const c = lib.collections.get(p);
+      if (c && c.kind !== 'crisis' && c.cover_path) return c.cover_path;
+    }
+  }
+  return issue.cover_path;
+}
+
 /** A collection's cover: its own, else the first issue in reading order that has one. */
 export function coverFor(lib: Library, collectionId: string): string | null {
   const c = lib.collections.get(collectionId);
