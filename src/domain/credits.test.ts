@@ -47,4 +47,32 @@ describe('credits', () => {
     expect(s.fillIns).toEqual([{ issueId: 'ba', writers: ['Tom Taylor'] }]);
     expect([s.credited, s.total]).toEqual([6, 7]);
   });
+
+  it('lists no fill-ins on a reading order made of several writers’ runs', () => {
+    const order: Collection = { ...run, id: 'order', kind: 'crisis', writer: 'Kieron Gillen, Al Ewing' };
+    const lib = buildLibrary({
+      series: [],
+      issues: [
+        issue('j1', '1', 'J. Michael Straczynski'),
+        issue('j2', '2', 'J. Michael Straczynski'),
+        issue('g1', '3', 'Kieron Gillen'),
+        issue('g2', '4', 'Kieron Gillen'),
+        issue('e1', '5', 'Al Ewing'),
+        issue('e2', '6', 'Al Ewing'),
+      ],
+      collections: [order],
+      entries: lines(['j1', 'j2', 'g1', 'g2', 'e1', 'e2']).map((e) => ({ ...e, parent_id: 'order' })),
+    });
+    expect(creditsSummary(lib, 'order').fillIns).toEqual([]);
+  });
+
+  it('never counts a writer named on the list as a fill-in', () => {
+    const lib = buildLibrary({
+      series: [],
+      issues: [issue('a1', '1', 'Tom King'), issue('a2', '2', 'Tom King'), issue('a3', '3', 'Tom King'), issue('a4', '4', 'Tom Taylor')],
+      collections: [{ ...run, writer: 'Tom King, Tom Taylor' }],
+      entries: lines(['a1', 'a2', 'a3', 'a4']),
+    });
+    expect(creditsSummary(lib, 'king').fillIns).toEqual([]);
+  });
 });

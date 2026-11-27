@@ -14,7 +14,11 @@ export interface CreditsSummary {
   variedArtists: boolean;
   /** Every credited artist, most issues first. */
   allArtists: string[];
-  /** Issues written by none of the main writers — fill-ins, annuals, guest writers. */
+  /**
+   * Issues written by none of the main writers — fill-ins, annuals, guest writers. Empty when no one writes
+   * at least 40% of the issues (a reading order across several runs has no fill-ins), and writers named on
+   * the list itself never count as fill-ins.
+   */
   fillIns: { issueId: string; writers: string[] }[];
   /** How many issues have credits filled in, out of all. */
   credited: number;
@@ -41,8 +45,14 @@ export function creditsSummary(lib: Library, collectionId: string): CreditsSumma
   for (const names of artistLists) for (const n of new Set(names)) artistCounts.set(n, (artistCounts.get(n) ?? 0) + 1);
   const allArtists = [...artistCounts.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
   const variedArtists = allArtists.length > 1 && (artistCounts.get(allArtists[0]) ?? 0) < withArt.length * 0.4;
-  const fillIns = credited
-    .map((i) => ({ issueId: i.id, writers: splitNames(i.writers) }))
-    .filter((f) => !f.writers.some((w) => mainWriters.includes(w)));
+  const writerCounts = new Map<string, number>();
+  for (const i of credited) for (const n of new Set(splitNames(i.writers))) writerCounts.set(n, (writerCounts.get(n) ?? 0) + 1);
+  const hasRegular = [...writerCounts.values()].some((c) => c >= credited.length * 0.4);
+  const named = splitNames(lib.collections.get(collectionId)?.writer);
+  const fillIns = hasRegular
+    ? credited
+        .map((i) => ({ issueId: i.id, writers: splitNames(i.writers) }))
+        .filter((f) => !f.writers.some((w) => mainWriters.includes(w) || named.includes(w)))
+    : [];
   return { mainWriters, mainArtists, variedArtists, allArtists, fillIns, credited: credited.length, total: ids.length };
 }
