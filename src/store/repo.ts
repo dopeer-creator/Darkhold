@@ -160,6 +160,14 @@ export async function removeEntries(db: SQLiteDatabase, entryIds: string[]) {
   });
 }
 
+/** Brings back lines removed from a list (Undo after Remove), where they were. */
+export async function restoreEntries(db: SQLiteDatabase, entries: Entry[]) {
+  const now = new Date().toISOString();
+  await db.withTransactionAsync(async () => {
+    for (const e of entries) await putRow(db, 'entries', { ...e, deleted_at: null, updated_at: now });
+  });
+}
+
 export async function updateIssue(db: SQLiteDatabase, lib: Library, issueId: string, patch: Partial<Issue>) {
   const issue = lib.issues.get(issueId);
   if (issue) await putRow(db, 'issues', { ...issue, ...patch });

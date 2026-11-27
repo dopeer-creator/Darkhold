@@ -395,6 +395,54 @@ export function moveUnits(units: Unit[], picked: number[], slot: number): string
 }
 
 /**
+ * The line ids in order after moving `ids` (kept in their order) so they sit just before line `beforeId`
+ * (null = at the end). `beforeId` must not be one of the moved lines.
+ */
+export function moveLines(order: string[], ids: string[], beforeId: string | null): string[] {
+  const moving = new Set(ids);
+  const rest = order.filter((id) => !moving.has(id));
+  const block = order.filter((id) => moving.has(id));
+  const found = beforeId == null ? -1 : rest.indexOf(beforeId);
+  const at = found < 0 ? rest.length : found;
+  return [...rest.slice(0, at), ...block, ...rest.slice(at)];
+}
+
+/** One card or line as the list shows it: the lines it holds, and whether it's a chapter heading. */
+export interface Piece {
+  ids: string[];
+  heading: boolean;
+}
+
+/** A chapter's lines: its heading and everything up to the next heading. */
+export function sectionLines(pieces: Piece[], k: number): string[] {
+  let end = k + 1;
+  while (end < pieces.length && !pieces[end].heading) end++;
+  return pieces.slice(k, end).flatMap((p) => p.ids);
+}
+
+/**
+ * Where the ↑ and ↓ buttons send piece `k`: the line it goes just before (null = the end), or undefined
+ * when it can't go that way. A card steps past one neighbour; next to a heading it crosses into the
+ * chapter above or below. A heading moves its whole chapter past the chapter above or below.
+ */
+export function stepTargets(pieces: Piece[], k: number): { up: string | null | undefined; down: string | null | undefined } {
+  const first = (i: number) => (i < pieces.length ? pieces[i].ids[0] : null);
+  if (pieces[k].heading) {
+    let prev = k - 1;
+    while (prev >= 0 && !pieces[prev].heading) prev--;
+    let next = k + 1;
+    while (next < pieces.length && !pieces[next].heading) next++;
+    let after = next + 1;
+    while (after < pieces.length && !pieces[after].heading) after++;
+    return { up: prev >= 0 ? pieces[prev].ids[0] : undefined, down: next < pieces.length ? first(after) : undefined };
+  }
+  return {
+    up: k > 0 ? pieces[k - 1].ids[0] : undefined,
+    down: k < pieces.length - 1 ? first(k + 2) : undefined,
+  };
+}
+
+/**
  * The picture for one issue line. A book read by page keeps its cover on the book, not on its single
  * "Whole book" line, so that line shows its book's cover: History and Recently read then match the Library.
  */
