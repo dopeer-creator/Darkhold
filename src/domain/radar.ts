@@ -23,7 +23,7 @@ const addDays = (day: string, n: number) => {
  * Release radar: unread issues in your lists that have a release date.
  * Out now: released in the last `recentDays` days. Coming up: everything after today, soonest first.
  */
-export function releaseRadar(lib: Library, today = todayKey(), recentDays = 21): { outNow: RadarItem[]; coming: RadarItem[] } {
+export function releaseRadar(lib: Library, today = todayKey(), recentDays = 7): { outNow: RadarItem[]; coming: RadarItem[] } {
   const since = addDays(today, -recentDays);
   const outNow: RadarItem[] = [];
   const coming: RadarItem[] = [];

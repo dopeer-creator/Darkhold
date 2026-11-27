@@ -17,7 +17,8 @@ describe('release radar', () => {
     series: [],
     issues: [
       issue('old', 'unread', '2026-09-01'), // too long ago
-      issue('fresh', 'unread', '2026-11-04'), // out a week ago
+      issue('fresh', 'unread', '2026-11-04'), // out a week ago: still on
+      issue('stale', 'unread', '2026-11-03'), // eight days ago: back to its order only
       issue('today', 'unread', '2026-11-11'),
       issue('read', 'read', '2026-11-05'), // already read
       issue('soon', 'unread', '2026-11-25'),
@@ -27,11 +28,11 @@ describe('release radar', () => {
       issue('nodate', 'unread', null),
     ],
     collections: [coll('order', 'crisis'), coll('run', 'run')],
-    entries: ['old', 'fresh', 'today', 'read', 'soon', 'month', 'dec2', 'nodate'].flatMap((id) => [entry(`o${id}`, 'order', id), entry(`r${id}`, 'run', id)]),
+    entries: ['old', 'stale', 'fresh', 'today', 'read', 'soon', 'month', 'dec2', 'nodate'].flatMap((id) => [entry(`o${id}`, 'order', id), entry(`r${id}`, 'run', id)]),
   });
   const r = releaseRadar(lib, '2026-11-11');
 
-  it('shows unread issues out in the last three weeks, newest first', () => {
+  it('shows unread issues out in the last week, newest first', () => {
     expect(r.outNow.map((x) => x.issueId)).toEqual(['today', 'fresh']);
   });
 

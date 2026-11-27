@@ -12,7 +12,7 @@ import { byDay, DateTile, dayHeading, radarWhere } from '@/ui/release-radar';
 import { C, F } from '@/ui/theme';
 import { TopBar } from '@/ui/top-bar';
 
-/** Every new issue out and unread (last three weeks), and everything coming, a release day at a time. */
+/** Every new issue out and unread (last week), and everything coming, a release day at a time. */
 export default function RadarScreen() {
   const { lib, act } = useStore();
   const params = useLocalSearchParams<{ tab?: string }>();
@@ -38,7 +38,7 @@ export default function RadarScreen() {
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
         <Text style={[T.tiny, { marginTop: 10 }]}>
-          {tab === 'out' ? 'Out in the last three weeks and not read yet. Tick one once you’ve read it.' : 'Issues in your lists with a release date, soonest first.'}
+          {tab === 'out' ? 'Out in the last week and not read yet. Tick one once you’ve read it.' : 'Issues in your lists with a release date, soonest first.'}
         </Text>
         {!groups.length ? <Text style={[T.small, { paddingTop: 24 }]}>{tab === 'out' ? 'Nothing new waiting. You’re caught up.' : 'Nothing with a release date yet.'}</Text> : null}
         {groups.map((g) => (
